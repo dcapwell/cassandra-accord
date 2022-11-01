@@ -568,14 +568,17 @@ public abstract class Command implements CommandListener, BiConsumer<SafeCommand
         };
     }
 
-    protected void apply(SafeCommandStore safeStore)
+    protected AsyncChain<Void> applyChain(SafeCommandStore safeStore)
     {
         // important: we can't include a reference to *this* in the lambda, since the C* implementation may evict
         // the command instance from memory between now and the write completing (and post apply being called)
         CommandStore unsafeStore = safeStore.commandStore();
-        writes().apply(safeStore).flatMap(unused ->
-            unsafeStore.submit(this, callPostApply(txnId()))
-        ).begin(AsyncCallbacks.throwOnFailure());
+        return writes().apply(safeStore).flatMap(unused -> unsafeStore.submit(this, callPostApply(txnId())));
+    }
+
+    private void apply(SafeCommandStore safeStore)
+    {
+        applyChain(safeStore).begin(AsyncCallbacks.throwOnFailure());
     }
 
     public AsyncChain<Data> read(SafeCommandStore safeStore)
