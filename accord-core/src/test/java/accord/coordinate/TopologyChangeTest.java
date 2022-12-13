@@ -94,7 +94,7 @@ public class TopologyChangeTest
             cluster.nodes(1, 2, 3).forEach(node -> {
                 awaitUninterruptibly(node.commandStores().forEach(empty(), keys, 1, 1, commands -> {
                     Command command = commands.command(txnId2);
-                    Assertions.assertTrue(command.hasBeen(Status.Accepted));
+                    Assertions.assertTrue(command.hasBeen(Status.PreAccepted));
                 }));
             });
         }
