@@ -33,6 +33,7 @@ import accord.local.Node.Id;
 import accord.local.Status.Known;
 import accord.primitives.*;
 import accord.topology.Topology;
+import com.google.common.collect.Lists;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -53,7 +54,7 @@ public class CommandTest
     private static final Node.Id ID1 = id(1);
     private static final Node.Id ID2 = id(2);
     private static final Node.Id ID3 = id(3);
-    private static final List<Node.Id> IDS = List.of(ID1, ID2, ID3);
+    private static final List<Node.Id> IDS = Lists.newArrayList(ID1, ID2, ID3);
     private static final Range FULL_RANGE = IntKey.range(0, 100);
     private static final Ranges FULL_RANGES = Ranges.single(FULL_RANGE);
     private static final Topology TOPOLOGY = TopologyFactory.toTopology(IDS, 3, FULL_RANGE);

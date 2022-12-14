@@ -29,7 +29,6 @@ import accord.utils.MapReduceConsume;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
 import com.google.common.annotations.VisibleForTesting;
-import org.apache.cassandra.utils.concurrent.Future;
 
 import java.util.ArrayList;
 import java.util.Arrays;
