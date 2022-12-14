@@ -43,6 +43,7 @@ import static accord.Utils.*;
 import static accord.impl.IntKey.keys;
 import static accord.impl.IntKey.range;
 import static accord.local.PreLoadContext.empty;
+import static accord.utils.async.AsyncChains.awaitUninterruptibly;
 
 public class TopologyChangeTest
 {
@@ -75,10 +76,10 @@ public class TopologyChangeTest
             TxnId txnId1 = node1.nextTxnId();
             Txn txn1 = writeTxn(keys);
             node1.coordinate(txnId1, txn1).get();
-            node1.commandStores().forEach(empty(), keys, 1, 1, commands -> {
+            awaitUninterruptibly(node1.commandStores().forEach(empty(), keys, 1, 1, commands -> {
                 Command command = commands.command(txnId1);
                 Assertions.assertTrue(command.partialDeps().isEmpty());
-            }).awaitUninterruptibly();
+            }));
 
             cluster.configServices(4, 5, 6).forEach(config -> config.reportTopology(topology2));
 
@@ -89,18 +90,18 @@ public class TopologyChangeTest
 
             // new nodes should have the previous epochs operation as a dependency
             cluster.nodes(4, 5, 6).forEach(node -> {
-                node.commandStores().forEach(empty(), keys, 2, 2, commands -> {
+                awaitUninterruptibly(node.commandStores().forEach(empty(), keys, 2, 2, commands -> {
                     Command command = commands.command(txnId2);
                     Assertions.assertTrue(command.partialDeps().contains(txnId1));
-                }).awaitUninterruptibly();
+                }));
             });
 
             // ...and participated in consensus
             cluster.nodes(1, 2, 3).forEach(node -> {
-                node.commandStores().forEach(empty(), keys, 1, 1, commands -> {
+                awaitUninterruptibly(node.commandStores().forEach(empty(), keys, 1, 1, commands -> {
                     Command command = commands.command(txnId2);
                     Assertions.assertTrue(command.hasBeen(Status.Accepted));
-                }).awaitUninterruptibly();
+                }));
             });
         }
     }

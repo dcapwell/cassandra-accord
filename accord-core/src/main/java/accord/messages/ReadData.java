@@ -228,7 +228,7 @@ public class ReadData extends AbstractEpochRequest<ReadData.ReadNack> implements
     {
         logger.trace("{}: executing read", command.txnId());
         CommandStore unsafeStore = safeStore.commandStore();
-        command.read(safeStore).addCallback((next, throwable) -> {
+        command.read(safeStore).begin((next, throwable) -> {
             if (throwable != null)
             {
                 // TODO (now): exception integration (non-trivial, as might be handled)

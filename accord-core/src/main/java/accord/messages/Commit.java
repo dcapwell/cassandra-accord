@@ -273,7 +273,7 @@ public class Commit extends TxnRequest<ReadNack>
         {
             node.forEachLocal(this, scope, txnId.epoch, invalidateUntilEpoch,
                             safeStore -> safeStore.command(txnId).commitInvalidate(safeStore))
-                    .addCallback(node.agent());
+                    .begin(node.agent());
         }
 
         @Override

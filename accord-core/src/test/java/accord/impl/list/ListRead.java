@@ -24,8 +24,8 @@ import accord.primitives.Ranges;
 import accord.primitives.Keys;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
-import org.apache.cassandra.utils.concurrent.Future;
-import org.apache.cassandra.utils.concurrent.ImmediateFuture;
+import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncChains;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,14 +49,14 @@ public class ListRead implements Read
     }
 
     @Override
-    public Future<Data> read(Key key, Txn.Kind kind, SafeCommandStore commandStore, Timestamp executeAt, DataStore store)
+    public AsyncChain<Data> read(Key key, Txn.Kind kind, SafeCommandStore commandStore, Timestamp executeAt, DataStore store)
     {
         ListStore s = (ListStore)store;
         ListData result = new ListData();
         int[] data = s.get(key);
         logger.trace("READ on {} at {} key:{} -> {}", s.node, executeAt, key, data);
         result.put(key, data);
-        return ImmediateFuture.success(result);
+        return AsyncChains.success(result);
     }
 
     @Override

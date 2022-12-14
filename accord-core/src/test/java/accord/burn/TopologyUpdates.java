@@ -48,6 +48,7 @@ import static accord.coordinate.Invalidate.invalidate;
 import static accord.local.PreLoadContext.contextFor;
 import static accord.local.Status.*;
 import static accord.local.Status.Known.*;
+import static accord.utils.async.AsyncChains.awaitUninterruptibly;
 
 public class TopologyUpdates
 {
@@ -173,9 +174,9 @@ public class TopologyUpdates
         Map<TxnId, CheckStatusOk> syncMessages = new ConcurrentHashMap<>();
         Consumer<Command> commandConsumer = command -> syncMessages.merge(command.txnId(), new CheckStatusOk(node, command), CheckStatusOk::merge);
         if (committedOnly)
-            node.commandStores().forEach(commandStore -> InMemoryCommandStore.inMemory(commandStore).forCommittedInEpoch(ranges, srcEpoch, commandConsumer));
+            awaitUninterruptibly(node.commandStores().forEach(commandStore -> InMemoryCommandStore.inMemory(commandStore).forCommittedInEpoch(ranges, srcEpoch, commandConsumer)));
         else
-            node.commandStores().forEach(commandStore -> InMemoryCommandStore.inMemory(commandStore).forEpochCommands(ranges, srcEpoch, commandConsumer));
+            awaitUninterruptibly(node.commandStores().forEach(commandStore -> InMemoryCommandStore.inMemory(commandStore).forEpochCommands(ranges, srcEpoch, commandConsumer)));
 
         return syncMessages.entrySet().stream().map(e -> {
             CommandSync sync = new CommandSync(e.getKey(), e.getValue(), srcEpoch, trgEpoch);

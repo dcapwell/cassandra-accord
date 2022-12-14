@@ -43,6 +43,7 @@ import static accord.impl.InMemoryCommandStore.inMemory;
 import static accord.impl.mock.MockCluster.configService;
 import static accord.local.Status.Committed;
 import static accord.messages.SimpleReply.Ok;
+import static accord.utils.async.AsyncChains.getUninterruptibly;
 
 public class EpochSync implements Runnable
 {
@@ -182,8 +183,7 @@ public class EpochSync implements Runnable
             Map<TxnId, SyncCommitted> syncMessages = new ConcurrentHashMap<>();
             Consumer<Command> commandConsumer = command -> syncMessages.computeIfAbsent(command.txnId(), id -> new SyncCommitted(command, syncEpoch))
                     .update(command);
-            node.commandStores().forEach(commandStore -> inMemory(commandStore).forCommittedInEpoch(syncTopology.ranges(), syncEpoch, commandConsumer))
-                    .syncUninterruptibly();
+            getUninterruptibly(node.commandStores().forEach(commandStore -> inMemory(commandStore).forCommittedInEpoch(syncTopology.ranges(), syncEpoch, commandConsumer)));
 
             for (SyncCommitted send : syncMessages.values())
                 CommandSync.sync(node, send.route, send, nextTopology);

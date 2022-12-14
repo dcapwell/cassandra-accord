@@ -46,6 +46,7 @@ import java.util.function.Consumer;
 import static accord.Utils.id;
 import static accord.Utils.writeTxn;
 import static accord.impl.InMemoryCommandStore.inMemory;
+import static accord.utils.async.AsyncChains.getUninterruptibly;
 
 public class CommandTest
 {
@@ -176,7 +177,7 @@ public class CommandTest
         setTopologyEpoch(support.local, 2);
         ((TestableConfigurationService)node.configService()).reportTopology(support.local.get().withEpoch(2));
         Timestamp expectedTimestamp = new Timestamp(2, 110, 0, ID1);
-        commands.execute(null, (Consumer<? super SafeCommandStore>) store -> command.preaccept(store, txn.slice(FULL_RANGES, true), ROUTE, HOME_KEY)).syncUninterruptibly();
+        getUninterruptibly(commands.execute(null, (Consumer<? super SafeCommandStore>) store -> command.preaccept(store, txn.slice(FULL_RANGES, true), ROUTE, HOME_KEY)));
         Assertions.assertEquals(Status.PreAccepted, command.status());
         Assertions.assertEquals(expectedTimestamp, command.executeAt());
     }

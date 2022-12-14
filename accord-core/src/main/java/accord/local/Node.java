@@ -31,6 +31,7 @@ import accord.coordinate.*;
 import accord.messages.*;
 import accord.primitives.*;
 import accord.utils.MapReduceConsume;
+import accord.utils.async.AsyncChain;
 import com.google.common.annotations.VisibleForTesting;
 
 import accord.api.*;
@@ -254,22 +255,22 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         return nowSupplier.getAsLong();
     }
 
-    public Future<Void> forEachLocal(PreLoadContext context, Unseekables<?, ?> unseekables, long minEpoch, long maxEpoch, Consumer<SafeCommandStore> forEach)
+    public AsyncChain<Void> forEachLocal(PreLoadContext context, Unseekables<?, ?> unseekables, long minEpoch, long maxEpoch, Consumer<SafeCommandStore> forEach)
     {
         return commandStores.forEach(context, unseekables, minEpoch, maxEpoch, forEach);
     }
 
-    public Future<Void> forEachLocalSince(PreLoadContext context, Unseekables<?, ?> unseekables, Timestamp since, Consumer<SafeCommandStore> forEach)
+    public AsyncChain<Void> forEachLocalSince(PreLoadContext context, Unseekables<?, ?> unseekables, Timestamp since, Consumer<SafeCommandStore> forEach)
     {
         return commandStores.forEach(context, unseekables, since.epoch, Long.MAX_VALUE, forEach);
     }
 
-    public Future<Void> ifLocal(PreLoadContext context, RoutingKey key, long epoch, Consumer<SafeCommandStore> ifLocal)
+    public AsyncChain<Void> ifLocal(PreLoadContext context, RoutingKey key, long epoch, Consumer<SafeCommandStore> ifLocal)
     {
         return commandStores.ifLocal(context, key, epoch, epoch, ifLocal);
     }
 
-    public Future<Void> ifLocalSince(PreLoadContext context, RoutingKey key, Timestamp since, Consumer<SafeCommandStore> ifLocal)
+    public AsyncChain<Void> ifLocalSince(PreLoadContext context, RoutingKey key, Timestamp since, Consumer<SafeCommandStore> ifLocal)
     {
         return commandStores.ifLocal(context, key, since.epoch, Long.MAX_VALUE, ifLocal);
     }

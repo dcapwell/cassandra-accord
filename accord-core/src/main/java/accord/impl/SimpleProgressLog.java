@@ -207,7 +207,7 @@ public class SimpleProgressLog implements Runnable, ProgressLog.Factory
                                             Command cmd = safeStore.command(txnId);
                                             cmd.setDurability(safeStore, token.durability, homeKey, null);
                                             safeStore.progressLog().durable(txnId, cmd.maxUnseekables(), null);
-                                        }).addCallback(commandStore.agent());
+                                        }).begin(commandStore.agent());
                                     }
 
                                     updateMax(token);
@@ -592,7 +592,7 @@ public class SimpleProgressLog implements Runnable, ProgressLog.Factory
 
                 if (nonHomeState != null)
                     updateNonHome(node, command);
-            }).addCallback(commandStore.agent());
+            }).begin(commandStore.agent());
         }
 
         @Override

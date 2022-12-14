@@ -23,12 +23,11 @@ import java.util.List;
 import java.util.Objects;
 
 import accord.local.Command;
-import accord.local.CommandStore;
 
 import accord.api.*;
 import accord.local.SafeCommandStore;
-import accord.utils.ReducingFuture;
-import org.apache.cassandra.utils.concurrent.Future;
+import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncChains;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -172,17 +171,17 @@ public interface Txn
         return new Writes(executeAt, update.keys(), update.apply(data));
     }
 
-    default Future<Data> read(SafeCommandStore safeStore, Command command)
+    default AsyncChain<Data> read(SafeCommandStore safeStore, Command command)
     {
         Ranges ranges = safeStore.ranges().at(command.executeAt().epoch);
-        List<Future<Data>> futures = read().keys().foldl(ranges, (index, key, accumulate) -> {
+        List<AsyncChain<Data>> futures = read().keys().foldl(ranges, (index, key, accumulate) -> {
             if (!safeStore.commandStore().hashIntersects(key))
                 return accumulate;
 
-            Future<Data> result = read().read(key, kind(), safeStore, command.executeAt(), safeStore.dataStore());
+            AsyncChain<Data> result = read().read(key, kind(), safeStore, command.executeAt(), safeStore.dataStore());
             accumulate.add(result);
             return accumulate;
         }, new ArrayList<>());
-        return ReducingFuture.reduce(futures, Data::merge);
+        return AsyncChains.reduce(futures, Data::merge);
     }
 }

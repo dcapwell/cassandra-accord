@@ -31,8 +31,9 @@ import accord.primitives.Ranges;
 import accord.primitives.Keys;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
-import org.apache.cassandra.utils.concurrent.Future;
-import org.apache.cassandra.utils.concurrent.ImmediateFuture;
+import accord.primitives.*;
+import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncChains;
 
 public class MockStore implements DataStore
 {
@@ -46,7 +47,7 @@ public class MockStore implements DataStore
 
     public static final Result RESULT = new Result() {};
     public static final Query QUERY = (txnId, data, read, update) -> RESULT;
-    public static final Write WRITE = (key, commandStore, executeAt, store) -> ImmediateFuture.success(null);
+    public static final Write WRITE = (key, commandStore, executeAt, store) -> Writes.SUCCESS;
 
     public static Read read(Keys keys)
     {
@@ -59,9 +60,9 @@ public class MockStore implements DataStore
             }
 
             @Override
-            public Future<Data> read(Key key, Txn.Kind kind, SafeCommandStore commandStore, Timestamp executeAt, DataStore store)
+            public AsyncChain<Data> read(Key key, Txn.Kind kind, SafeCommandStore commandStore, Timestamp executeAt, DataStore store)
             {
-                return ImmediateFuture.success(DATA);
+                return AsyncChains.success(DATA);
             }
 
             @Override

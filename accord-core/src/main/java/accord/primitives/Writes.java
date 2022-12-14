@@ -20,9 +20,8 @@ package accord.primitives;
 
 import accord.api.Write;
 import accord.local.SafeCommandStore;
-import accord.utils.ReducingFuture;
-import org.apache.cassandra.utils.concurrent.Future;
-import org.apache.cassandra.utils.concurrent.ImmediateFuture;
+import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncChains;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +29,7 @@ import java.util.Objects;
 
 public class Writes
 {
-    public static final Future<Void> SUCCESS = ImmediateFuture.success(null);
+    public static final AsyncChain<Void> SUCCESS = AsyncChains.success(null);
     public final Timestamp executeAt;
     public final Keys keys;
     public final Write write;
@@ -62,7 +61,7 @@ public class Writes
         return Objects.hash(executeAt, keys, write);
     }
 
-    public Future<Void> apply(SafeCommandStore safeStore)
+    public AsyncChain<Void> apply(SafeCommandStore safeStore)
     {
         if (write == null)
             return SUCCESS;
@@ -71,12 +70,12 @@ public class Writes
         if (ranges == null)
             return SUCCESS;
 
-        List<Future<Void>> futures = keys.foldl(ranges, (index, key, accumulate) -> {
+        List<AsyncChain<Void>> futures = keys.foldl(ranges, (index, key, accumulate) -> {
             if (safeStore.commandStore().hashIntersects(key))
                 accumulate.add(write.apply(key, safeStore, executeAt, safeStore.dataStore()));
             return accumulate;
         }, new ArrayList<>());
-        return ReducingFuture.reduce(futures, (l, r) -> null);
+        return AsyncChains.reduce(futures, (l, r) -> null);
     }
 
     @Override

@@ -25,7 +25,8 @@ import accord.primitives.*;
 import accord.primitives.Txn.Kind;
 import accord.primitives.Writes;
 import accord.utils.Invariants;
-import org.apache.cassandra.utils.concurrent.Future;
+import accord.utils.async.AsyncCallbacks;
+import accord.utils.async.AsyncChain;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -567,17 +568,17 @@ public abstract class Command implements CommandListener, BiConsumer<SafeCommand
         };
     }
 
-    protected Future<Void> apply(SafeCommandStore safeStore)
+    protected void apply(SafeCommandStore safeStore)
     {
         // important: we can't include a reference to *this* in the lambda, since the C* implementation may evict
         // the command instance from memory between now and the write completing (and post apply being called)
         CommandStore unsafeStore = safeStore.commandStore();
-        return writes().apply(safeStore).flatMap(unused ->
+        writes().apply(safeStore).flatMap(unused ->
             unsafeStore.submit(this, callPostApply(txnId()))
-        );
+        ).begin(AsyncCallbacks.throwOnFailure());
     }
 
-    public Future<Data> read(SafeCommandStore safeStore)
+    public AsyncChain<Data> read(SafeCommandStore safeStore)
     {
         return partialTxn().read(safeStore, this);
     }
@@ -730,7 +731,7 @@ public abstract class Command implements CommandListener, BiConsumer<SafeCommand
                 if (cur == null)
                 {
                     // need to load; schedule execution for later
-                    safeStore.execute(this, this);
+                    safeStore.execute(this, this).begin(AsyncCallbacks.throwOnFailure());
                     return;
                 }
 
