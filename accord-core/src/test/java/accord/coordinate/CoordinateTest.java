@@ -33,6 +33,7 @@ import static accord.Utils.id;
 import static accord.Utils.ids;
 import static accord.Utils.writeTxn;
 import static accord.impl.IntKey.keys;
+import static accord.utils.async.AsyncResults.getUninterruptibly;
 
 public class CoordinateTest
 {
@@ -48,7 +49,7 @@ public class CoordinateTest
             Keys keys = keys(10);
             Txn txn = writeTxn(keys);
             FullKeyRoute route = keys.toRoute(keys.get(0).toUnseekable());
-            Result result = Coordinate.coordinate(node, txnId, txn, route).get();
+            Result result = getUninterruptibly(Coordinate.coordinate(node, txnId, txn, route));
             Assertions.assertEquals(MockStore.RESULT, result);
         }
     }
@@ -64,7 +65,7 @@ public class CoordinateTest
             Assertions.assertNotNull(node);
 
             Txn txn = writeTxn(keys(10));
-            Result result = cluster.get(id(1)).coordinate(txn).get();
+            Result result = getUninterruptibly(cluster.get(id(1)).coordinate(txn));
             Assertions.assertEquals(MockStore.RESULT, result);
         }
     }
@@ -74,7 +75,7 @@ public class CoordinateTest
         TxnId txnId = node.nextTxnId();
         txnId = new TxnId(txnId.epoch, txnId.real + clock, 0, txnId.node);
         Txn txn = writeTxn(keys);
-        Result result = Coordinate.coordinate(node, txnId, txn, node.computeRoute(txnId, txn.keys())).get();
+        Result result = getUninterruptibly(Coordinate.coordinate(node, txnId, txn, node.computeRoute(txnId, txn.keys())));
         Assertions.assertEquals(MockStore.RESULT, result);
         return txnId;
     }
@@ -105,7 +106,7 @@ public class CoordinateTest
 
             Keys keys = keys(10);
             Txn txn = new Txn.InMemory(keys, MockStore.read(Keys.EMPTY), MockStore.QUERY, MockStore.update(keys));
-            Result result = cluster.get(id(1)).coordinate(txn).get();
+            Result result = getUninterruptibly(cluster.get(id(1)).coordinate(txn));
             Assertions.assertEquals(MockStore.RESULT, result);
         }
     }
@@ -122,7 +123,7 @@ public class CoordinateTest
 
             Keys keys = keys(10);
             Txn txn = new Txn.InMemory(keys, MockStore.read(keys), MockStore.QUERY, MockStore.update(Keys.EMPTY));
-            Result result = cluster.get(id(1)).coordinate(txn).get();
+            Result result = getUninterruptibly(cluster.get(id(1)).coordinate(txn));
             Assertions.assertEquals(MockStore.RESULT, result);
         }
     }
@@ -139,11 +140,11 @@ public class CoordinateTest
             Keys oneKey = keys(10);
             Keys twoKeys = keys(10, 20);
             Txn txn = new Txn.InMemory(oneKey, MockStore.read(oneKey), MockStore.QUERY, MockStore.update(twoKeys));
-            Result result = Coordinate.coordinate(node, txnId, txn, txn.keys().toRoute(oneKey.get(0).toUnseekable())).get();
+            Result result = getUninterruptibly(Coordinate.coordinate(node, txnId, txn, txn.keys().toRoute(oneKey.get(0).toUnseekable())));
             Assertions.assertEquals(MockStore.RESULT, result);
 
             txn = new Txn.InMemory(oneKey, MockStore.read(oneKey), MockStore.QUERY, MockStore.update(Keys.EMPTY));
-            result = cluster.get(id(1)).coordinate(txn).get();
+            result = getUninterruptibly(cluster.get(id(1)).coordinate(txn));
             Assertions.assertEquals(MockStore.RESULT, result);
         }
     }

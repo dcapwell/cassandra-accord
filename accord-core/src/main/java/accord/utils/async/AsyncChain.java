@@ -50,4 +50,11 @@ public interface AsyncChain<V>
             else throw new RuntimeException(failure);
         });
     }
+
+    default AsyncResult<V> beginAsResult()
+    {
+        AsyncResult.Settable<V> result = AsyncResults.settable();
+        begin(result.settingCallback());
+        return result;
+    }
 }

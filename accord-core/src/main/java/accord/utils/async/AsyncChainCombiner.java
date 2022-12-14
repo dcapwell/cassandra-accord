@@ -21,11 +21,11 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
         this.state = inputs;
     }
 
-    private List<AsyncChain<I>> inputs()
+    private List<AsyncChain<? extends I>> inputs()
     {
         Object current = state;
         Preconditions.checkState(current instanceof List);
-        return (List<AsyncChain<I>>) current;
+        return (List<AsyncChain<? extends I>>) current;
     }
 
     private I[] results()
@@ -91,7 +91,7 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
     @Override
     public void begin(BiConsumer<? super O, Throwable> callback)
     {
-        List<AsyncChain<I>> chains = inputs();
+        List<AsyncChain<? extends I>> chains = inputs();
         state = new Object[chains.size()];
 
         int size = chains.size();
@@ -138,12 +138,12 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
          * Determines if the given chain is a reduce instance with the same reducer, and can
          * therefore be added to, instead of creating another reduce instance
          */
-        static <V> boolean canAppendTo(AsyncChain<V> chain, BiFunction<V, V, V> reducer)
+        static <V> boolean canAppendTo(AsyncChain<? extends V> chain, BiFunction<V, V, V> reducer)
         {
             if (!(chain instanceof AsyncChainCombiner.Reduce))
                 return false;
 
-            AsyncChainCombiner.Reduce<V> reduce = (AsyncChainCombiner.Reduce<V>) chain;
+            AsyncChainCombiner.Reduce<? extends V> reduce = (AsyncChainCombiner.Reduce<? extends V>) chain;
             return reduce.reducer == reducer;
         }
     }

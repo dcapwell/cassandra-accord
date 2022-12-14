@@ -32,6 +32,8 @@ import accord.messages.*;
 import accord.primitives.*;
 import accord.utils.MapReduceConsume;
 import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncResult;
+import accord.utils.async.AsyncResults;
 import com.google.common.annotations.VisibleForTesting;
 
 import accord.api.*;
@@ -54,8 +56,6 @@ import accord.topology.Shard;
 import accord.topology.Topology;
 import accord.topology.TopologyManager;
 import net.nicoulaj.compilecommand.annotations.Inline;
-import org.apache.cassandra.utils.concurrent.AsyncFuture;
-import org.apache.cassandra.utils.concurrent.Future;
 
 public class Node implements ConfigurationService.Listener, NodeTimeService
 {
@@ -125,7 +125,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
     private final Scheduler scheduler;
 
     // TODO (soon): monitor the contents of this collection for stalled coordination, and excise them
-    private final Map<TxnId, Future<? extends Outcome>> coordinating = new ConcurrentHashMap<>();
+    private final Map<TxnId, AsyncResult<? extends Outcome>> coordinating = new ConcurrentHashMap<>();
 
     public Node(Id id, MessageSink messageSink, ConfigurationService configService, LongSupplier nowSupplier,
                 Supplier<DataStore> dataSupplier, Agent agent, Random random, Scheduler scheduler, TopologySorter.Supplier topologySorter,
@@ -198,12 +198,12 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         else
         {
             configService.fetchTopologyForEpoch(epoch);
-            topology.awaitEpoch(epoch).addListener(runnable);
+            topology.awaitEpoch(epoch).listen(runnable);
         }
     }
 
     @Inline
-    public <T> Future<T> withEpoch(long epoch, Supplier<Future<T>> supplier)
+    public <T> AsyncResult<T> withEpoch(long epoch, Supplier<AsyncResult<T>> supplier)
     {
         if (topology.hasEpoch(epoch))
         {
@@ -212,7 +212,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         else
         {
             configService.fetchTopologyForEpoch(epoch);
-            return topology.awaitEpoch(epoch).flatMap(ignore -> supplier.get());
+            return topology.awaitEpoch(epoch).toChain().flatMap(ignore -> supplier.get().toChain()).beginAsResult();
         }
     }
 
@@ -364,24 +364,24 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         return new TxnId(uniqueNow());
     }
 
-    public Future<Result> coordinate(Txn txn)
+    public AsyncResult<Result> coordinate(Txn txn)
     {
         return coordinate(nextTxnId(), txn);
     }
 
-    public Future<Result> coordinate(TxnId txnId, Txn txn)
+    public AsyncResult<Result> coordinate(TxnId txnId, Txn txn)
     {
         // TODO: The combination of updating the epoch of the next timestamp with epochs we don't have topologies for,
         //  and requiring preaccept to talk to its topology epoch means that learning of a new epoch via timestamp
         //  (ie not via config service) will halt any new txns from a node until it receives this topology
-        Future<Result> result = withEpoch(txnId.epoch, () -> initiateCoordination(txnId, txn));
+        AsyncResult<Result> result = withEpoch(txnId.epoch, () -> initiateCoordination(txnId, txn));
         coordinating.putIfAbsent(txnId, result);
         // TODO: if we fail, nominate another node to try instead
-        result.addCallback((success, fail) -> coordinating.remove(txnId, result));
+        result.listen((success, fail) -> coordinating.remove(txnId, result));
         return result;
     }
 
-    private Future<Result> initiateCoordination(TxnId txnId, Txn txn)
+    private AsyncResult<Result> initiateCoordination(TxnId txnId, Txn txn)
     {
         return Coordinate.coordinate(this, txnId, txn, computeRoute(txnId, txn.keys()));
     }
@@ -447,7 +447,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         return range.someIntersectingRoutingKey();
     }
 
-    static class RecoverFuture<T> extends AsyncFuture<T> implements BiConsumer<T, Throwable>
+    static class RecoverFuture<T> extends AsyncResults.Settable<T> implements BiConsumer<T, Throwable>
     {
         @Override
         public void accept(T success, Throwable fail)
@@ -457,21 +457,21 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         }
     }
 
-    public Future<? extends Outcome> recover(TxnId txnId, FullRoute<?> route)
+    public AsyncResult<? extends Outcome> recover(TxnId txnId, FullRoute<?> route)
     {
         {
-            Future<? extends Outcome> result = coordinating.get(txnId);
+            AsyncResult<? extends Outcome> result = coordinating.get(txnId);
             if (result != null)
                 return result;
         }
 
-        Future<Outcome> result = withEpoch(txnId.epoch, () -> {
+        AsyncResult<Outcome> result = withEpoch(txnId.epoch, () -> {
             RecoverFuture<Outcome> future = new RecoverFuture<>();
             RecoverWithRoute.recover(this, txnId, route, null, future);
             return future;
         });
         coordinating.putIfAbsent(txnId, result);
-        result.addCallback((success, fail) -> {
+        result.listen((success, fail) -> {
             coordinating.remove(txnId, result);
             // TODO: if we fail, nominate another node to try instead
         });
@@ -479,9 +479,9 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
     }
 
     // TODO: coalesce other maybeRecover calls also? perhaps have mutable knownStatuses so we can inject newer ones?
-    public Future<? extends Outcome> maybeRecover(TxnId txnId, RoutingKey homeKey, @Nullable Route<?> route, ProgressToken prevProgress)
+    public AsyncResult<? extends Outcome> maybeRecover(TxnId txnId, RoutingKey homeKey, @Nullable Route<?> route, ProgressToken prevProgress)
     {
-        Future<? extends Outcome> result = coordinating.get(txnId);
+        AsyncResult<? extends Outcome> result = coordinating.get(txnId);
         if (result != null)
             return result;
 
