@@ -43,7 +43,6 @@ import accord.messages.BeginRecovery.RecoverReply;
 import accord.messages.WaitOnCommit;
 import accord.messages.WaitOnCommit.WaitOnCommitOk;
 import accord.topology.Topology;
-import org.apache.cassandra.utils.concurrent.AsyncFuture;
 
 import static accord.coordinate.Propose.Invalidate.proposeInvalidate;
 import static accord.coordinate.tracking.RequestStatus.Failed;

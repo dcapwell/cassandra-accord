@@ -56,6 +56,10 @@ import accord.topology.Shard;
 import accord.topology.Topology;
 import accord.topology.TopologyManager;
 import net.nicoulaj.compilecommand.annotations.Inline;
+import accord.primitives.Ballot;
+import accord.primitives.Timestamp;
+import accord.primitives.Txn;
+import accord.primitives.TxnId;
 
 public class Node implements ConfigurationService.Listener, NodeTimeService
 {
