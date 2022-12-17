@@ -1,7 +1,9 @@
 package accord.utils.async;
 
+import javax.annotation.Nullable;
 import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 
 /**
  * Handle for async computations that supports multiple listeners and registering
@@ -9,11 +11,11 @@ import java.util.function.BiConsumer;
  */
 public interface AsyncResult<V>
 {
-    void listen(BiConsumer<? super V, Throwable> callback);
+    void listen(BiConsumer<? super V, Throwable> callback, @Nullable Executor executor);
 
-    default void listen(BiConsumer<? super V, Throwable> callback, Executor executor)
+    default void listen(BiConsumer<? super V, Throwable> callback)
     {
-        listen(AsyncCallbacks.inExecutor(callback, executor));
+        listen(callback, null);
     }
 
     default void listen(Runnable runnable)
@@ -27,6 +29,67 @@ public interface AsyncResult<V>
     default void listen(Runnable runnable, Executor executor)
     {
         listen(AsyncCallbacks.inExecutor(runnable, executor));
+    }
+
+    default <T> AsyncResult<T> map(Function<? super V, ? extends T> mapper, Executor executor)
+    {
+        AsyncResult.Settable<T> settable = AsyncResults.settable();
+        listen((success, failure) -> {
+            if (failure != null)
+            {
+                settable.setFailure(failure);
+                return;
+            }
+            try
+            {
+                T result = mapper.apply(success);
+                settable.setSuccess(result);
+            }
+            catch (Throwable t)
+            {
+                settable.setFailure(t);
+            }
+        }, executor);
+        return settable;
+    }
+
+    default <T> AsyncResult<T> map(Function<? super V, ? extends T> mapper)
+    {
+        return map(mapper, null);
+    }
+
+    default <T> AsyncResult<T> flatMap(Function<? super V, ? extends AsyncResult<T>> mapper, Executor executor)
+    {
+        AsyncResult.Settable<T> settable = AsyncResults.settable();
+        listen((success, failure) -> {
+           if (failure != null)
+           {
+               settable.setFailure(failure);
+               return;
+           }
+           try
+           {
+               AsyncResult<T> next = mapper.apply(success);
+               next.listen((s2, f2) -> {
+                   if (f2 != null)
+                   {
+                       settable.tryFailure(f2);
+                       return;
+                   }
+                   settable.trySuccess(s2);
+               });
+           }
+           catch (Throwable t)
+           {
+               settable.setFailure(t);
+           }
+        }, executor);
+        return settable;
+    }
+
+    default <T> AsyncResult<T> flatMap(Function<? super V, ? extends AsyncResult<T>> mapper)
+    {
+        return flatMap(mapper, null);
     }
 
     default AsyncChain<V> toChain()

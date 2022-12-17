@@ -28,6 +28,25 @@ public class AsyncResults
         }
     }
 
+    private static <V> void notify(Executor executor, BiConsumer<? super V, Throwable> callback, V value, Throwable failure)
+    {
+        try
+        {
+            if (executor != null)
+            {
+                executor.execute(() -> callback.accept(value, failure));
+                return;
+            }
+        }
+        catch (Throwable t)
+        {
+            callback.accept(null, t);
+        }
+        //TODO we don't have a equivalent of org.apache.cassandra.concurrent.ExecutionFailure#handle, so if the user
+        // logic fails, "should" we propagate?
+        callback.accept(value, failure);
+    }
+
     static class AbstractResult<V> implements AsyncResult<V>
     {
         private static final AtomicReferenceFieldUpdater<AbstractResult, Object> STATE = AtomicReferenceFieldUpdater.newUpdater(AbstractResult.class, Object.class, "state");
@@ -37,11 +56,13 @@ public class AsyncResults
         private static class Listener<V>
         {
             final BiConsumer<? super V, Throwable> callback;
+            final Executor executor;
             Listener<V> next;
 
-            public Listener(BiConsumer<? super V, Throwable> callback)
+            public Listener(BiConsumer<? super V, Throwable> callback, Executor executor)
             {
                 this.callback = callback;
+                this.executor = executor;
             }
         }
 
@@ -49,7 +70,7 @@ public class AsyncResults
         {
             while (listener != null)
             {
-                listener.callback.accept(result.value, result.failure);
+                AsyncResults.notify(listener.executor, listener.callback, result.value, result.failure);
                 listener = listener.next;
             }
         }
@@ -88,7 +109,7 @@ public class AsyncResults
         }
 
         @Override
-        public void listen(BiConsumer<? super V, Throwable> callback)
+        public void listen(BiConsumer<? super V, Throwable> callback, Executor executor)
         {
             Listener<V> listener = null;
             while (true)
@@ -101,7 +122,7 @@ public class AsyncResults
                     return;
                 }
                 if (listener == null)
-                    listener = new Listener<>(callback);
+                    listener = new Listener<>(callback, executor);
 
                 listener.next = (Listener<V>) current;
                 if (STATE.compareAndSet(this, current, listener))
@@ -165,9 +186,8 @@ public class AsyncResults
         }
 
         @Override
-        public void listen(BiConsumer<? super V, Throwable> callback)
-        {
-            callback.accept(value, failure);
+        public void listen(BiConsumer<? super V, Throwable> callback, Executor executor) {
+            AsyncResults.notify(executor, callback, value, failure);
         }
 
         @Override
