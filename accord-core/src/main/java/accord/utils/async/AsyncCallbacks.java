@@ -1,18 +1,23 @@
 package accord.utils.async;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
 
 public class AsyncCallbacks
 {
-    private static final BiConsumer<Object, Throwable> THROW_ON_FAILURE = (unused, failure) -> {
+    private static final Logger logger = LoggerFactory.getLogger(AsyncCallbacks.class);
+
+    private static final BiConsumer<Object, Throwable> NOOP = (unused, failure) -> {
         if (failure != null)
-            throw new RuntimeException(failure);
+            logger.error("Exception received by noop callback", failure);
     };
 
-    public static <T> BiConsumer<? super T, Throwable> throwOnFailure()
+    public static <T> BiConsumer<? super T, Throwable> noop()
     {
-        return THROW_ON_FAILURE;
+        return NOOP;
     }
 
     public static <T> BiConsumer<? super T, Throwable> inExecutor(BiConsumer<? super T, Throwable> callback, Executor executor)
