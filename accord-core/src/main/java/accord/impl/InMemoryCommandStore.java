@@ -300,18 +300,20 @@ public class InMemoryCommandStore
                     @Override
                     public void begin(BiConsumer<? super T, Throwable> callback)
                     {
+                        T result = null;
+                        Throwable failure = null;
                         synchronized (SynchronizedState.this)
                         {
                             try
                             {
-                                T result = function.apply(SynchronizedState.this);
-                                callback.accept(result, null);
+                                result = function.apply(SynchronizedState.this);
                             }
                             catch (Throwable t)
                             {
-                                callback.accept(null, t);
+                                failure = t;
                             }
                         }
+                        callback.accept(result, failure);
                     }
                 };
             }

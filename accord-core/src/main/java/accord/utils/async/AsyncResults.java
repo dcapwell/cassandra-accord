@@ -86,7 +86,7 @@ public class AsyncResults
         }
 
         @Override
-        public void listen(BiConsumer<? super V, Throwable> callback)
+        public void addCallback(BiConsumer<? super V, Throwable> callback)
         {
             Listener<V> listener = null;
             while (true)
@@ -163,7 +163,7 @@ public class AsyncResults
         }
 
         @Override
-        public void listen(BiConsumer<? super V, Throwable> callback)
+        public void addCallback(BiConsumer<? super V, Throwable> callback)
         {
             callback.accept(value, failure);
         }

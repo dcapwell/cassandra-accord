@@ -9,24 +9,19 @@ import java.util.function.BiConsumer;
  */
 public interface AsyncResult<V>
 {
-    void listen(BiConsumer<? super V, Throwable> callback);
+    void addCallback(BiConsumer<? super V, Throwable> callback);
 
-    default void listen(BiConsumer<? super V, Throwable> callback, Executor executor)
+    default void addCallback(Runnable runnable)
     {
-        listen(AsyncCallbacks.inExecutor(callback, executor));
-    }
-
-    default void listen(Runnable runnable)
-    {
-        listen((unused, failure) -> {
+        addCallback((unused, failure) -> {
             if (failure == null) runnable.run();
             else throw new RuntimeException(failure);
         });
     }
 
-    default void listen(Runnable runnable, Executor executor)
+    default void addCallback(Runnable runnable, Executor executor)
     {
-        listen(AsyncCallbacks.inExecutor(runnable, executor));
+        addCallback(AsyncCallbacks.inExecutor(runnable, executor));
     }
 
     default AsyncChain<V> toChain()
@@ -36,7 +31,7 @@ public interface AsyncResult<V>
             @Override
             public void begin(BiConsumer<? super V, Throwable> callback)
             {
-                listen(callback);
+                AsyncResult.this.addCallback(callback);
             }
         };
     }
@@ -44,24 +39,19 @@ public interface AsyncResult<V>
     boolean isDone();
     boolean isSuccess();
 
-    default void addCallback(BiConsumer<? super V, Throwable> callback)
-    {
-        listen(callback);
-    }
-
     default void addCallback(BiConsumer<? super V, Throwable> callback, Executor executor)
     {
-        listen(callback, executor);
+        addCallback(AsyncCallbacks.inExecutor(callback, executor));
     }
 
     default void addListener(Runnable runnable)
     {
-        listen(runnable);
+        addCallback(runnable);
     }
 
     default void addListener(Runnable runnable, Executor executor)
     {
-        listen(runnable, executor);
+        addCallback(runnable, executor);
     }
 
     interface Settable<V> extends AsyncResult<V>
