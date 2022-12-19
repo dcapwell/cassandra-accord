@@ -182,7 +182,7 @@ public class AsyncResults
     }
 
     /**
-     * Creates a notifier for the given chain. This calls begin on the supplied chain
+     * Creates an AsyncResult for the given chain. This calls begin on the supplied chain
      */
     public static <V> AsyncResult<V> forChain(AsyncChain<V> chain)
     {
@@ -201,35 +201,35 @@ public class AsyncResults
 
     public static <V> AsyncResult<V> ofCallable(Executor executor, Callable<V> callable)
     {
-        Settable<V> notifier = new Settable<V>();
+        Settable<V> result = new Settable<V>();
         executor.execute(() -> {
             try
             {
-                notifier.trySuccess(callable.call());
+                result.trySuccess(callable.call());
             }
             catch (Exception e)
             {
-                notifier.tryFailure(e);
+                result.tryFailure(e);
             }
         });
-        return notifier;
+        return result;
     }
 
     public static AsyncResult<Void> ofRunnable(Executor executor, Runnable runnable)
     {
-        Settable<Void> notifier = new Settable<Void>();
+        Settable<Void> result = new Settable<Void>();
         executor.execute(() -> {
             try
             {
                 runnable.run();
-                notifier.trySuccess(null);
+                result.trySuccess(null);
             }
             catch (Exception e)
             {
-                notifier.tryFailure(e);
+                result.tryFailure(e);
             }
         });
-        return notifier;
+        return result;
     }
 
     public static <V> AsyncResult.Settable<V> settable()
@@ -251,20 +251,20 @@ public class AsyncResults
         return new AsyncChainCombiner.All<>(toChains(results));
     }
 
-    public static <V> AsyncChain<V> reduce(List<AsyncResult<V>> notifiers, BiFunction<V, V, V> reducer)
+    public static <V> AsyncChain<V> reduce(List<AsyncResult<V>> results, BiFunction<V, V, V> reducer)
     {
-        Preconditions.checkArgument(!notifiers.isEmpty());
-        if (notifiers.size() == 1)
-            return notifiers.get(0).toChain();
-        return new AsyncChainCombiner.Reduce<>(toChains(notifiers), reducer);
+        Preconditions.checkArgument(!results.isEmpty());
+        if (results.size() == 1)
+            return results.get(0).toChain();
+        return new AsyncChainCombiner.Reduce<>(toChains(results), reducer);
     }
 
-    public static <V> V getBlocking(AsyncResult<V> notifier) throws InterruptedException, ExecutionException
+    public static <V> V getBlocking(AsyncResult<V> asyncResult) throws InterruptedException, ExecutionException
     {
         AtomicReference<Result<V>> callbackResult = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
-        notifier.addCallback((result, failure) -> {
-            callbackResult.set(new Result(result, failure));
+        asyncResult.addCallback((result, failure) -> {
+            callbackResult.set(new Result<>(result, failure));
             latch.countDown();
         });
 
@@ -274,11 +274,11 @@ public class AsyncResults
         else throw new ExecutionException(result.failure);
     }
 
-    public static <V> V getBlocking(AsyncResult<V> notifier, long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException
+    public static <V> V getBlocking(AsyncResult<V> asyncResult, long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException
     {
         AtomicReference<Result<V>> callbackResult = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
-        notifier.addCallback((result, failure) -> {
+        asyncResult.addCallback((result, failure) -> {
             callbackResult.set(new Result(result, failure));
             latch.countDown();
         });
@@ -290,11 +290,11 @@ public class AsyncResults
         else throw new ExecutionException(result.failure);
     }
 
-    public static <V> V getUninterruptibly(AsyncResult<V> notifier)
+    public static <V> V getUninterruptibly(AsyncResult<V> asyncResult)
     {
         try
         {
-            return getBlocking(notifier);
+            return getBlocking(asyncResult);
         }
         catch (ExecutionException | InterruptedException e)
         {
@@ -302,8 +302,8 @@ public class AsyncResults
         }
     }
 
-    public static <V> void awaitUninterruptibly(AsyncResult<V> notifier)
+    public static <V> void awaitUninterruptibly(AsyncResult<V> asyncResult)
     {
-        getUninterruptibly(notifier);
+        getUninterruptibly(asyncResult);
     }
 }

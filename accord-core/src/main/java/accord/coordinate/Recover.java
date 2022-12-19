@@ -94,21 +94,21 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
     AsyncResult<Object> awaitCommits(Node node, Deps waitOn)
     {
         AtomicInteger remaining = new AtomicInteger(waitOn.txnIdCount());
-        AsyncResult.Settable<Object> notifier = AsyncResults.settable();
+        AsyncResult.Settable<Object> result = AsyncResults.settable();
         for (int i = 0 ; i < waitOn.txnIdCount() ; ++i)
         {
             TxnId txnId = waitOn.txnId(i);
             // TODO (now): this should perhaps use RouteFragment as we might need to handle txns that are range-only
             new AwaitCommit(node, txnId, waitOn.someRoutables(txnId)).addCallback((success, failure) -> {
-                if (notifier.isDone())
+                if (result.isDone())
                     return;
                 if (success != null && remaining.decrementAndGet() == 0)
-                    notifier.setSuccess(success);
+                    result.setSuccess(success);
                 else
-                    notifier.tryFailure(failure);
+                    result.tryFailure(failure);
             });
         }
-        return notifier;
+        return result;
     }
 
     private final Node node;
