@@ -4,9 +4,7 @@ import com.google.common.base.Preconditions;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executor;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiConsumer;
@@ -261,7 +259,7 @@ public class AsyncResults
         return new AsyncChainCombiner.Reduce<>(toChains(notifiers), reducer);
     }
 
-    public static <V> V getBlocking(AsyncResult<V> notifier) throws InterruptedException
+    public static <V> V getBlocking(AsyncResult<V> notifier) throws InterruptedException, ExecutionException
     {
         AtomicReference<Result<V>> callbackResult = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
@@ -273,7 +271,23 @@ public class AsyncResults
         latch.await();
         Result<V> result = callbackResult.get();
         if (result.failure == null) return result.value;
-        else throw new RuntimeException(result.failure);
+        else throw new ExecutionException(result.failure);
+    }
+
+    public static <V> V getBlocking(AsyncResult<V> notifier, long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException
+    {
+        AtomicReference<Result<V>> callbackResult = new AtomicReference<>();
+        CountDownLatch latch = new CountDownLatch(1);
+        notifier.addCallback((result, failure) -> {
+            callbackResult.set(new Result(result, failure));
+            latch.countDown();
+        });
+
+        if (!latch.await(timeout, unit))
+            throw new TimeoutException();
+        Result<V> result = callbackResult.get();
+        if (result.failure == null) return result.value;
+        else throw new ExecutionException(result.failure);
     }
 
     public static <V> V getUninterruptibly(AsyncResult<V> notifier)
@@ -282,7 +296,7 @@ public class AsyncResults
         {
             return getBlocking(notifier);
         }
-        catch (InterruptedException e)
+        catch (ExecutionException | InterruptedException e)
         {
             throw new RuntimeException(e);
         }

@@ -19,10 +19,7 @@
 package accord.utils.async;
 
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -359,7 +356,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         return new Reduce<>(Lists.newArrayList(a, b), reducer);
     }
 
-    public static <V> V getBlocking(AsyncChain<V> chain) throws InterruptedException
+    public static <V> V getBlocking(AsyncChain<V> chain) throws InterruptedException, ExecutionException
     {
         class Result
         {
@@ -384,7 +381,36 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         latch.await();
         Result result = callbackResult.get();
         if (result.failure == null) return result.result;
-        else throw new RuntimeException(result.failure);
+        else throw new ExecutionException(result.failure);
+    }
+
+    public static <V> V getBlocking(AsyncChain<V> chain, long timeout, TimeUnit unit) throws InterruptedException, TimeoutException, ExecutionException
+    {
+        class Result
+        {
+            final V result;
+            final Throwable failure;
+
+            public Result(V result, Throwable failure)
+            {
+                this.result = result;
+                this.failure = failure;
+            }
+        }
+
+        AtomicReference<Result> callbackResult = new AtomicReference<>();
+        CountDownLatch latch = new CountDownLatch(1);
+
+        chain.begin((result, failure) -> {
+            callbackResult.set(new Result(result, failure));
+            latch.countDown();
+        });
+
+        if (!latch.await(timeout, unit))
+            throw new TimeoutException();
+        Result result = callbackResult.get();
+        if (result.failure == null) return result.result;
+        else throw new ExecutionException(result.failure);
     }
 
     public static <V> V getUninterruptibly(AsyncChain<V> chain)
@@ -393,7 +419,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         {
             return getBlocking(chain);
         }
-        catch (InterruptedException e)
+        catch (ExecutionException | InterruptedException e)
         {
             throw new RuntimeException(e);
         }
