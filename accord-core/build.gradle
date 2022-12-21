@@ -44,6 +44,10 @@ dependencies {
     jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.35'
 }
 
+jmh {
+    profilers = ['gc']
+}
+
 task burn(type: JavaExec) {
     classpath sourceSets.main.runtimeClasspath, sourceSets.test.output
     main = 'accord.burn.BurnTest'
