@@ -37,6 +37,7 @@ import static accord.impl.IntKey.keys;
 import static accord.impl.IntKey.range;
 import static accord.local.PreLoadContext.empty;
 import static accord.utils.async.AsyncChains.awaitUninterruptibly;
+import static accord.utils.async.AsyncChains.awaitUninterruptiblyUnchecked;
 import static accord.utils.async.AsyncResults.awaitUninterruptibly;
 
 public class TopologyChangeTest
@@ -84,7 +85,7 @@ public class TopologyChangeTest
 
             // new nodes should have the previous epochs operation as a dependency
             cluster.nodes(4, 5, 6).forEach(node -> {
-                awaitUninterruptibly(node.commandStores().forEach(empty(), keys, 2, 2, commands -> {
+                awaitUninterruptiblyUnchecked(node.commandStores().forEach(empty(), keys, 2, 2, commands -> {
                     Command command = commands.command(txnId2);
                     Assertions.assertTrue(command.partialDeps().contains(txnId1));
                 }));
@@ -92,7 +93,7 @@ public class TopologyChangeTest
 
             // ...and participated in consensus
             cluster.nodes(1, 2, 3).forEach(node -> {
-                awaitUninterruptibly(node.commandStores().forEach(empty(), keys, 1, 1, commands -> {
+                awaitUninterruptiblyUnchecked(node.commandStores().forEach(empty(), keys, 1, 1, commands -> {
                     Command command = commands.command(txnId2);
                     Assertions.assertTrue(command.hasBeen(Status.PreAccepted));
                 }));

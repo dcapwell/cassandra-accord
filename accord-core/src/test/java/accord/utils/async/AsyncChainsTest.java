@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -158,5 +159,65 @@ public class AsyncChainsTest
         ResultCallback<Integer> callback = new ResultCallback<>();
         reduction2.begin(callback);
         Assertions.assertEquals(9, callback.value());
+    }
+
+    @Test
+    void failingExecutor() {
+        AsyncChains.ofCallable(ignore -> {
+                    throw new RejectedExecutionException();
+                }, () -> 42)
+                .map(i -> i + 1)
+                .begin((success, failure) -> {
+                    if (failure == null)
+                        throw new IllegalStateException("Should see failure");
+                });
+
+        AsyncChains.ofCallable(ignore -> {
+                    throw new RejectedExecutionException();
+                }, () -> 42)
+                .map(i -> i + 1)
+                .beginAsResult()
+                .addCallback((success, failure) -> {
+                    if (failure == null)
+                        throw new IllegalStateException("Expected to fail");
+                });
+    }
+
+    @Test
+    void failingChain() {
+        AsyncChains.ofCallable(fn -> fn.run(), () -> 42
+                ).map(i -> i + 1)
+                .map(ignore -> {
+                    throw new RuntimeException("Unchecked");
+                })
+                .begin((success, failure) -> {
+                    if (failure == null)
+                        throw new IllegalStateException("Should see failure");
+                });
+
+        AsyncChains.ofCallable(fn -> fn.run(), () -> 42).
+                map(i -> i + 1)
+                .map(ignore -> {
+                    throw new RuntimeException("Unchecked");
+                }).begin(() -> {
+                });
+    }
+
+    @Test
+    void failingLeaf() {
+        AsyncChains.<Integer>ofCallable(fn -> fn.run(), () -> {
+                    throw new RuntimeException("Unchecked");
+                }).map(i -> i + 1).map(i -> i + 1)
+                .begin((success, failure) -> {
+                    if (failure == null)
+                        throw new IllegalStateException("Should see failure");
+                });
+
+        AsyncChains.<Integer>ofCallable(fn -> fn.run(), () -> {
+                    throw new RuntimeException("Unchecked");
+                }).map(i -> i + 1).map(i -> i + 1)
+                .begin(() -> {
+                });
+
     }
 }

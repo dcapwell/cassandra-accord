@@ -358,75 +358,63 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
 
     public static <V> V getBlocking(AsyncChain<V> chain) throws InterruptedException, ExecutionException
     {
-        class Result
-        {
-            final V result;
-            final Throwable failure;
-
-            public Result(V result, Throwable failure)
-            {
-                this.result = result;
-                this.failure = failure;
-            }
-        }
-
-        AtomicReference<Result> callbackResult = new AtomicReference<>();
-        CountDownLatch latch = new CountDownLatch(1);
-
+        CompletableFuture<V> future = new CompletableFuture<>();
         chain.begin((result, failure) -> {
-            callbackResult.set(new Result(result, failure));
-            latch.countDown();
+            if (failure != null) future.completeExceptionally(failure);
+            else future.complete(result);
         });
-
-        latch.await();
-        Result result = callbackResult.get();
-        if (result.failure == null) return result.result;
-        else throw new ExecutionException(result.failure);
+        return future.get();
     }
 
     public static <V> V getBlocking(AsyncChain<V> chain, long timeout, TimeUnit unit) throws InterruptedException, TimeoutException, ExecutionException
     {
-        class Result
-        {
-            final V result;
-            final Throwable failure;
-
-            public Result(V result, Throwable failure)
-            {
-                this.result = result;
-                this.failure = failure;
-            }
-        }
-
-        AtomicReference<Result> callbackResult = new AtomicReference<>();
-        CountDownLatch latch = new CountDownLatch(1);
-
+        CompletableFuture<V> future = new CompletableFuture<>();
         chain.begin((result, failure) -> {
-            callbackResult.set(new Result(result, failure));
-            latch.countDown();
+            if (failure != null) future.completeExceptionally(failure);
+            else future.complete(result);
         });
-
-        if (!latch.await(timeout, unit))
-            throw new TimeoutException();
-        Result result = callbackResult.get();
-        if (result.failure == null) return result.result;
-        else throw new ExecutionException(result.failure);
+        return future.get(timeout, unit);
     }
 
-    public static <V> V getUninterruptibly(AsyncChain<V> chain)
+    public static <V> V getUninterruptibly(AsyncChain<V> chain) throws ExecutionException
+    {
+        boolean interrupted = false;
+        try
+        {
+            while (true)
+            {
+                try
+                {
+                    return getBlocking(chain);
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        }
+        finally
+        {
+            if (interrupted)
+                Thread.currentThread().interrupt();
+        }
+    }
+
+    public static <V> V getUninterruptiblyUnchecked(AsyncChain<V> chain)
     {
         try
         {
-            return getBlocking(chain);
-        }
-        catch (ExecutionException | InterruptedException e)
-        {
-            throw new RuntimeException(e);
+            return getUninterruptibly(chain);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e.getCause());
         }
     }
 
-    public static <V> void awaitUninterruptibly(AsyncChain<V> chain)
+    public static <V> void awaitUninterruptibly(AsyncChain<V> chain) throws ExecutionException
     {
         getUninterruptibly(chain);
+    }
+
+    public static <V> void awaitUninterruptiblyUnchecked(AsyncChain<V> chain)
+    {
+        getUninterruptiblyUnchecked(chain);
     }
 }

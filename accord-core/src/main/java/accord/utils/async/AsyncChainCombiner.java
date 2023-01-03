@@ -63,9 +63,11 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
         if (current == 0)
             return;
 
-        if (throwable != null && REMAINING.compareAndSet(this, current, 0))
+        if (throwable != null)
         {
-            callback.accept(null, throwable);
+            if (markFailed())
+                callback.accept(null, throwable);
+
             return;
         }
 
@@ -81,6 +83,19 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
                 callback.accept(null, t);
             }
         }
+    }
+
+    private boolean markFailed()
+    {
+        int current;
+        do
+        {
+            current = remaining;
+            if (current == 0)
+                return false;
+        }
+        while (!REMAINING.compareAndSet(this, current, 0));
+        return true;
     }
 
     private BiConsumer<I, Throwable> callbackFor(int idx)

@@ -45,10 +45,7 @@ public interface AsyncChain<V>
 
     default void begin(Runnable runnable)
     {
-        begin((unused, failure) -> {
-            if (failure == null) runnable.run();
-            else throw new RuntimeException(failure);
-        });
+        begin(AsyncCallbacks.wrap(runnable));
     }
 
     default AsyncResult<V> beginAsResult()
