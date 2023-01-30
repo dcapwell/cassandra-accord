@@ -248,7 +248,7 @@ public class SafeCommandStores
         }
 
         @Override
-        public CommandsForKey commandsForKey(Key key)
+        public CommandsForKey commandsForKey(RoutableKey key)
         {
             CommandsForKey cfk = commandsForKey.get(key);
             if (cfk == null)
@@ -261,7 +261,7 @@ public class SafeCommandStores
         protected abstract CommandsForKey getIfLoaded(RoutableKey key);
 
         @Override
-        public CommandsForKey maybeCommandsForKey(Key key)
+        public CommandsForKey maybeCommandsForKey(RoutableKey key)
         {
             CommandsForKey cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded, CommandsForKey.EMPTY);
             if (cfk == CommandsForKey.EMPTY)

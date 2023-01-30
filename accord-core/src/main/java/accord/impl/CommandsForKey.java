@@ -5,16 +5,20 @@ import accord.local.*;
 import accord.primitives.*;
 import com.google.common.collect.ImmutableSortedMap;
 
-import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiFunction;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
-import static accord.local.Status.KnownDeps.DepsUnknown;
+import static accord.local.SafeCommandStore.TestDep.ANY_DEPS;
+import static accord.local.SafeCommandStore.TestDep.WITH;
+import static accord.local.SafeCommandStore.TestKind.Ws;
+import static accord.local.Status.PreAccepted;
+import static accord.local.Status.PreCommitted;
 import static accord.utils.Utils.*;
 
 public class CommandsForKey extends ImmutableState
@@ -28,9 +32,8 @@ public class CommandsForKey extends ImmutableState
         @Override public Timestamp lastExecutedTimestamp() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
         @Override public long lastExecutedMicros() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
         @Override public Timestamp lastWriteTimestamp() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public CommandTimeseries<? extends TxnIdWithExecuteAt, ?> uncommitted() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public CommandTimeseries<TxnId, ?> committedById() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public CommandTimeseries<TxnId, ?> committedByExecuteAt() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
+        @Override public CommandTimeseries<?> byId() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
+        @Override public CommandTimeseries<?> byExecuteAt() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
 
         @Override
         public String toString()
@@ -54,11 +57,10 @@ public class CommandsForKey extends ImmutableState
         public static  <D> CommandsForKey create(Key key, Timestamp max,
                                                  Timestamp lastExecutedTimestamp, long lastExecutedMicros, Timestamp lastWriteTimestamp,
                                                  CommandLoader<D> loader,
-                                                 ImmutableSortedMap<Timestamp, D> uncommitted,
-                                                 ImmutableSortedMap<Timestamp, D> committedById,
-                                                 ImmutableSortedMap<Timestamp, D> committedByExecuteAt)
+                                                 ImmutableSortedMap<Timestamp, D> byId,
+                                                 ImmutableSortedMap<Timestamp, D> byExecuteAt)
         {
-            return new CommandsForKey(key, max, lastExecutedTimestamp, lastExecutedMicros, lastWriteTimestamp, loader, uncommitted, committedById, committedByExecuteAt);
+            return new CommandsForKey(key, max, lastExecutedTimestamp, lastExecutedMicros, lastWriteTimestamp, loader, byId, byExecuteAt);
         }
     }
 
@@ -83,60 +85,32 @@ public class CommandsForKey extends ImmutableState
         }
     }
 
-    public static class CommandTimeseries<T, D>
+    public static class CommandTimeseries<D>
     {
-        public enum Kind { UNCOMMITTED, COMMITTED_BY_ID, COMMITTED_BY_EXECUTE_AT }
-        /**
-         * Test whether or not the dependencies of a command contain a given transaction id.
-         * NOTE that this applies only to commands that have at least proposed dependencies;
-         * if no dependencies are known the command will not be tested.
-         */
-        public enum TestDep { WITH, WITHOUT, ANY_DEPS }
-        public enum TestStatus
-        {
-            IS, HAS_BEEN, ANY_STATUS;
-            public static boolean test(Status test, TestStatus predicate, Status param)
-            {
-                return predicate == ANY_STATUS || (predicate == IS ? test == param : test.hasBeen(param));
-            }
-        }
-        public enum TestKind { Ws, RorWs}
+        enum TestTimestamp
+        {BEFORE, AFTER}
 
-        private static <T, D> Stream<T> before(BiFunction<CommandLoader<D>, D, T> map, CommandLoader<D> loader, NavigableMap<Timestamp, D> commands, @Nonnull Timestamp timestamp, @Nonnull TestKind testKind, @Nonnull TestDep testDep, @Nullable TxnId depId, @Nonnull TestStatus testStatus, @Nullable Status status)
-        {
-            return commands.headMap(timestamp, false).values().stream()
-                    .filter(data -> testKind == RorWs || loader.txnKind(data) == WRITE)
-                    .filter(data -> testDep == ANY_DEPS || (loader.known(data).deps != DepsUnknown && (loader.partialDeps(data).contains(depId) ^ (testDep == WITHOUT))))
-                    .filter(data -> TestStatus.test(loader.status(data), testStatus, status))
-                    .map(data -> map.apply(loader, data));
-        }
-
-        private static <T, D> Stream<T> after(BiFunction<CommandLoader<D>, D, T> map, CommandLoader<D> loader, NavigableMap<Timestamp, D> commands, @Nonnull Timestamp timestamp, @Nonnull TestKind testKind, @Nonnull TestDep testDep, @Nullable TxnId depId, @Nonnull TestStatus testStatus, @Nullable Status status)
-        {
-            return commands.tailMap(timestamp, false).values().stream()
-                    .filter(data -> testKind == RorWs || loader.txnKind(data) == WRITE)
-                    // If we don't have any dependencies, we treat a dependency filter as a mismatch
-                    .filter(data -> testDep == ANY_DEPS || (loader.known(data).deps != DepsUnknown && (loader.partialDeps(data).contains(depId) ^ (testDep == WITHOUT))))
-                    .filter(data -> TestStatus.test(loader.status(data), testStatus, status))
-                    .map(data -> map.apply(loader, data));
-        }
-
-        protected final BiFunction<CommandLoader<D>, D, T> map;
+        private final Key key;
         protected final CommandLoader<D> loader;
         public final ImmutableSortedMap<Timestamp, D> commands;
 
-        public CommandTimeseries(Update<T, D> builder)
+        public CommandTimeseries(Update<D> builder)
         {
-            this.map = builder.map;
+            this.key = builder.key;
             this.loader = builder.loader;
             this.commands = ensureSortedImmutable(builder.commands);
         }
 
-        CommandTimeseries(BiFunction<CommandLoader<D>, D, T> map, CommandLoader<D> loader, ImmutableSortedMap<Timestamp, D> commands)
+        CommandTimeseries(Key key, CommandLoader<D> loader, ImmutableSortedMap<Timestamp, D> commands)
         {
-            this.map = map;
+            this.key = key;
             this.loader = loader;
             this.commands = commands;
+        }
+
+        public CommandTimeseries(Key key, CommandLoader<D> loader)
+        {
+            this(key, loader, ImmutableSortedMap.of());
         }
 
         @Override
@@ -144,22 +118,18 @@ public class CommandsForKey extends ImmutableState
         {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            CommandTimeseries<?, ?> that = (CommandTimeseries<?, ?>) o;
-            return loader.equals(that.loader) && commands.equals(that.commands);
+            CommandTimeseries<?> that = (CommandTimeseries<?>) o;
+            return key.equals(that.key) && loader.equals(that.loader) && commands.equals(that.commands);
         }
 
         @Override
         public int hashCode()
         {
             int hash = 1;
+            hash = 31 * hash + Objects.hashCode(key);
             hash = 31 * hash + Objects.hashCode(loader);
             hash = 31 * hash + Objects.hashCode(commands);
             return hash;
-        }
-
-        public CommandTimeseries(BiFunction<CommandLoader<D>, D, T> map, CommandLoader<D> loader)
-        {
-            this(map, loader, ImmutableSortedMap.of());
         }
 
         public D get(Timestamp key)
@@ -173,59 +143,77 @@ public class CommandsForKey extends ImmutableState
         }
 
         /**
-         * All commands before (exclusive of) the given timestamp
-         *
+         * All commands before/after (exclusive of) the given timestamp
+         * <p>
          * Note that {@code testDep} applies only to commands that know at least proposed deps; if specified any
          * commands that do not know any deps will be ignored.
-         *
-         * TODO (soon): TestDep should be asynchronous; data should not be kept memory-resident as only used for recovery
-         *
-         * TODO: we don't really need TestStatus anymore, but for clarity it might be nice to retain it to declare intent.
-         *       This is because we only use it in places where TestDep is specified, and the statuses we want to rule-out
-         *       do not have any deps.
+         * <p>
+         * TODO (expected, efficiency): TestDep should be asynchronous; data should not be kept memory-resident as only used for recovery
          */
-        public Stream<T> before(@Nonnull Timestamp timestamp, @Nonnull TestKind testKind, @Nonnull TestDep testDep, @Nullable TxnId depId, @Nonnull TestStatus testStatus, @Nullable Status status)
+        public <T> T mapReduce(SafeCommandStore.TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp,
+                               SafeCommandStore.TestDep testDep, @Nullable TxnId depId,
+                               @Nullable Status minStatus, @Nullable Status maxStatus,
+                               SafeCommandStore.CommandFunction<T, T> map, T initialValue, T terminalValue)
         {
-            return before(map, loader, commands, timestamp, testKind, testDep, depId, testStatus, status);
+
+            for (D data : (testTimestamp == TestTimestamp.BEFORE ? commands.headMap(timestamp, false) : commands.tailMap(timestamp, false)).values())
+            {
+                TxnId txnId = loader.txnId(data);
+                Timestamp executeAt = loader.executeAt(data);
+                SaveStatus status = loader.saveStatus(data);
+                PartialDeps deps = loader.partialDeps(data);
+                if (testKind == Ws && txnId.isRead()) continue;
+                // If we don't have any dependencies, we treat a dependency filter as a mismatch
+                if (testDep != ANY_DEPS && (!status.known.deps.hasProposedOrDecidedDeps() || (deps.contains(depId) != (testDep == WITH))))
+                    continue;
+                if (minStatus != null && minStatus.compareTo(status.status) > 0)
+                    continue;
+                if (maxStatus != null && maxStatus.compareTo(status.status) < 0)
+                    continue;
+                initialValue = map.apply(key, txnId, executeAt, initialValue);
+                if (initialValue.equals(terminalValue))
+                    break;
+            }
+            return initialValue;
         }
 
-        /**
-         * All commands after (exclusive of) the given timestamp.
-         *
-         * Note that {@code testDep} applies only to commands that know at least proposed deps; if specified any
-         * commands that do not know any deps will be ignored.
-         */
-        public Stream<T> after(@Nonnull Timestamp timestamp, @Nonnull TestKind testKind, @Nonnull TestDep testDep, @Nullable TxnId depId, @Nonnull TestStatus testStatus, @Nullable Status status)
+        Stream<TxnId> between(Timestamp min, Timestamp max, Predicate<Status> statusPredicate)
         {
-            return after(map, loader, commands, timestamp, testKind, testDep, depId, testStatus, status);
+            return commands.subMap(min, true, max, true).values().stream()
+                    .filter(d -> statusPredicate.test(loader.status(d))).map(loader::txnId);
         }
 
-        public Stream<T> between(Timestamp min, Timestamp max)
+        public Stream<D> all()
         {
-            return commands.subMap(min, true, max, true).values().stream().map(data -> map.apply(loader, data));
+            return commands.values().stream();
         }
 
-        public Stream<T> all()
+        Update<D> beginUpdate()
         {
-            return commands.values().stream().map(data -> map.apply(loader, data));
+            return new Update<>(this);
         }
 
-        public static class Update<T, D>
+        public CommandLoader<D> loader()
         {
-            protected BiFunction<CommandLoader<D>, D, T> map;
+            return loader;
+        }
+
+        public static class Update<D>
+        {
+            private final Key key;
             protected CommandLoader<D> loader;
             protected NavigableMap<Timestamp, D> commands;
 
-            public Update(BiFunction<CommandLoader<D>, D, T> map, CommandLoader<D> loader)
+            public Update(Key key, CommandLoader<D> loader)
             {
-                this.map = map;
+                this.key = key;
                 this.loader = loader;
                 this.commands = new TreeMap<>();
             }
 
-            public Update(CommandTimeseries<T, D> timeseries)
+            public Update(CommandTimeseries<D> timeseries)
             {
-                this.map = timeseries.map;
+                this.key = timeseries.key;
                 this.loader = timeseries.loader;
                 this.commands = timeseries.commands;
             }
@@ -242,7 +230,7 @@ public class CommandsForKey extends ImmutableState
                 commands.remove(timestamp);
             }
 
-            CommandTimeseries<T, D> build()
+            CommandTimeseries<D> build()
             {
                 return new CommandTimeseries<>(this);
             }
@@ -312,60 +300,18 @@ public class CommandsForKey extends ImmutableState
         throw new UnsupportedOperationException("TODO");
     }
 
-    public interface TxnIdWithExecuteAt
-    {
-        TxnId txnId();
-        Timestamp executeAt();
-
-        class Immutable implements TxnIdWithExecuteAt
-        {
-            private final TxnId txnId;
-            private final Timestamp executeAt;
-
-            public Immutable(TxnId txnId, Timestamp executeAt)
-            {
-                this.txnId = txnId;
-                this.executeAt = executeAt;
-            }
-
-            @Override
-            public TxnId txnId()
-            {
-                return txnId;
-            }
-
-            @Override
-            public Timestamp executeAt()
-            {
-                return executeAt;
-            }
-        }
-
-        static TxnIdWithExecuteAt from(Command command)
-        {
-            return new TxnIdWithExecuteAt.Immutable(command.txnId(), command.executeAt());
-        }
-
-        static <D> TxnIdWithExecuteAt from(CommandLoader<D> loader, D data)
-        {
-            return new TxnIdWithExecuteAt.Immutable(loader.txnId(data), loader.executeAt(data));
-        }
-    }
-
     // TODO (now): add validation that anything inserted into *committedBy* has everything prior in its dependencies
     private final Key key;
     private final Timestamp max;
     private final Timestamp lastExecutedTimestamp;
     private final long lastExecutedMicros;
     private final Timestamp lastWriteTimestamp;
-    private final CommandTimeseries<TxnIdWithExecuteAt, ?> uncommitted;
-    private final CommandTimeseries<TxnId, ?> committedById;
-    private final CommandTimeseries<TxnId, ?> committedByExecuteAt;
+    private final CommandTimeseries<?> byId;
+    private final CommandTimeseries<?> byExecuteAt;
 
     private  <D> CommandsForKey(Key key, Timestamp max,
                               Timestamp lastExecutedTimestamp, long lastExecutedMicros, Timestamp lastWriteTimestamp,
                               CommandLoader<D> loader,
-                              ImmutableSortedMap<Timestamp, D> uncommitted,
                               ImmutableSortedMap<Timestamp, D> committedById,
                               ImmutableSortedMap<Timestamp, D> committedByExecuteAt)
     {
@@ -374,9 +320,8 @@ public class CommandsForKey extends ImmutableState
         this.lastExecutedTimestamp = lastExecutedTimestamp;
         this.lastExecutedMicros = lastExecutedMicros;
         this.lastWriteTimestamp = lastWriteTimestamp;
-        this.uncommitted = new CommandTimeseries<>(TxnIdWithExecuteAt::from, loader, uncommitted);
-        this.committedById = new CommandTimeseries<>(CommandLoader::txnId, loader, committedById);
-        this.committedByExecuteAt = new CommandTimeseries<>(CommandLoader::txnId, loader, committedByExecuteAt);
+        this.byId = new CommandTimeseries<>(key, loader, committedById);
+        this.byExecuteAt = new CommandTimeseries<>(key, loader, committedByExecuteAt);
     }
 
     public <D> CommandsForKey(Key key, CommandLoader<D> loader)
@@ -386,9 +331,8 @@ public class CommandsForKey extends ImmutableState
         this.lastExecutedTimestamp = Timestamp.NONE;
         this.lastExecutedMicros = 0;
         this.lastWriteTimestamp = Timestamp.NONE;
-        this.uncommitted = new CommandTimeseries<>(TxnIdWithExecuteAt::from, loader);
-        this.committedById = new CommandTimeseries<>(CommandLoader::txnId, loader);
-        this.committedByExecuteAt = new CommandTimeseries<>(CommandLoader::txnId, loader);
+        this.byId = new CommandTimeseries<>(key, loader);
+        this.byExecuteAt = new CommandTimeseries<>(key, loader);
     }
 
     public CommandsForKey(Update builder)
@@ -398,9 +342,8 @@ public class CommandsForKey extends ImmutableState
         this.lastExecutedTimestamp = builder.lastExecutedTimestamp;
         this.lastExecutedMicros = builder.lastExecutedMicros;
         this.lastWriteTimestamp = builder.lastWriteTimestamp;
-        this.uncommitted = builder.uncommitted.build();
-        this.committedById = builder.committedById.build();
-        this.committedByExecuteAt = builder.committedByExecuteAt.build();
+        this.byId = builder.byId.build();
+        this.byExecuteAt = builder.byExecuteAt.build();
     }
 
     @Override
@@ -420,9 +363,8 @@ public class CommandsForKey extends ImmutableState
                 && Objects.equals(max, that.max)
                 && Objects.equals(lastExecutedTimestamp, that.lastExecutedTimestamp)
                 && Objects.equals(lastWriteTimestamp, that.lastWriteTimestamp)
-                && uncommitted.equals(that.uncommitted)
-                && committedById.equals(that.committedById)
-                && committedByExecuteAt.equals(that.committedByExecuteAt);
+                && byId.equals(that.byId)
+                && byExecuteAt.equals(that.byExecuteAt);
     }
 
     @Override
@@ -434,9 +376,8 @@ public class CommandsForKey extends ImmutableState
         hash = 31 * hash + Objects.hashCode(lastExecutedTimestamp);
         hash = 31 * hash + Long.hashCode(lastExecutedMicros);
         hash = 31 * hash + Objects.hashCode(lastWriteTimestamp);
-        hash = 31 * hash + uncommitted.hashCode();
-        hash = 31 * hash + committedById.hashCode();
-        hash = 31 * hash + committedByExecuteAt.hashCode();
+        hash = 31 * hash + byId.hashCode();
+        hash = 31 * hash + byExecuteAt.hashCode();
         return hash;
     }
 
@@ -467,27 +408,25 @@ public class CommandsForKey extends ImmutableState
         return lastWriteTimestamp;
     }
 
-    public CommandTimeseries<? extends TxnIdWithExecuteAt, ?> uncommitted()
+    public CommandTimeseries<?> byId()
     {
-        checkCanReadFrom();
-        return uncommitted;
+        return byId;
     }
 
-    public CommandTimeseries<TxnId, ?> committedById()
+    public CommandTimeseries<?> byExecuteAt()
     {
-        checkCanReadFrom();
-        return committedById;
+        return byExecuteAt;
     }
 
-    public CommandTimeseries<TxnId, ?> committedByExecuteAt()
+    public void forWitnessed(Timestamp minTs, Timestamp maxTs, Consumer<TxnId> consumer)
     {
-        checkCanReadFrom();
-        return committedByExecuteAt;
+        byId.between(minTs, maxTs, status -> status.hasBeen(PreAccepted)).forEach(consumer);
+        byExecuteAt.between(minTs, maxTs, status -> status.hasBeen(PreCommitted)).forEach(consumer);
     }
 
     private static long getTimestampMicros(Timestamp timestamp)
     {
-        return timestamp.real + timestamp.logical;
+        return timestamp.msb + timestamp.lsb;
     }
 
 
@@ -531,19 +470,8 @@ public class CommandsForKey extends ImmutableState
         private Timestamp lastExecutedTimestamp;
         private long lastExecutedMicros;
         private Timestamp lastWriteTimestamp;
-        private final CommandTimeseries.Update<TxnIdWithExecuteAt, ?> uncommitted;
-        private final CommandTimeseries.Update<TxnId, ?> committedById;
-        private final CommandTimeseries.Update<TxnId, ?> committedByExecuteAt;
-
-        protected  <T, D> CommandTimeseries.Update<T, D> seriesBuilder(BiFunction<CommandLoader<D>, D, T> map, CommandLoader<D> loader, CommandTimeseries.Kind kind)
-        {
-            return new CommandTimeseries.Update<>(map, loader);
-        }
-
-        protected  <T, D> CommandTimeseries.Update<T, D> seriesBuilder(CommandTimeseries<T, D> series, CommandTimeseries.Kind kind)
-        {
-            return new CommandTimeseries.Update<>(series);
-        }
+        private final CommandTimeseries.Update<?> byId;
+        private final CommandTimeseries.Update<?> byExecuteAt;
 
         public Update(SafeCommandStore safeStore, CommandsForKey original)
         {
@@ -555,9 +483,8 @@ public class CommandsForKey extends ImmutableState
             this.lastExecutedTimestamp = original.lastExecutedTimestamp;
             this.lastExecutedMicros = original.lastExecutedMicros;
             this.lastWriteTimestamp = original.lastWriteTimestamp;
-            this.uncommitted = seriesBuilder(original.uncommitted, CommandTimeseries.Kind.UNCOMMITTED);
-            this.committedById = seriesBuilder(original.committedById, CommandTimeseries.Kind.COMMITTED_BY_ID);
-            this.committedByExecuteAt = seriesBuilder(original.committedByExecuteAt, CommandTimeseries.Kind.COMMITTED_BY_EXECUTE_AT);
+            this.byId = original.byId.beginUpdate();
+            this.byExecuteAt = original.byId.beginUpdate();
         }
 
         private void checkNotCompleted()
@@ -577,23 +504,16 @@ public class CommandsForKey extends ImmutableState
             max = Timestamp.max(max, timestamp);
         }
 
-        void addUncommitted(Command command)
+        public CommandTimeseries.Update<?> byId()
         {
             checkNotCompleted();
-            uncommitted.add(command.txnId(), command);
+            return byId;
         }
 
-        void removeUncommitted(Command command)
+        public CommandTimeseries.Update<?> byExecuteAt()
         {
             checkNotCompleted();
-            uncommitted.remove(command.txnId());
-        }
-
-        void addCommitted(Command command)
-        {
-            checkNotCompleted();
-            committedById.add(command.txnId(), command);
-            committedByExecuteAt.add(command.executeAt(), command);
+            return byExecuteAt;
         }
 
         void updateLastExecutionTimestamps(Timestamp executeAt, boolean isForWriteTxn)

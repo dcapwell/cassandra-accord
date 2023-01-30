@@ -2,7 +2,7 @@ package accord.utils;
 
 import accord.api.Key;
 import accord.local.Command;
-import accord.local.CommandsForKey;
+import accord.impl.CommandsForKey;
 import accord.local.PreExecuteContext;
 import accord.primitives.Keys;
 import accord.primitives.RoutableKey;

@@ -18,21 +18,12 @@ public class CommandsForKeys
 
     public static boolean register(SafeCommandStore safeStore, CommandsForKey cfk, Command command)
     {
-        boolean listenToCommand = false;
         CommandsForKey.Update update = safeStore.beginUpdate(cfk);
         update.updateMax(command.executeAt());
-
-        if (command.hasBeen(Status.Committed))
-        {
-            update.addCommitted(command);
-        }
-        else if (command.status() != Status.Invalidated)
-        {
-            update.addUncommitted(command);
-            listenToCommand = true;
-        }
+        update.byId().add(command.txnId(), command);
+        update.byExecuteAt().add(command.txnId(), command);
         update.complete();
-        return listenToCommand;
+        return true;
     }
 
     public static boolean register(SafeCommandStore safeStore, Command command, Seekable keyOrRange, Ranges slice)
@@ -58,25 +49,30 @@ public class CommandsForKeys
 
         CommandsForKey.Update update = safeStore.beginUpdate(listener);
         update.updateMax(command.executeAt());
+        // add/remove the command on every listener update to avoid
+        // special denormalization handling in Cassandra
         switch (command.status())
         {
-            default:
-                throw new AssertionError();
+            default: throw new AssertionError();
             case PreAccepted:
             case NotWitnessed:
             case Accepted:
             case AcceptedInvalidate:
             case PreCommitted:
-                update.addUncommitted(command);
+                update.byId().add(command.txnId(), command);
+                update.byExecuteAt().add(command.txnId(), command);
                 break;
             case Applied:
             case PreApplied:
             case Committed:
             case ReadyToExecute:
-                update.addCommitted(command);
+                update.byId().add(command.txnId(), command);
+                update.byExecuteAt().remove(command.txnId());
+                update.byExecuteAt().add(command.executeAt(), command);
+                break;
             case Invalidated:
-                update.removeUncommitted(command);
-                Command.removeListener(safeStore, command, CommandsForKey.listener(listener.key()));
+                update.byId().remove(command.txnId());
+                update.byExecuteAt().remove(command.txnId());
                 break;
         }
         update.complete();

@@ -87,13 +87,8 @@ public class TopologyUpdates
             }
 
             // first check if already applied locally, and respond immediately
-            Status minStatus = ((InMemoryCommandStores<InMemoryCommandStore>) node.commandStores()).mapReduceDirectUnsafe(
-                    instance -> instance.containsCommand(txnId),
-                    instance -> {
-                        Command command = instance.command(txnId);
-                        return InMemoryCommandStore.withActiveState(command, command::status);
-                    },
-                    (a, b) -> a.compareTo(b) <= 0 ? a : b);
+            Status minStatus = ((InMemoryCommandStores.Synchronized)node.commandStores()).mapReduce(contextFor(txnId), route, toEpoch, toEpoch,
+                                                                                                    instance -> instance.command(txnId).status(), (a, b) -> a.compareTo(b) <= 0 ? a : b);
 
             if (minStatus == null || minStatus.phase.compareTo(status.phase) >= 0)
             {

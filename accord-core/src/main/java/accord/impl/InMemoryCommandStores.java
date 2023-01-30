@@ -24,25 +24,20 @@ import accord.api.DataStore;
 import accord.api.ProgressLog;
 import accord.local.CommandStore;
 import accord.primitives.Routables;
+import accord.utils.MapReduce;
 import accord.utils.MapReduceConsume;
+import accord.utils.async.AsyncChains;
 
 import java.util.function.BiFunction;
 import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.stream.IntStream;
 
 
 public abstract class InMemoryCommandStores<S extends InMemoryCommandStore> extends CommandStores<S>
 {
-    public InMemoryCommandStores(int num, NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, CommandStore.Factory shardFactory)
+    public InMemoryCommandStores(NodeTimeService time, Agent agent, DataStore store, ShardDistributor shardDistributor, ProgressLog.Factory progressLogFactory, CommandStore.Factory shardFactory)
     {
-        super(num, time, agent, store, progressLogFactory, shardFactory);
-    }
-
-    @Override
-    public  <T> T mapReduceDirectUnsafe(Predicate<S> predicate, Function<S, T> map, BiFunction<T, T, T> reduce)
-    {
-        return super.mapReduceDirectUnsafe(predicate, map, reduce);
+        super(time, agent, store, shardDistributor, progressLogFactory, shardFactory);
     }
 
     @Override
@@ -62,6 +57,28 @@ public abstract class InMemoryCommandStores<S extends InMemoryCommandStore> exte
         public Synchronized(NodeTimeService time, Agent agent, DataStore store, ShardDistributor shardDistributor, ProgressLog.Factory progressLogFactory)
         {
             super(time, agent, store, shardDistributor, progressLogFactory, InMemoryCommandStore.Synchronized::new);
+        }
+
+        public <T> T mapReduce(PreLoadContext context, Routables<?, ?> keys, long minEpoch, long maxEpoch, MapReduce<? super SafeCommandStore, T> map)
+        {
+            return AsyncChains.getUninterruptibly(super.mapReduce(context, keys, minEpoch, maxEpoch, map, AsyncMapReduceAdapter.instance()));
+        }
+
+        public <T> T mapReduce(PreLoadContext context, Routables<?, ?> keys, long minEpoch, long maxEpoch, Function<? super SafeCommandStore, T> map, BiFunction<T, T, T> reduce)
+        {
+            return mapReduce(context, keys, minEpoch, maxEpoch, new MapReduce<SafeCommandStore, T>() {
+                @Override
+                public T apply(SafeCommandStore in)
+                {
+                    return map.apply(in);
+                }
+
+                @Override
+                public T reduce(T o1, T o2)
+                {
+                    return reduce.apply(o1, o2);
+                }
+            });
         }
     }
 

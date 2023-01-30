@@ -56,6 +56,9 @@ public interface SafeCommandStore
     Command ifLoaded(TxnId txnId);
     Command command(TxnId txnId);
 
+    CommandsForKey commandsForKey(RoutableKey key);
+    CommandsForKey maybeCommandsForKey(RoutableKey key);
+
     boolean canExecuteWith(PreLoadContext context);
 
     /**
@@ -97,9 +100,6 @@ public interface SafeCommandStore
                     TestDep testDep, @Nullable TxnId depId,
                     @Nullable Status minStatus, @Nullable Status maxStatus,
                     CommandFunction<T, T> map, T initialValue, T terminalValue);
-
-    void register(Seekables<?, ?> keysOrRanges, Ranges slice, Command command);
-    void register(Seekable keyOrRange, Ranges slice, Command command);
 
     CommandStore commandStore();
     DataStore dataStore();

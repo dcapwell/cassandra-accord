@@ -20,6 +20,8 @@ package accord.messages;
 
 import accord.api.RoutingKey;
 import accord.impl.*;
+import accord.impl.CommandsForKey.CommandLoader;
+import accord.impl.CommandsForKey.CommandTimeseries;
 import accord.impl.IntKey.Raw;
 import accord.impl.mock.*;
 import accord.local.Node;
@@ -38,6 +40,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Random;
+import java.util.function.BiFunction;
+import java.util.stream.Stream;
 
 import static accord.Utils.*;
 import static accord.impl.InMemoryCommandStore.inMemory;
@@ -84,6 +88,11 @@ public class PreAcceptTest
         return PreAccept.SerializerSupport.create(txnId, route.slice(FULL_RANGE), txnId.epoch(), txnId.epoch(), false, txnId.epoch(), txn.slice(FULL_RANGE, true), route);
     }
 
+    static <T, D> Stream<T> convert(CommandTimeseries<D> timeseries, BiFunction<CommandLoader<D>, D, T> get)
+    {
+        return timeseries.all().map(d -> get.apply(timeseries.loader(), d));
+    }
+
     @Test
     void initialCommandTest()
     {
@@ -105,8 +114,9 @@ public class PreAcceptTest
             preAccept.process(node, ID2, REPLY_CONTEXT);
 
             commandStore.execute(PreLoadContext.contextFor(txnId, txn.keys()), safeStore -> {
-                CommandsForKey.TxnIdWithExecuteAt commandId = safeStore.commandsForKey(key).uncommitted().all().findFirst().get();
-                Command command = safeStore.command(commandId.txnId());
+                CommandsForKey cfk = safeStore.commandsForKey(key);
+                TxnId commandId = convert(cfk.byId(), CommandLoader::txnId).findFirst().get();
+                Command command = safeStore.command(commandId);
                 Assertions.assertEquals(Status.PreAccepted, command.status());
             });
 
@@ -237,8 +247,9 @@ public class PreAcceptTest
             preAccept.process(node, ID2, REPLY_CONTEXT);
 
             commandStore.execute(PreLoadContext.contextFor(txnId, txn.keys()), safeStore -> {
-                CommandsForKey.TxnIdWithExecuteAt commandId = safeStore.commandsForKey(key).uncommitted().all().findFirst().get();
-                Command command = safeStore.command(commandId.txnId());
+                CommandsForKey cfk = safeStore.commandsForKey(key);
+                TxnId commandId = convert(cfk.byId(), CommandLoader::txnId).findFirst().get();
+                Command command = safeStore.command(commandId);
                 Assertions.assertEquals(Status.PreAccepted, command.status());
             });
 
