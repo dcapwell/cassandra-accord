@@ -236,29 +236,6 @@ public abstract class CommandStores<S extends CommandStore>
         this(new Supplier(time, agent, store, progressLogFactory, shardFactory), shardDistributor);
     }
 
-    protected  <T> T mapReduceDirectUnsafe(Predicate<S> predicate, Function<S, T> map, BiFunction<T, T, T> reduce)
-    {
-        Snapshot snapshot = current;
-        int idx = 0;
-        T result = null;
-        for (ShardedRanges ranges : snapshot.ranges)
-        {
-            for (CommandStore store : ranges.shards)
-            {
-                if (predicate.test((S) store))
-                {
-                    T value = map.apply((S) store);
-                    if (idx++ == 0)
-                        result = value;
-                    else
-                        result = reduce.apply(result, value);
-                }
-            }
-        }
-
-        return result;
-    }
-
     public Topology local()
     {
         return current.local;

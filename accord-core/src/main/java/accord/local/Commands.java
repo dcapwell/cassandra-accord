@@ -752,7 +752,6 @@ public class Commands
         return command;
     }
 
-
     /**
      * A key nominated to represent the "home" shard - only members of the home shard may be nominated to recover
      * a transaction, to reduce the cluster-wide overhead of ensuring progress. A transaction that has only been
@@ -769,7 +768,7 @@ public class Commands
             update.homeKey(homeKey);
             // TODO (low priority, safety): if we're processed on a node that does not know the latest epoch,
             //      do we guarantee the home key calculation is unchanged since the prior epoch?
-            if (update.progressKey() == null && safeStore.owns(update.txnId().epoch(), homeKey))
+            if (update.progressKey() == null && owns(safeStore, update.txnId().epoch(), homeKey))
                 update.progressKey(homeKey);
         }
         else if (!update.homeKey().equals(homeKey))

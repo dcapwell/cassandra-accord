@@ -1312,26 +1312,21 @@ public abstract class Command extends ImmutableState
 
             updated.markActive();
 
-            boolean listenersUpdated = false;
+            int initialListenerSize = listeners.size();
 
             for (ToRegister<Seekables<?, ?>> toRegister : multiRegistrations)
             {
-                if (CommandsForKeys.register(safeStore, updated, toRegister.value, toRegister.slice))
-                {
-                    addListener(CommandsForKey.listener(toRegister.value));
-                    listenersUpdated = true;
-                }
-            }
-            for (ToRegister<Seekable> toRegister : singleRegistrations)
-            {
-                if (CommandsForKeys.register(safeStore, updated, toRegister.value, toRegister.slice))
-                {
-                    addListener(CommandsForKey.listener(toRegister.value));
-                    listenersUpdated = true;
-                }
+                CommandsForKeys.register(safeStore, updated, toRegister.value, toRegister.slice);
+                addListener(CommandsForKey.listener(toRegister.value));
             }
 
-            if (listenersUpdated)
+            for (ToRegister<Seekable> toRegister : singleRegistrations)
+            {
+                CommandsForKeys.register(safeStore, updated, toRegister.value, toRegister.slice);
+                addListener(CommandsForKey.listener(toRegister.value));
+            }
+
+            if (listeners.size() > initialListenerSize)
             {
                 Command preUpdate = updated;
                 updated = (T) Command.updateAttributes(updated, this);
