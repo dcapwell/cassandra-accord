@@ -87,8 +87,7 @@ public class CommandsForKey extends ImmutableState
 
     public static class CommandTimeseries<D>
     {
-        enum TestTimestamp
-        {BEFORE, AFTER}
+        public enum TestTimestamp {BEFORE, AFTER}
 
         private final Key key;
         protected final CommandLoader<D> loader;
@@ -288,16 +287,6 @@ public class CommandsForKey extends ImmutableState
     public static CommandListener listener(Key key)
     {
         return new Listener(key);
-    }
-
-    public static CommandListener listener(Seekable keyOrRange)
-    {
-        throw new UnsupportedOperationException("TODO");
-    }
-
-    public static CommandListener listener(Seekables<?, ?> keysOrRanges)
-    {
-        throw new UnsupportedOperationException("TODO");
     }
 
     // TODO (now): add validation that anything inserted into *committedBy* has everything prior in its dependencies

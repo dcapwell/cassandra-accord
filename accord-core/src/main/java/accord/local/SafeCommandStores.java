@@ -248,6 +248,17 @@ public class SafeCommandStores
         }
 
         @Override
+        public CommandsForKey ifLoaded(RoutableKey key)
+        {
+            CommandsForKey cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded, CommandsForKey.EMPTY);
+            if (cfk == null)
+                return null;
+            cfk = maybeConvertEmpty(key, cfk, commandsForKey, k -> new CommandsForKey((Key) k, cfkLoader()), CommandsForKey.EMPTY);
+            cfk.checkIsActive();
+            return cfk;
+        }
+
+        @Override
         public CommandsForKey commandsForKey(RoutableKey key)
         {
             CommandsForKey cfk = commandsForKey.get(key);

@@ -1316,14 +1316,17 @@ public abstract class Command extends ImmutableState
 
             for (ToRegister<Seekables<?, ?>> toRegister : multiRegistrations)
             {
-                CommandsForKeys.register(safeStore, updated, toRegister.value, toRegister.slice);
-                addListener(CommandsForKey.listener(toRegister.value));
+                safeStore.register(toRegister.value, toRegister.slice, updated);
+                for (Seekable seekable: toRegister.value)
+                    if (seekable.domain() == Routable.Domain.Key)
+                        addListener(CommandsForKey.listener(seekable.asKey()));
             }
 
             for (ToRegister<Seekable> toRegister : singleRegistrations)
             {
-                CommandsForKeys.register(safeStore, updated, toRegister.value, toRegister.slice);
-                addListener(CommandsForKey.listener(toRegister.value));
+                safeStore.register(toRegister.value, toRegister.slice, updated);
+                if (toRegister.value.domain() == Routable.Domain.Key)
+                    addListener(CommandsForKey.listener(toRegister.value.asKey()));
             }
 
             if (listeners.size() > initialListenerSize)
