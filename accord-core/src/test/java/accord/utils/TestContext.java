@@ -73,6 +73,6 @@ public class TestContext implements PreExecuteContext
     @Override
     public Seekables<?, ?> keys()
     {
-        return Keys.of((Key) commandsForKey.keySet());
+        return Keys.of(commandsForKey.keySet(), rk -> (Key) rk);
     }
 }

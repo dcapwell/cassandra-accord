@@ -25,6 +25,7 @@ import accord.local.CommandStores.RangesForEpochHolder;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.primitives.*;
+import accord.utils.Invariants;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
 import org.slf4j.Logger;
@@ -96,7 +97,6 @@ public abstract class InMemoryCommandStore extends CommandStore
 
     public static class InMemoryState
     {
-
         private final NodeTimeService time;
         private final Agent agent;
         private final DataStore store;
@@ -119,6 +119,11 @@ public abstract class InMemoryCommandStore extends CommandStore
             this.commandStore = commandStore;
         }
 
+        void refreshRanges()
+        {
+            rangesForEpoch = rangesForEpochHolder.get();
+        }
+
         public Command command(TxnId txnId)
         {
             return commands.get(txnId);
@@ -137,50 +142,6 @@ public abstract class InMemoryCommandStore extends CommandStore
         public boolean hasCommandsForKey(Key key)
         {
             return commandsForKey.containsKey(key);
-        }
-
-        private <O> O mapReduceForKey(Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<CommandsForKey, O, O> map, O accumulate, O terminalValue)
-        {
-            switch (keysOrRanges.domain()) {
-                default:
-                    throw new AssertionError();
-                case Key:
-                    AbstractKeys<Key, ?> keys = (AbstractKeys<Key, ?>) keysOrRanges;
-                    for (Key key : keys)
-                    {
-                        if (!slice.contains(key)) continue;
-                        CommandsForKey forKey = commandsForKey(key);
-                        accumulate = map.apply(forKey, accumulate);
-                        if (accumulate.equals(terminalValue))
-                            return accumulate;
-                    }
-                    break;
-                case Range:
-                    Ranges ranges = (Ranges) keysOrRanges;
-                    Ranges sliced = ranges.slice(slice, Minimal);
-                    for (Range range : sliced)
-                    {
-                        for (CommandsForKey forKey : commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive()).values())
-                        {
-                            accumulate = map.apply(forKey, accumulate);
-                            if (accumulate.equals(terminalValue))
-                                return accumulate;
-                        }
-                    }
-            }
-            return accumulate;
-        }
-
-        private Timestamp maxConflict(Seekables<?, ?> keysOrRanges, Ranges slice)
-        {
-            Timestamp timestamp = mapReduceForKey(keysOrRanges, slice, (forKey, prev) -> Timestamp.max(forKey.max(), prev), Timestamp.NONE, null);
-            Seekables<?, ?> sliced = keysOrRanges.slice(slice, Minimal);
-            for (RangeCommand command : rangeCommands.values())
-            {
-                if (command.ranges.intersects(sliced))
-                    timestamp = Timestamp.max(timestamp, command.command.executeAt());
-            }
-            return timestamp;
         }
 
         public void forEpochCommands(Ranges ranges, long epoch, Consumer<Command> consumer)
@@ -217,6 +178,103 @@ public abstract class InMemoryCommandStore extends CommandStore
                             .between(minTimestamp, maxTimestamp, status -> status.hasBeen(Committed))
                             .forEach(txnId -> consumer.accept(command(txnId)));
                 }
+            }
+        }
+
+        public void register(SafeCommandStore safeStore, Seekables<?, ?> keysOrRanges, Ranges slice, Command command)
+        {
+            switch (keysOrRanges.domain())
+            {
+                default: throw new AssertionError();
+                case Key:
+                    forEach(keysOrRanges, slice, key -> CommandsForKeys.register(safeStore, command, key, slice));
+                    break;
+                case Range:
+                    rangeCommands.computeIfAbsent(command.txnId(), ignore -> new RangeCommand(command))
+                            .update((Ranges)keysOrRanges);
+            }
+        }
+
+        public void register(SafeCommandStore safeStore, Seekable keyOrRange, Ranges slice, Command command)
+        {
+            switch (keyOrRange.domain())
+            {
+                default: throw new AssertionError();
+                case Key:
+                    forEach(keyOrRange, slice, key -> CommandsForKeys.register(safeStore, command, key, slice));
+                    break;
+                case Range:
+                    rangeCommands.computeIfAbsent(command.txnId(), ignore -> new RangeCommand(command))
+                            .update(Ranges.of((Range)keyOrRange));
+            }
+        }
+
+        private <O> O mapReduceForKey(SafeCommandStore safeStore, Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<CommandsForKey, O, O> map, O accumulate, O terminalValue)
+        {
+            switch (keysOrRanges.domain()) {
+                default:
+                    throw new AssertionError();
+                case Key:
+                    AbstractKeys<Key, ?> keys = (AbstractKeys<Key, ?>) keysOrRanges;
+                    for (Key key : keys)
+                    {
+                        if (!slice.contains(key)) continue;
+                        CommandsForKey forKey = safeStore.ifLoaded(key);
+                        accumulate = map.apply(forKey, accumulate);
+                        if (accumulate.equals(terminalValue))
+                            return accumulate;
+                    }
+                    break;
+                case Range:
+                    Ranges ranges = (Ranges) keysOrRanges;
+                    Ranges sliced = ranges.slice(slice, Minimal);
+                    for (Range range : sliced)
+                    {
+                        for (CommandsForKey forKey : commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive()).values())
+                        {
+                            accumulate = map.apply(forKey, accumulate);
+                            if (accumulate.equals(terminalValue))
+                                return accumulate;
+                        }
+                    }
+            }
+            return accumulate;
+        }
+
+        private void forEach(Seekables<?, ?> keysOrRanges, Ranges slice, Consumer<RoutableKey> forEach)
+        {
+            switch (keysOrRanges.domain()) {
+                default:
+                    throw new AssertionError();
+                case Key:
+                    AbstractKeys<Key, ?> keys = (AbstractKeys<Key, ?>) keysOrRanges;
+                    keys.forEach(slice, key -> forEach.accept(key));
+                    break;
+                case Range:
+                    Ranges ranges = (Ranges) keysOrRanges;
+                    ranges.slice(slice).forEach(range -> {
+                        commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive())
+                                .keySet().forEach(forEach);
+                    });
+            }
+        }
+
+        private void forEach(Routable keyOrRange, Ranges slice, Consumer<RoutableKey> forEach)
+        {
+            switch (keyOrRange.domain())
+            {
+                default: throw new AssertionError();
+                case Key:
+                    Key key = (Key) keyOrRange;
+                    if (slice.contains(key))
+                        forEach.accept(key);
+                    break;
+                case Range:
+                    Range range = (Range) keyOrRange;
+                    Ranges.of(range).slice(slice).forEach(r -> {
+                        commandsForKey.subMap(r.start(), r.startInclusive(), r.end(), r.endInclusive())
+                                .keySet().forEach(forEach);
+                    });
             }
         }
     }
@@ -340,6 +398,7 @@ public abstract class InMemoryCommandStore extends CommandStore
         @Override
         public RangesForEpoch ranges()
         {
+            Invariants.checkState(state.rangesForEpoch != null);
             return state.rangesForEpoch;
         }
 
@@ -353,12 +412,12 @@ public abstract class InMemoryCommandStore extends CommandStore
         @Override
         public Timestamp maxConflict(Seekables<?, ?> keysOrRanges, Ranges slice)
         {
-            Timestamp timestamp = state.mapReduceForKey(keysOrRanges, slice, (forKey, prev) -> Timestamp.max(forKey.max(), prev), Timestamp.NONE, null);
+            Timestamp timestamp = state.mapReduceForKey(this, keysOrRanges, slice, (forKey, prev) -> Timestamp.max(forKey.max(), prev), Timestamp.NONE, null);
             Seekables<?, ?> sliced = keysOrRanges.slice(slice, Minimal);
             for (RangeCommand command : state.rangeCommands.values())
             {
                 if (command.ranges.intersects(sliced))
-                    timestamp = Timestamp.max(timestamp, command.command.executeAt());
+                    timestamp = Timestamp.max(timestamp, ensureActiveState(command.command, () -> command.command.executeAt()));
             }
             return timestamp;
         }
@@ -372,7 +431,7 @@ public abstract class InMemoryCommandStore extends CommandStore
         @Override
         public <T> T mapReduce(Seekables<?, ?> keysOrRanges, Ranges slice, TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp, TestDep testDep, @Nullable TxnId depId, @Nullable Status minStatus, @Nullable Status maxStatus, CommandFunction<T, T> map, T accumulate, T terminalValue)
         {
-            accumulate = state.mapReduceForKey(keysOrRanges, slice, (forKey, prev) -> {
+            accumulate = state.mapReduceForKey(this, keysOrRanges, slice, (forKey, prev) -> {
                 CommandsForKey.CommandTimeseries<?> timeseries;
                 switch (testTimestamp)
                 {
@@ -466,6 +525,18 @@ public abstract class InMemoryCommandStore extends CommandStore
             return accumulate;
         }
 
+        @Override
+        public void register(Seekables<?, ?> keysOrRanges, Ranges slice, Command command)
+        {
+            state.register(this, keysOrRanges, slice, command);
+        }
+
+        @Override
+        public void register(Seekable keyOrRange, Ranges slice, Command command)
+        {
+            state.register(this, keyOrRange, slice, command);
+        }
+
         public void addListener(TxnId command, TxnId listener)
         {
             Command.addListener(this, command(command), Command.listener(listener));
@@ -511,6 +582,7 @@ public abstract class InMemoryCommandStore extends CommandStore
     @Override
     public SafeCommandStore beginOperation(PreExecuteContext context)
     {
+        state.refreshRanges();
         if (current != null)
             throw new IllegalStateException("Another operation is in progress or it's store was not cleared");
         current = createCommandStore(state, context);
@@ -542,9 +614,16 @@ public abstract class InMemoryCommandStore extends CommandStore
         }
         for (Seekable seekable : preLoadContext.keys())
         {
-            RoutableKey key = (RoutableKey) seekable;
-            CommandsForKey cfk = state.commandsForKey((Key) key);
-            commandsForKeys.put(key, cfk != null ? cfk : CommandsForKey.EMPTY);
+            switch (seekable.domain())
+            {
+                case Key:
+                    RoutableKey key = (RoutableKey) seekable;
+                    CommandsForKey cfk = state.commandsForKey((Key) key);
+                    commandsForKeys.put(key, cfk != null ? cfk : CommandsForKey.EMPTY);
+                    break;
+                case Range:
+                    // load range cfks here
+            }
         }
         return PreExecuteContext.of(preLoadContext, commands, commandsForKeys);
     }

@@ -3,10 +3,8 @@ package accord.impl;
 import accord.api.Key;
 import accord.local.Command;
 import accord.local.SafeCommandStore;
-import accord.local.Status;
 import accord.primitives.Ranges;
-import accord.primitives.Seekable;
-import accord.primitives.Seekables;
+import accord.primitives.RoutableKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,14 +24,14 @@ public class CommandsForKeys
         return true;
     }
 
-    public static boolean register(SafeCommandStore safeStore, Command command, Seekable keyOrRange, Ranges slice)
+    public static void register(SafeCommandStore safeStore, Command command, RoutableKey key, Ranges slice)
     {
-        throw new UnsupportedOperationException("TODO");
-    }
-
-    public static boolean register(SafeCommandStore safeStore, Command command, Seekables<?, ?> keysOrRanges, Ranges slice)
-    {
-        throw new UnsupportedOperationException("TODO");
+        CommandsForKey cfk = safeStore.commandsForKey(key);
+        CommandsForKey.Update update = safeStore.beginUpdate(cfk);
+        update.updateMax(command.executeAt());
+        update.byId().add(command.txnId(), command);
+        update.byExecuteAt().add(command.txnId(), command);
+        update.complete();
     }
 
     static void register(SafeCommandStore safeStore, Key key, Command command)
