@@ -273,11 +273,6 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         return commandStores.ifLocal(context, key, epoch, epoch, ifLocal);
     }
 
-    public AsyncChain<Void> ifLocalSince(PreLoadContext context, RoutingKey key, Timestamp since, Consumer<SafeCommandStore> ifLocal)
-    {
-        return commandStores.ifLocal(context, key, since.epoch(), Long.MAX_VALUE, ifLocal);
-    }
-
     public <T> void mapReduceConsumeLocal(TxnRequest<?> request, long minEpoch, long maxEpoch, MapReduceConsume<SafeCommandStore, T> mapReduceConsume)
     {
         commandStores.mapReduceConsume(request, request.scope(), minEpoch, maxEpoch, mapReduceConsume);

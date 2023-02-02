@@ -6,7 +6,6 @@ import accord.api.RoutingKey;
 import accord.local.Command.WaitingOn;
 import accord.primitives.*;
 import accord.utils.Invariants;
-import accord.utils.async.AsyncCallbacks;
 import accord.utils.async.AsyncChain;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -437,7 +436,7 @@ public class Commands
 
     private static void apply(SafeCommandStore safeStore, Command.Executed command)
     {
-        applyChain(safeStore, command).begin(AsyncCallbacks.noop());
+        applyChain(safeStore, command).begin(safeStore.agent());
     }
 
     // TODO (expected, API consistency): maybe split into maybeExecute and maybeApply?
@@ -652,7 +651,7 @@ public class Commands
                 if (cur == null)
                 {
                     // need to load; schedule execution for later
-                    safeStore.commandStore().execute(this, this).begin(AsyncCallbacks.noop());
+                    safeStore.commandStore().execute(this, this).begin(safeStore.agent());
                     return;
                 }
 

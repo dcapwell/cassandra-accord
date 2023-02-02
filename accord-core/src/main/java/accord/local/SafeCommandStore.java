@@ -67,7 +67,7 @@ public interface SafeCommandStore
             CommandListener listener = Command.listener(listenerId);
             Command.addListener(safeStore, command, listener);
             listener.onChange(safeStore, txnId);
-        }).begin(AsyncCallbacks.noop());
+        }).begin(agent());
     }
 
     interface CommandFunction<I, O>
@@ -119,7 +119,7 @@ public interface SafeCommandStore
             }
             else
             {
-                commandStore().execute(context, safeStore -> listener.onChange(safeStore, txnId)).begin(AsyncCallbacks.noop());
+                commandStore().execute(context, safeStore -> listener.onChange(safeStore, txnId)).begin(agent());
             }
         }
     }
