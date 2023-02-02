@@ -18,6 +18,7 @@
 
 package accord.primitives;
 
+import accord.local.Node;
 import accord.local.Node.Id;
 import accord.primitives.Routable.Domain;
 import accord.primitives.Txn.Kind;
@@ -27,6 +28,9 @@ import static accord.primitives.Txn.Kind.Write;
 
 public class TxnId extends Timestamp
 {
+//    public static final TxnId TARGET = new TxnId(1, 2, 3, new Node.Id(4));
+    public static final TxnId TARGET = new TxnId(1, 4, 3, new Node.Id(2));
+
     public static TxnId fromBits(long msb, long lsb, Id node)
     {
         return new TxnId(msb, lsb, node);
