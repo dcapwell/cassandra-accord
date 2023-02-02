@@ -69,6 +69,35 @@ public abstract class InMemoryCommandStore extends CommandStore
         }
     }
 
+    public static <State extends ImmutableState, V> V ensureActiveState(State state, Callable<V> callable)
+    {
+        boolean wasDormant = state.isDormant();
+        try
+        {
+            if (wasDormant)
+                state.markActive();
+            else
+                state.checkIsActive();
+            return callable.call();
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
+        finally
+        {
+            if (wasDormant)
+                state.markDormant();
+        }
+    }
+
+    public static <State extends ImmutableState, V> void ensureActiveState(State state, Runnable runnable)
+    {
+        ensureActiveState(state, () -> {
+            runnable.run();
+            return null;
+        });
+    }
 
     public static <State extends ImmutableState> void withActiveState(State state, Runnable runnable)
     {
@@ -232,7 +261,8 @@ public abstract class InMemoryCommandStore extends CommandStore
                     {
                         for (CommandsForKey forKey : commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive()).values())
                         {
-                            accumulate = map.apply(forKey, accumulate);
+                            O initial = accumulate;
+                            accumulate = withActiveState(forKey, () -> map.apply(forKey, initial));
                             if (accumulate.equals(terminalValue))
                                 return accumulate;
                         }
@@ -468,58 +498,64 @@ public abstract class InMemoryCommandStore extends CommandStore
             for (RangeCommand rangeCommand : state.rangeCommands.values())
             {
                 Command command = rangeCommand.command;
-                switch (testTimestamp)
-                {
-                    default: throw new AssertionError();
-                    case STARTED_AFTER:
-                        if (command.txnId().compareTo(timestamp) < 0) continue;
-                        else break;
-                    case STARTED_BEFORE:
-                        if (command.txnId().compareTo(timestamp) > 0) continue;
-                        else break;
-                    case EXECUTES_AFTER:
-                        if (command.executeAt().compareTo(timestamp) < 0) continue;
-                        else break;
-                    case MAY_EXECUTE_BEFORE:
-                        Timestamp compareTo = command.known().executeAt.hasDecidedExecuteAt() ? command.executeAt() : command.txnId();
-                        if (compareTo.compareTo(timestamp) > 0) continue;
-                        else break;
-                }
+                ensureActiveState(command, () -> {
 
-                if (minStatus != null && command.status().compareTo(minStatus) < 0)
-                    continue;
+                    switch (testTimestamp)
+                    {
+                        default: throw new AssertionError();
+                        case STARTED_AFTER:
+                            if (command.txnId().compareTo(timestamp) < 0) return;
+                            else break;
+                        case STARTED_BEFORE:
+                            if (command.txnId().compareTo(timestamp) > 0) return;
+                            else break;
+                        case EXECUTES_AFTER:
+                            if (command.executeAt().compareTo(timestamp) < 0) return;
+                            else break;
+                        case MAY_EXECUTE_BEFORE:
+                            Timestamp compareTo = command.known().executeAt.hasDecidedExecuteAt() ? command.executeAt() : command.txnId();
+                            if (compareTo.compareTo(timestamp) > 0) return;
+                            else break;
+                    }
 
-                if (maxStatus != null && command.status().compareTo(maxStatus) > 0)
-                    continue;
+                    if (minStatus != null && command.status().compareTo(minStatus) < 0)
+                        return;
 
-                if (testKind == Ws && command.txnId().rw().isRead())
-                    continue;
+                    if (maxStatus != null && command.status().compareTo(maxStatus) > 0)
+                        return;
 
-                if (testDep != ANY_DEPS)
-                {
-                    if (!command.known().deps.hasProposedOrDecidedDeps())
-                        continue;
+                    if (testKind == Ws && command.txnId().rw().isRead())
+                        return;
 
-                    if ((testDep == WITH) == !command.partialDeps().contains(depId))
-                        continue;
-                }
+                    if (testDep != ANY_DEPS)
+                    {
+                        if (!command.known().deps.hasProposedOrDecidedDeps())
+                            return;
 
-                if (!rangeCommand.ranges.intersects(sliced))
-                    continue;
+                        if ((testDep == WITH) == !command.partialDeps().contains(depId))
+                            return;
+                    }
 
-                Routables.foldl(rangeCommand.ranges, sliced, (r, in, i) -> {
-                    // TODO (easy, efficiency): pass command as a parameter to Fold
-                    List<Command> list = in.computeIfAbsent(r, ignore -> new ArrayList<>());
-                    if (list.isEmpty() || list.get(list.size() - 1) != command)
-                        list.add(command);
-                    return in;
-                }, collect);
+                    if (!rangeCommand.ranges.intersects(sliced))
+                        return;
+
+                    Routables.foldl(rangeCommand.ranges, sliced, (r, in, i) -> {
+                        // TODO (easy, efficiency): pass command as a parameter to Fold
+                        List<Command> list = in.computeIfAbsent(r, ignore -> new ArrayList<>());
+                        if (list.isEmpty() || list.get(list.size() - 1) != command)
+                            list.add(command);
+                        return in;
+                    }, collect);
+                });
             }
 
             for (Map.Entry<Range, List<Command>> e : collect.entrySet())
             {
                 for (Command command : e.getValue())
-                    accumulate = map.apply(e.getKey(), command.txnId(), command.executeAt(), accumulate);
+                {
+                    T initial = accumulate;
+                    accumulate = ensureActiveState(command, () -> map.apply(e.getKey(), command.txnId(), command.executeAt(), initial));
+                }
             }
 
             return accumulate;
@@ -630,7 +666,22 @@ public abstract class InMemoryCommandStore extends CommandStore
 
     private void applyPostExecuteCtx(PostExecuteContext context)
     {
-        context.commands.forEach(((txnId, update) -> state.commands.put(txnId, update.current())));
+        context.commands.forEach(((txnId, update) -> {
+            switch (txnId.domain())
+            {
+                case Key:
+                    state.commands.put(txnId, update.current());
+                    return;
+                case Range:
+                    RangeCommand existing = state.rangeCommands.get(txnId);
+                    RangeCommand updated = new RangeCommand(update.current());
+                    updated.update(existing.ranges);;
+                    state.rangeCommands.put(txnId, updated);
+                    return;
+                default:
+                    throw new IllegalStateException();
+            }
+        }));
         context.commandsForKey.forEach((key, update) -> state.commandsForKey.put(key, update.current()));
     }
 
