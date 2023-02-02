@@ -23,6 +23,7 @@ import accord.impl.InMemoryCommandStore;
 import accord.coordinate.FetchData;
 import accord.impl.InMemoryCommandStores;
 import accord.local.Command;
+import accord.local.Commands;
 import accord.local.Node;
 import accord.local.Status;
 import accord.messages.CheckStatus.CheckStatusOk;
@@ -31,6 +32,7 @@ import accord.topology.Shard;
 import accord.topology.Topology;
 import accord.utils.MessageTask;
 import accord.utils.Invariants;
+import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
 import com.google.common.collect.Sets;
@@ -85,8 +87,13 @@ public class TopologyUpdates
             }
 
             // first check if already applied locally, and respond immediately
-            Status minStatus = ((InMemoryCommandStores.Synchronized)node.commandStores()).mapReduce(contextFor(txnId), route, toEpoch, toEpoch,
-                    instance -> instance.command(txnId).status(), (a, b) -> a.compareTo(b) <= 0 ? a : b);
+            Status minStatus = ((InMemoryCommandStores<InMemoryCommandStore>) node.commandStores()).mapReduceDirectUnsafe(
+                    instance -> instance.containsCommand(txnId),
+                    instance -> {
+                        Command command = instance.command(txnId);
+                        return InMemoryCommandStore.withActiveState(command, command::status);
+                    },
+                    (a, b) -> a.compareTo(b) <= 0 ? a : b);
 
             if (minStatus == null || minStatus.phase.compareTo(status.phase) >= 0)
             {
@@ -125,7 +132,7 @@ public class TopologyUpdates
                     break;
                 case Invalidated:
                     node.forEachLocal(contextFor(txnId), route, txnId.epoch(), toEpoch, safeStore -> {
-                        safeStore.command(txnId).commitInvalidate(safeStore);
+                        Commands.commitInvalidate(safeStore, txnId);
                     });
             }
         }

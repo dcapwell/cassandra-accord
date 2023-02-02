@@ -23,6 +23,9 @@ import accord.local.*;
 import accord.local.Node.Id;
 import accord.primitives.*;
 import accord.topology.Topologies;
+import accord.primitives.Ballot;
+import accord.primitives.Route;
+import accord.primitives.TxnId;
 
 import javax.annotation.Nullable;
 import java.util.Collections;
@@ -60,8 +63,8 @@ public class BeginInvalidation extends AbstractEpochRequest<BeginInvalidation.In
     @Override
     public InvalidateReply apply(SafeCommandStore instance)
     {
+        boolean isOk = Commands.preacceptInvalidate(instance, txnId, ballot);
         Command command = instance.command(txnId);
-        boolean isOk = command.preacceptInvalidate(ballot);
         Ballot supersededBy = isOk ? null : command.promised();
         boolean acceptedFastPath = command.executeAt() != null && command.executeAt().equals(command.txnId());
         return new InvalidateReply(supersededBy, command.accepted(), command.status(), acceptedFastPath, command.route(), command.homeKey());

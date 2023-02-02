@@ -30,6 +30,7 @@ import accord.coordinate.tracking.RequestStatus;
 import accord.local.Node.Id;
 import accord.local.Status;
 import accord.messages.Commit;
+import accord.local.*;
 import accord.primitives.*;
 import accord.topology.Topologies;
 
@@ -268,7 +269,7 @@ public class Invalidate implements Callback<InvalidateReply>
         Commit.Invalidate.commitInvalidate(node, txnId, route != null ? Unseekables.merge(route, (Unseekables)invalidateWith) : invalidateWith, txnId);
         // TODO (required, consider): pick a reasonable upper bound, so we don't invalidate into an epoch/commandStore that no longer cares about this command
         node.forEachLocalSince(contextFor(txnId), invalidateWith, txnId, safeStore -> {
-            safeStore.command(txnId).commitInvalidate(safeStore);
+            Commands.commitInvalidate(safeStore, txnId);
         }).begin((s, f) -> {
             callback.accept(INVALIDATED, null);
             if (f != null) // TODO (required): consider exception handling more carefully: should we catch these prior to passing to callbacks?

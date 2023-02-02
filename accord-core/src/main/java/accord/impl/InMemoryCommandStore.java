@@ -18,56 +18,63 @@
 
 package accord.impl;
 
+import accord.api.*;
 import accord.local.*;
-import accord.local.SyncCommandStores.SyncCommandStore; // java8 fails compilation if this is in correct position
-import accord.api.Agent;
-import accord.api.DataStore;
-import accord.api.Key;
-import accord.api.ProgressLog;
-import accord.impl.InMemoryCommandStore.SingleThread.AsyncState;
-import accord.impl.InMemoryCommandStore.Synchronized.SynchronizedState;
-import accord.local.CommandStores.RangesForEpochHolder;
 import accord.local.CommandStores.RangesForEpoch;
-import accord.impl.CommandsForKey.CommandTimeseries;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.primitives.*;
-import accord.utils.Invariants;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BinaryOperator;
 import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
-import static accord.local.SafeCommandStore.TestDep.*;
-import static accord.local.SafeCommandStore.TestKind.Ws;
-import static accord.local.Status.Committed;
-import static accord.primitives.Routables.Slice.Minimal;
-
-public class InMemoryCommandStore
+public abstract class InMemoryCommandStore extends CommandStore
 {
-    public static abstract class State implements SafeCommandStore
+    private static final Logger logger = LoggerFactory.getLogger(InMemoryCommandStore.class);
+
+    public static <State extends ImmutableState, V> V withActiveState(State state, Callable<V> callable)
     {
-        private final NodeTimeService time;
-        private final Agent agent;
-        private final DataStore store;
-        private final ProgressLog progressLog;
-        private final RangesForEpochHolder rangesForEpochHolder;
-        private RangesForEpoch rangesForEpoch;
+        state.checkIsDormant();
+        state.markActive();
+        try
+        {
+            return callable.call();
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
+        finally
+        {
+            state.checkIsActive();
+            state.markDormant();
+        }
+    }
 
-        private final CommandStore commandStore;
-        private final NavigableMap<TxnId, Command> commands = new TreeMap<>();
-        private final NavigableMap<RoutableKey, InMemoryCommandsForKey> commandsForKey = new TreeMap<>();
-        // TODO (find library, efficiency): this is obviously super inefficient, need some range map
-        private final TreeMap<TxnId, RangeCommand> rangeCommands = new TreeMap<>();
 
+    public static <State extends ImmutableState> void withActiveState(State state, Runnable runnable)
+    {
+        withActiveState(state, () -> {
+            runnable.run();
+            return null;
+        });
+    }
+
+    public static class InMemoryState
+    {
         static class RangeCommand
         {
             final Command command;
@@ -85,7 +92,19 @@ public class InMemoryCommandStore
             }
         }
 
-        public State(NodeTimeService time, Agent agent, DataStore store, ProgressLog progressLog, RangesForEpochHolder rangesForEpoch, CommandStore commandStore)
+        private final NodeTimeService time;
+        private final Agent agent;
+        private final DataStore store;
+        private final ProgressLog progressLog;
+        private final CommandStores.RangesForEpochHolder rangesForEpochHolder;
+        private RangesForEpoch rangesForEpoch;
+
+        private final InMemoryCommandStore commandStore;
+        private final NavigableMap<TxnId, Command> commands = new TreeMap<>();
+        private final NavigableMap<RoutableKey, CommandsForKey> commandsForKey = new TreeMap<>();
+        private final TreeMap<TxnId, RangeCommand> rangeCommands = new TreeMap<>();
+
+        public InMemoryState(NodeTimeService time, Agent agent, DataStore store, ProgressLog progressLog, CommandStores.RangesForEpochHolder rangesForEpoch, InMemoryCommandStore commandStore)
         {
             this.time = time;
             this.agent = agent;
@@ -95,23 +114,9 @@ public class InMemoryCommandStore
             this.commandStore = commandStore;
         }
 
-        @Override
-        public Command ifPresent(TxnId txnId)
-        {
-            return commands.get(txnId);
-        }
-
-        // TODO (required): mimic caching to test C* behaviour
-        @Override
-        public Command ifLoaded(TxnId txnId)
-        {
-            return commands.get(txnId);
-        }
-
-        @Override
         public Command command(TxnId txnId)
         {
-            return commands.computeIfAbsent(txnId, id -> new InMemoryCommand(commandStore, id));
+            return commands.get(txnId);
         }
 
         public boolean hasCommand(TxnId txnId)
@@ -121,7 +126,7 @@ public class InMemoryCommandStore
 
         public CommandsForKey commandsForKey(Key key)
         {
-            return commandsForKey.computeIfAbsent(key, k -> new InMemoryCommandsForKey((Key) k));
+            return commandsForKey.get(key);
         }
 
         public boolean hasCommandsForKey(Key key)
@@ -129,86 +134,15 @@ public class InMemoryCommandStore
             return commandsForKey.containsKey(key);
         }
 
-        public CommandsForKey maybeCommandsForKey(Key key)
+        public void forWitnessed(CommandsForKey cfk, Timestamp minTs, Timestamp maxTs, Consumer<Command> consumer)
         {
-            return commandsForKey.get(key);
-        }
-
-        @Override
-        public void addAndInvokeListener(TxnId txnId, CommandListener listener)
-        {
-            command(txnId).addListener(listener);
-        }
-
-        @Override
-        public DataStore dataStore()
-        {
-            return store;
-        }
-
-        @Override
-        public CommandStore commandStore()
-        {
-            return commandStore;
-        }
-
-        @Override
-        public Agent agent()
-        {
-            return agent;
-        }
-
-        @Override
-        public ProgressLog progressLog()
-        {
-            return progressLog;
-        }
-
-        @Override
-        public RangesForEpoch ranges()
-        {
-            Invariants.checkState(rangesForEpoch != null);
-            return rangesForEpoch;
-        }
-
-        @Override
-        public long latestEpoch()
-        {
-            return time.epoch();
-        }
-
-        @Override
-        public Timestamp preaccept(TxnId txnId, Seekables<?, ?> keys)
-        {
-            Timestamp max = maxConflict(keys, ranges().at(txnId.epoch()));
-            long epoch = latestEpoch();
-            if (txnId.compareTo(max) > 0 && txnId.epoch() >= epoch && !agent.isExpired(txnId, time.now()))
-                return txnId;
-
-            return time.uniqueNow(max);
-        }
-
-        void refreshRanges()
-        {
-            rangesForEpoch = rangesForEpochHolder.get();
-        }
-
-        @Override
-        public NodeTimeService time()
-        {
-            return time;
-        }
-
-        private Timestamp maxConflict(Seekables<?, ?> keysOrRanges, Ranges slice)
-        {
-            Timestamp timestamp = mapReduceForKey(keysOrRanges, slice, (forKey, prev) -> Timestamp.max(forKey.max(), prev), Timestamp.NONE, null);
-            Seekables<?, ?> sliced = keysOrRanges.slice(slice, Minimal);
-            for (RangeCommand command : rangeCommands.values())
-            {
-                if (command.ranges.intersects(sliced))
-                    timestamp = Timestamp.max(timestamp, command.command.executeAt());
-            }
-            return timestamp;
+            cfk.uncommitted().between(minTs, maxTs)
+                    .map(txnIdWithExecuteAt -> command(txnIdWithExecuteAt.txnId()))
+                    .filter(cmd -> cmd.hasBeen(Status.PreAccepted)).forEach(consumer);
+            cfk.committedById().between(minTs, maxTs).map(this::command).forEach(consumer);
+            cfk.committedByExecuteAt().between(minTs, maxTs)
+                    .map(this::command)
+                    .filter(cmd -> cmd.txnId().compareTo(minTs) < 0 || cmd.txnId().compareTo(maxTs) > 0).forEach(consumer);
         }
 
         public void forEpochCommands(Ranges ranges, long epoch, Consumer<Command> consumer)
@@ -217,218 +151,232 @@ public class InMemoryCommandStore
             Timestamp maxTimestamp = Timestamp.maxForEpoch(epoch);
             for (Range range : ranges)
             {
-                Iterable<InMemoryCommandsForKey> rangeCommands = commandsForKey.subMap(
-                        range.start(), range.startInclusive(),
-                        range.end(), range.endInclusive()
-                ).values();
-
-                for (InMemoryCommandsForKey commands : rangeCommands)
+                Iterable<CommandsForKey> rangeCommands = commandsForKey.subMap(range.start(),
+                                                                               range.startInclusive(),
+                                                                               range.end(),
+                                                                               range.endInclusive()).values();
+                for (CommandsForKey commands : rangeCommands)
                 {
-                    commands.forWitnessed(minTimestamp, maxTimestamp, consumer);
+                    withActiveState(commands, () -> forWitnessed(commands, minTimestamp, maxTimestamp, cmd -> consumer.accept(cmd)));
                 }
             }
         }
 
         public void forCommittedInEpoch(Ranges ranges, long epoch, Consumer<Command> consumer)
         {
-            Timestamp minTimestamp = Timestamp.minForEpoch(epoch);
-            Timestamp maxTimestamp = Timestamp.maxForEpoch(epoch);
+            Timestamp minTimestamp = new Timestamp(epoch, Long.MIN_VALUE, Integer.MIN_VALUE, Node.Id.NONE);
+            Timestamp maxTimestamp = new Timestamp(epoch, Long.MAX_VALUE, Integer.MAX_VALUE, Node.Id.MAX);
             for (Range range : ranges)
             {
-                Iterable<InMemoryCommandsForKey> rangeCommands = commandsForKey.subMap(range.start(),
-                        range.startInclusive(),
-                        range.end(),
-                        range.endInclusive()).values();
-                for (InMemoryCommandsForKey commands : rangeCommands)
+                Iterable<CommandsForKey> rangeCommands = commandsForKey.subMap(range.start(),
+                                                                               range.startInclusive(),
+                                                                               range.end(),
+                                                                               range.endInclusive()).values();
+                for (CommandsForKey commands : rangeCommands)
                 {
-                    commands.byExecuteAt()
-                            .between(minTimestamp, maxTimestamp)
-                            .filter(command -> command.hasBeen(Committed))
-                            .forEach(consumer);
+                    withActiveState(commands, () -> {
+                        Collection<Command> committed = commands.committedByExecuteAt()
+                                .between(minTimestamp, maxTimestamp).map(this::command).collect(Collectors.toList());
+                        committed.forEach(consumer);
+                    });
                 }
             }
         }
 
-        @Override
-        public <T> T mapReduce(Seekables<?, ?> keysOrRanges, Ranges slice, TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp, TestDep testDep, @Nullable TxnId depId, @Nullable Status minStatus, @Nullable Status maxStatus, CommandFunction<T, T> map, T accumulate, T terminalValue)
+    }
+
+    private class CFKLoader implements CommandsForKey.CommandLoader<TxnId>
+    {
+        private Command loadForCFK(TxnId data)
         {
-            accumulate = mapReduceForKey(keysOrRanges, slice, (forKey, prev) -> {
-                CommandTimeseries timeseries;
-                switch (testTimestamp)
-                {
-                    default: throw new AssertionError();
-                    case STARTED_AFTER:
-                    case STARTED_BEFORE:
-                        timeseries = forKey.byId();
-                        break;
-                    case EXECUTES_AFTER:
-                    case MAY_EXECUTE_BEFORE:
-                        timeseries = forKey.byExecuteAt();
-                }
-                CommandTimeseries.TestTimestamp remapTestTimestamp;
-                switch (testTimestamp)
-                {
-                    default: throw new AssertionError();
-                    case STARTED_AFTER:
-                    case EXECUTES_AFTER:
-                        remapTestTimestamp = CommandTimeseries.TestTimestamp.AFTER;
-                        break;
-                    case STARTED_BEFORE:
-                    case MAY_EXECUTE_BEFORE:
-                        remapTestTimestamp = CommandTimeseries.TestTimestamp.BEFORE;
-                }
-                return timeseries.mapReduce(testKind, remapTestTimestamp, timestamp, testDep, depId, minStatus, maxStatus, map, prev, terminalValue);
-            }, accumulate, terminalValue);
-
-            if (accumulate.equals(terminalValue))
-                return accumulate;
-
-            // TODO (find lib, efficiency): this is super inefficient, need to store Command in something queryable
-            Seekables<?, ?> sliced = keysOrRanges.slice(slice, Minimal);
-            Map<Range, List<Command>> collect = new TreeMap<>(Range::compare);
-            for (RangeCommand rangeCommand : rangeCommands.values())
+            InMemorySafeStore safeStore = current;
+            Command result;
+            // simplifies tests
+            if (safeStore != null)
             {
-                Command command = rangeCommand.command;
-                switch (testTimestamp)
-                {
-                    default: throw new AssertionError();
-                    case STARTED_AFTER:
-                        if (command.txnId().compareTo(timestamp) < 0) continue;
-                        else break;
-                    case STARTED_BEFORE:
-                        if (command.txnId().compareTo(timestamp) > 0) continue;
-                        else break;
-                    case EXECUTES_AFTER:
-                        if (command.executeAt().compareTo(timestamp) < 0) continue;
-                        else break;
-                    case MAY_EXECUTE_BEFORE:
-                        Timestamp compareTo = command.known().executeAt.hasDecidedExecuteAt() ? command.executeAt() : command.txnId();
-                        if (compareTo.compareTo(timestamp) > 0) continue;
-                        else break;
-                }
-
-                if (minStatus != null && command.status().compareTo(minStatus) < 0)
-                    continue;
-
-                if (maxStatus != null && command.status().compareTo(maxStatus) > 0)
-                    continue;
-
-                if (testKind == Ws && command.txnId().rw().isRead())
-                    continue;
-
-                if (testDep != ANY_DEPS)
-                {
-                    if (!command.known().deps.hasProposedOrDecidedDeps())
-                        continue;
-
-                    if ((testDep == WITH) == !command.partialDeps().contains(depId))
-                        continue;
-                }
-
-                if (!rangeCommand.ranges.intersects(sliced))
-                    continue;
-
-                Routables.foldl(rangeCommand.ranges, sliced, (r, in, i) -> {
-                    // TODO (easy, efficiency): pass command as a parameter to Fold
-                    List<Command> list = in.computeIfAbsent(r, ignore -> new ArrayList<>());
-                    if (list.isEmpty() || list.get(list.size() - 1) != command)
-                            list.add(command);
-                    return in;
-                }, collect);
+                result = safeStore.ifPresent(data);
+                if (result != null)
+                    return result;
             }
-
-            for (Map.Entry<Range, List<Command>> e : collect.entrySet())
-            {
-                for (Command command : e.getValue())
-                    accumulate = map.apply(e.getKey(), command.txnId(), command.executeAt(), accumulate);
-            }
-
-            return accumulate;
+            result = state.command(data);
+            if (result != null)
+                return result;
+            throw new IllegalStateException("Could not find command for CFK for " + data);
         }
 
         @Override
-        public void register(Seekables<?, ?> keysOrRanges, Ranges slice, Command command)
+        public TxnId txnId(TxnId txnId)
         {
-            switch (keysOrRanges.domain())
-            {
-                default: throw new AssertionError();
+            return loadForCFK(txnId).txnId();
+        }
+
+        @Override
+        public Timestamp executeAt(TxnId txnId)
+        {
+            return loadForCFK(txnId).executeAt();
+        }
+
+        @Override
+        public Txn.Kind txnKind(TxnId txnId)
+        {
+            return loadForCFK(txnId).partialTxn().kind();
+        }
+
+        @Override
+        public SaveStatus saveStatus(TxnId txnId)
+        {
+            return loadForCFK(txnId).saveStatus();
+        }
+
+        @Override
+        public PartialDeps partialDeps(TxnId txnId)
+        {
+            return loadForCFK(txnId).partialDeps();
+        }
+
+        @Override
+        public TxnId saveForCFK(Command command)
+        {
+            return command.txnId();
+        }
+    }
+
+    protected final CFKLoader cfkLoader = new CFKLoader();
+
+    private static <K, V> Function<K, V> getOrCreate(Function<K, V> get, Function<K, V> init)
+    {
+        return key -> {
+            V value = get.apply(key);
+            if (value != null)
+                return value;
+            return init.apply(key);
+        };
+    }
+
+    private static class InMemorySafeStore extends SafeCommandStores.AbstractSafeCommandStore
+    {
+        private final InMemoryState state;
+        private final CFKLoader cfkLoader;
+
+        public InMemorySafeStore(InMemoryState state, CFKLoader cfkLoader, PreExecuteContext context)
+        {
+            super(context);
+            this.cfkLoader = cfkLoader;
+            this.state = state;
+        }
+
+        @Override
+        protected Command getIfLoaded(TxnId txnId)
+        {
+            return state.command(txnId);
+        }
+
+        @Override
+        protected CommandsForKey getIfLoaded(RoutableKey key)
+        {
+            return state.commandsForKey((Key) key);
+        }
+
+        @Override
+        public InMemoryCommandStore commandStore()
+        {
+            return state.commandStore;
+        }
+
+        @Override
+        public DataStore dataStore()
+        {
+            return state.store;
+        }
+
+        @Override
+        public Agent agent()
+        {
+            return state.agent;
+        }
+
+        @Override
+        public ProgressLog progressLog()
+        {
+            return state.progressLog;
+        }
+
+        @Override
+        public RangesForEpoch ranges()
+        {
+            return state.rangesForEpoch;
+        }
+
+        @Override
+        public long latestEpoch()
+        {
+            return state.time.epoch();
+
+        }
+
+        @Override
+        protected Timestamp maxConflict(Seekables<?, ?> keysOrRanges, Ranges slice)
+        {
+            return mapReduce(keysOrRanges, slice, CommandsForKey::max, (a, b) -> a.compareTo(b) >= 0 ? a : b, Timestamp.NONE);
+        }
+
+        @Override
+        public NodeTimeService time()
+        {
+            return state.time;
+        }
+
+        @Override
+        public <T> T mapReduce(Routables<?, ?> keysOrRanges, Ranges slice, Function<CommandsForKey, T> map, BinaryOperator<T> reduce, T initialValue)
+        {
+            switch (keysOrRanges.kindOfContents()) {
+                default:
+                    throw new AssertionError();
                 case Key:
-                    forEach(keysOrRanges, slice, forKey -> forKey.register(command));
-                    break;
+                    // TODO: efficiency
+                    AbstractKeys<Key, ?> keys = (AbstractKeys<Key, ?>) keysOrRanges;
+                    return keys.stream()
+                            .filter(slice::contains)
+                            .filter(commandStore()::hashIntersects)
+                            .map(this::commandsForKey)
+                            .map(map)
+                            .reduce(initialValue, reduce);
                 case Range:
-                    rangeCommands.computeIfAbsent(command.txnId(), ignore -> new RangeCommand(command))
-                            .update((Ranges)keysOrRanges);
+                    // TODO: efficiency
+                    Ranges ranges = (Ranges) keysOrRanges;
+                    return ranges.slice(slice).stream().flatMap(range ->
+                                                                        state.commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive()).values().stream()
+                    ).map(map).reduce(initialValue, reduce);
             }
         }
 
         @Override
-        public void register(Seekable keyOrRange, Ranges slice, Command command)
+        public void forEach(Routables<?, ?> keysOrRanges, Ranges slice, Consumer<CommandsForKey> forEach)
         {
-            switch (keyOrRange.domain())
-            {
-                default: throw new AssertionError();
-                case Key:
-                    forEach(keyOrRange, slice, forKey -> forKey.register(command));
-                    break;
-                case Range:
-                    rangeCommands.computeIfAbsent(command.txnId(), ignore -> new RangeCommand(command))
-                            .update(Ranges.of((Range)keyOrRange));
-            }
-        }
-
-        private <O> O mapReduceForKey(Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<CommandsForKey, O, O> map, O accumulate, O terminalValue)
-        {
-            switch (keysOrRanges.domain()) {
+            switch (keysOrRanges.kindOfContents()) {
                 default:
                     throw new AssertionError();
                 case Key:
                     AbstractKeys<Key, ?> keys = (AbstractKeys<Key, ?>) keysOrRanges;
-                    for (Key key : keys)
-                    {
-                        if (!slice.contains(key)) continue;
-                        CommandsForKey forKey = commandsForKey(key);
-                        accumulate = map.apply(forKey, accumulate);
-                        if (accumulate.equals(terminalValue))
-                            return accumulate;
-                    }
+                    keys.forEach(slice, key -> {
+                        if (commandStore().hashIntersects(key))
+                            forEach.accept(commandsForKey(key));
+                    });
                     break;
                 case Range:
                     Ranges ranges = (Ranges) keysOrRanges;
-                    Ranges sliced = ranges.slice(slice, Minimal);
-                    for (Range range : sliced)
-                    {
-                        for (CommandsForKey forKey : commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive()).values())
-                        {
-                            accumulate = map.apply(forKey, accumulate);
-                            if (accumulate.equals(terminalValue))
-                                return accumulate;
-                        }
-                    }
-            }
-            return accumulate;
-        }
-
-        private void forEach(Seekables<?, ?> keysOrRanges, Ranges slice, Consumer<CommandsForKey> forEach)
-        {
-            switch (keysOrRanges.domain()) {
-                default:
-                    throw new AssertionError();
-                case Key:
-                    AbstractKeys<Key, ?> keys = (AbstractKeys<Key, ?>) keysOrRanges;
-                    keys.forEach(slice, key -> forEach.accept(commandsForKey(key)));
-                    break;
-                case Range:
-                    Ranges ranges = (Ranges) keysOrRanges;
+                    // TODO: zero allocation
                     ranges.slice(slice).forEach(range -> {
-                        commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive())
+                        state.commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive())
                                 .values().forEach(forEach);
                     });
             }
         }
 
-        private void forEach(Routable keyOrRange, Ranges slice, Consumer<CommandsForKey> forEach)
+        @Override
+        public void forEach(Routable keyOrRange, Ranges slice, Consumer<CommandsForKey> forEach)
         {
-            switch (keyOrRange.domain())
+            switch (keyOrRange.kind())
             {
                 default: throw new AssertionError();
                 case Key:
@@ -438,165 +386,275 @@ public class InMemoryCommandStore
                     break;
                 case Range:
                     Range range = (Range) keyOrRange;
+                    // TODO: zero allocation
                     Ranges.of(range).slice(slice).forEach(r -> {
-                        commandsForKey.subMap(r.start(), r.startInclusive(), r.end(), r.endInclusive())
+                        state.commandsForKey.subMap(r.start(), r.startInclusive(), r.end(), r.endInclusive())
                                 .values().forEach(forEach);
                     });
             }
         }
-    }
 
-    public static class Synchronized extends SyncCommandStore
-    {
-        public static class SynchronizedState extends State implements SyncCommandStores.SafeSyncCommandStore
+        public void addListener(TxnId command, TxnId listener)
         {
-            public SynchronizedState(NodeTimeService time, Agent agent, DataStore store, ProgressLog progressLog, RangesForEpochHolder rangesForEpoch, CommandStore commandStore)
-            {
-                super(time, agent, store, progressLog, rangesForEpoch, commandStore);
-            }
-
-            @Override
-            public AsyncChain<Void> execute(PreLoadContext context, Consumer<? super SafeCommandStore> consumer)
-            {
-                return submit(context, i -> { consumer.accept(i); return null; });
-            }
-
-            @Override
-            public synchronized <T> AsyncChain<T> submit(PreLoadContext context, Function<? super SafeCommandStore, T> function)
-            {
-                return new AsyncChains.Head<T>()
-                {
-                    @Override
-                    public void begin(BiConsumer<? super T, Throwable> callback)
-                    {
-                        T result = null;
-                        Throwable failure = null;
-                        synchronized (SynchronizedState.this)
-                        {
-                            try
-                            {
-                                result = function.apply(SynchronizedState.this);
-                            }
-                            catch (Throwable t)
-                            {
-                                failure = t;
-                            }
-                        }
-                        callback.accept(result, failure);
-                    }
-                };
-            }
-
-            public synchronized <T> T executeSync(PreLoadContext context, Function<? super SafeCommandStore, T> function)
-            {
-                return function.apply(this);
-            }
+            Command.addListener(this, command(command), Command.listener(listener));
         }
 
-        final SynchronizedState state;
-
-        public Synchronized(int id, NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, RangesForEpochHolder rangesForEpoch)
+        @Override
+        public CommandsForKey.CommandLoader<?> cfkLoader()
         {
-            super(id);
-            this.state = new SynchronizedState(time, agent, store, progressLogFactory.create(this), rangesForEpoch, this);
+            return cfkLoader;
+        }
+    }
+
+    final InMemoryState state;
+    private InMemorySafeStore current;
+
+    public InMemoryCommandStore(int id, int generation, int shardIndex, int numShards, NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, RangesForEpoch rangesForEpoch)
+    {
+        super(id, generation, shardIndex, numShards);
+        this.state = new InMemoryState(time, agent, store, progressLogFactory.create(this), rangesForEpoch, this);
+    }
+
+    public abstract boolean containsCommand(TxnId txnId);
+
+    public abstract Command command(TxnId txnId);
+
+    @Override
+    public Agent agent()
+    {
+        return state.agent;
+    }
+
+    @Override
+    public final AsyncChain<Void> execute(PreLoadContext context, Consumer<? super SafeCommandStore> consumer)
+    {
+        return submit(context, i -> { consumer.accept(i); return null; });
+    }
+
+    protected InMemorySafeStore createCommandStore(InMemoryState state, PreExecuteContext context)
+    {
+        return new InMemorySafeStore(state, cfkLoader, context);
+    }
+
+    @Override
+    public SafeCommandStore beginOperation(PreExecuteContext context)
+    {
+        if (current != null)
+            throw new IllegalStateException("Another operation is in progress or it's store was not cleared");
+        current = createCommandStore(state, context);
+        current.commands().checkActive();
+        current.commandsForKey().checkActive();
+        return current;
+    }
+
+    @Override
+    public PostExecuteContext completeOperation(SafeCommandStore store)
+    {
+        if (store != current)
+            throw new IllegalStateException("This operation has already been cleared");
+        PostExecuteContext result = current.complete();
+        current.commands().markDormant();
+        current.commandsForKey().markDormant();
+        current = null;
+        return result;
+    }
+
+    private PreExecuteContext createPreExecuteCtx(PreLoadContext preLoadContext)
+    {
+        Map<TxnId, Command> commands = new HashMap<>();
+        Map<RoutableKey, CommandsForKey> commandsForKeys = new HashMap<>();
+        for (TxnId txnId : preLoadContext.txnIds())
+        {
+            Command command = state.command(txnId);
+            commands.put(txnId, command != null ? command : Command.EMPTY);
+        }
+        for (Seekable seekable : preLoadContext.keys())
+        {
+            RoutableKey key = (RoutableKey) seekable;
+            CommandsForKey cfk = state.commandsForKey((Key) key);
+            commandsForKeys.put(key, cfk != null ? cfk : CommandsForKey.EMPTY);
+        }
+        return PreExecuteContext.of(preLoadContext, commands, commandsForKeys);
+    }
+
+    private void applyPostExecuteCtx(PostExecuteContext context)
+    {
+        context.commands.forEach(((txnId, update) -> state.commands.put(txnId, update.current())));
+        context.commandsForKey.forEach((key, update) -> state.commandsForKey.put(key, update.current()));
+    }
+
+    private <T> T executeInContext(CommandStore commandStore, PreLoadContext preLoadContext, Function<? super SafeCommandStore, T> function, boolean isDirectCall)
+    {
+
+        SafeCommandStore safeStore = commandStore.beginOperation(createPreExecuteCtx(preLoadContext));
+        try
+        {
+            return function.apply(safeStore);
+        }
+        catch (Throwable t)
+        {
+            if (isDirectCall) logger.error("Uncaught exception", t);
+            throw t;
+        }
+        finally
+        {
+            applyPostExecuteCtx(commandStore.completeOperation(safeStore));
+        }
+    }
+
+    protected <T> T executeInContext(CommandStore commandStore, PreLoadContext context, Function<? super SafeCommandStore, T> function)
+    {
+        return executeInContext(commandStore, context, function, true);
+
+    }
+
+    protected <T> void executeInContext(CommandStore commandStore, PreLoadContext context, Function<? super SafeCommandStore, T> function, BiConsumer<? super T, Throwable> callback)
+    {
+        try
+        {
+            T result = executeInContext(commandStore, context, function, false);
+            callback.accept(result, null);
+        }
+        catch (Throwable t)
+        {
+            logger.error("Uncaught exception", t);
+            callback.accept(null, t);
+        }
+    }
+
+    public static class Synchronized extends InMemoryCommandStore
+    {
+        Runnable active = null;
+        final Queue<Runnable> queue = new ConcurrentLinkedQueue<>();
+
+        public Synchronized(int id, int generation, int shardIndex, int numShards, NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, RangesForEpoch rangesForEpoch)
+        {
+            super(id, generation, shardIndex, numShards, time, agent, store, progressLogFactory, rangesForEpoch);
+        }
+
+        @Override
+        public synchronized boolean containsCommand(TxnId txnId)
+        {
+            return state.commands.containsKey(txnId);
+        }
+
+        @Override
+        public synchronized Command command(TxnId txnId)
+        {
+            return state.commands.get(txnId);
         }
 
         @Override
         public Agent agent()
         {
-            return state.agent();
+            return state.agent;
         }
 
-        private SynchronizedState safeStore()
+        private synchronized void maybeRun()
         {
-            state.refreshRanges();
-            return state;
+            if (active != null)
+                return;
+
+            active = queue.poll();
+            while (active != null)
+            {
+                try
+                {
+                    active.run();
+                }
+                catch (Throwable t)
+                {
+                    logger.error("Uncaught exception", t);
+                }
+                active = queue.poll();
+            }
         }
 
-        @Override
-        public AsyncChain<Void> execute(PreLoadContext context, Consumer<? super SafeCommandStore> consumer)
+        private void enqueueAndRun(Runnable runnable)
         {
-            return safeStore().execute(context, consumer);
+            boolean result = queue.add(runnable);
+            if (!result)
+                throw new IllegalStateException("could not add item to queue");
+            maybeRun();
         }
 
         @Override
         public <T> AsyncChain<T> submit(PreLoadContext context, Function<? super SafeCommandStore, T> function)
         {
-            return safeStore().submit(context, function);
+            return new AsyncChains.Head<T>()
+            {
+                @Override
+                public void begin(BiConsumer<? super T, Throwable> callback)
+                {
+                    enqueueAndRun(() -> executeSync(context, function, callback));
+                }
+            };
         }
 
-        @Override
-        public <T> T executeSync(PreLoadContext context, Function<? super SafeCommandStore, T> function)
+
+        private synchronized <T> void executeSync(PreLoadContext context, Function<? super SafeCommandStore, T> function, BiConsumer<? super T, Throwable> callback)
         {
-            return safeStore().executeSync(context, function);
+            executeInContext(this, context, function, callback);
         }
 
         @Override
         public void shutdown() {}
     }
 
-    public static class SingleThread extends CommandStore
+    public static class SingleThread extends InMemoryCommandStore
     {
-        class AsyncState extends State implements SafeCommandStore
-        {
-            public AsyncState(NodeTimeService time, Agent agent, DataStore store, ProgressLog progressLog, RangesForEpochHolder rangesForEpoch, CommandStore commandStore)
-            {
-                super(time, agent, store, progressLog, rangesForEpoch, commandStore);
-            }
-
-            @Override
-            public AsyncChain<Void> execute(PreLoadContext context, Consumer<? super SafeCommandStore> consumer)
-            {
-                return submit(context, i -> { consumer.accept(i); return null; });
-            }
-
-            @Override
-            public <T> AsyncChain<T> submit(PreLoadContext context, Function<? super SafeCommandStore, T> function)
-            {
-                return AsyncChains.ofCallable(executor, () -> function.apply(this));
-            }
-        }
+        private final AtomicReference<Thread> expectedThread = new AtomicReference<>();
         private final ExecutorService executor;
-        private final AsyncState state;
 
-        public SingleThread(int id, NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, RangesForEpochHolder rangesForEpoch)
+        public SingleThread(int id, int generation, int shardIndex, int numShards, NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, RangesForEpoch rangesForEpoch)
         {
-            super(id);
-            executor = Executors.newSingleThreadExecutor(r -> {
+            super(id, generation, shardIndex, numShards, time, agent, store, progressLogFactory, rangesForEpoch);
+            this.executor = Executors.newSingleThreadExecutor(r -> {
                 Thread thread = new Thread(r);
-                thread.setName(CommandStore.class.getSimpleName() + '[' + time.id() + ']');
+                thread.setName(CommandStore.class.getSimpleName() + '[' + time.id() + ':' + shardIndex + ']');
                 return thread;
             });
-            state = newState(time, agent, store, progressLogFactory, rangesForEpoch);
         }
 
-        AsyncState newState(NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, RangesForEpochHolder rangesForEpoch)
+        void assertThread()
         {
-            return new AsyncState(time, agent, store, progressLogFactory.create(this), rangesForEpoch, this);
+            Thread current = Thread.currentThread();
+            Thread expected;
+            while (true)
+            {
+                expected = expectedThread.get();
+                if (expected != null)
+                    break;
+                expectedThread.compareAndSet(null, Thread.currentThread());
+            }
+            if (expected != current)
+                throw new IllegalStateException(String.format("Command store called from the wrong thread. Expected %s, got %s", expected, current));
+        }
+
+        @Override
+        public boolean containsCommand(TxnId txnId)
+        {
+            assertThread();
+            return state.commands.containsKey(txnId);
+        }
+
+        @Override
+        public Command command(TxnId txnId)
+        {
+            assertThread();
+            return state.commands.get(txnId);
         }
 
         @Override
         public Agent agent()
         {
-            return state.agent();
-        }
-
-        private State safeStore()
-        {
-            state.refreshRanges();
-            return state;
-        }
-
-        @Override
-        public AsyncChain<Void> execute(PreLoadContext context, Consumer<? super SafeCommandStore> consumer)
-        {
-            return safeStore().execute(context, consumer);
+            return state.agent;
         }
 
         @Override
         public <T> AsyncChain<T> submit(PreLoadContext context, Function<? super SafeCommandStore, T> function)
         {
-            return safeStore().submit(context, function);
+            return AsyncChains.ofCallable(executor, () -> executeInContext(this, context, function));
         }
 
         @Override
@@ -608,11 +666,11 @@ public class InMemoryCommandStore
 
     public static class Debug extends SingleThread
     {
-        class DebugState extends AsyncState
+        private class DebugInMemorySafeStore extends InMemorySafeStore
         {
-            public DebugState(NodeTimeService time, Agent agent, DataStore store, ProgressLog progressLog, RangesForEpochHolder rangesForEpoch, CommandStore commandStore)
+            public DebugInMemorySafeStore(InMemoryState state, CFKLoader cfkLoader, PreExecuteContext context)
             {
-                super(time, agent, store, progressLog, rangesForEpoch, commandStore);
+                super(state, cfkLoader, context);
             }
 
             @Override
@@ -637,24 +695,10 @@ public class InMemoryCommandStore
             }
 
             @Override
-            public boolean hasCommand(TxnId txnId)
-            {
-                assertThread();
-                return super.hasCommand(txnId);
-            }
-
-            @Override
             public CommandsForKey commandsForKey(Key key)
             {
                 assertThread();
                 return super.commandsForKey(key);
-            }
-
-            @Override
-            public boolean hasCommandsForKey(Key key)
-            {
-                assertThread();
-                return super.hasCommandsForKey(key);
             }
 
             @Override
@@ -665,63 +709,110 @@ public class InMemoryCommandStore
             }
 
             @Override
-            public void addAndInvokeListener(TxnId txnId, CommandListener listener)
+            public void addAndInvokeListener(TxnId txnId, TxnId listenerId)
             {
                 assertThread();
-                super.addAndInvokeListener(txnId, listener);
+                super.addAndInvokeListener(txnId, listenerId);
             }
 
             @Override
-            public void forEpochCommands(Ranges ranges, long epoch, Consumer<Command> consumer)
+            public InMemoryCommandStore commandStore()
             {
                 assertThread();
-                super.forEpochCommands(ranges, epoch, consumer);
+                return super.commandStore();
             }
 
             @Override
-            public void forCommittedInEpoch(Ranges ranges, long epoch, Consumer<Command> consumer)
+            public DataStore dataStore()
             {
                 assertThread();
-                super.forCommittedInEpoch(ranges, epoch, consumer);
+                return super.dataStore();
             }
-        }
 
-        private final AtomicReference<Thread> expectedThread = new AtomicReference<>();
-
-        public Debug(int id, NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, RangesForEpochHolder rangesForEpoch)
-        {
-            super(id, time, agent, store, progressLogFactory, rangesForEpoch);
-        }
-
-        private void assertThread()
-        {
-            Thread current = Thread.currentThread();
-            Thread expected;
-            while (true)
+            @Override
+            public Agent agent()
             {
-                expected = expectedThread.get();
-                if (expected != null)
-                    break;
-                expectedThread.compareAndSet(null, Thread.currentThread());
+                assertThread();
+                return super.agent();
             }
-            if (expected != current)
-                throw new IllegalStateException(String.format("Command store called from the wrong thread. Expected %s, got %s", expected, current));
+
+            @Override
+            public ProgressLog progressLog()
+            {
+                assertThread();
+                return super.progressLog();
+            }
+
+            @Override
+            public RangesForEpoch ranges()
+            {
+                assertThread();
+                return super.ranges();
+            }
+
+            @Override
+            public long latestEpoch()
+            {
+                assertThread();
+                return super.latestEpoch();
+            }
+
+            @Override
+            public Timestamp maxConflict(Keys keys)
+            {
+                assertThread();
+                return super.maxConflict(keys);
+            }
+
+            @Override
+            public void addListener(TxnId command, TxnId listener)
+            {
+                assertThread();
+                super.addListener(command, listener);
+            }
+
+            @Override
+            public Command.Update beginUpdate(Command command)
+            {
+                assertThread();
+                return super.beginUpdate(command);
+            }
+
+            @Override
+            public void completeUpdate(Command.Update update, Command current, Command updated)
+            {
+                assertThread();
+                super.completeUpdate(update, current, updated);
+            }
+
+            @Override
+            public PostExecuteContext complete()
+            {
+                assertThread();
+                return super.complete();
+            }
+        }
+
+
+        public Debug(int id, int generation, int shardIndex, int numShards, NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, RangesForEpoch rangesForEpoch)
+        {
+            super(id, generation, shardIndex, numShards, time, agent, store, progressLogFactory, rangesForEpoch);
         }
 
         @Override
-        AsyncState newState(NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, RangesForEpochHolder rangesForEpoch)
+        protected InMemorySafeStore createCommandStore(InMemoryState state, PreExecuteContext context)
         {
-            return new DebugState(time, agent, store, progressLogFactory.create(this), rangesForEpoch, this);
+            return new DebugInMemorySafeStore(state, cfkLoader, context);
         }
     }
 
-    public static State inMemory(CommandStore unsafeStore)
+    public static InMemoryState inMemory(CommandStore unsafeStore)
     {
-        return (unsafeStore instanceof Synchronized) ? ((Synchronized) unsafeStore).safeStore() : ((SingleThread) unsafeStore).safeStore();
+        return (unsafeStore instanceof Synchronized) ? ((Synchronized) unsafeStore).state : ((SingleThread) unsafeStore).state;
     }
 
-    public static State inMemory(SafeCommandStore safeStore)
+    public static InMemoryState inMemory(SafeCommandStore safeStore)
     {
-        return (safeStore instanceof SynchronizedState) ? ((SynchronizedState) safeStore) : ((AsyncState) safeStore);
+        return inMemory(safeStore.commandStore());
     }
 }

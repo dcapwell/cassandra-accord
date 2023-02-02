@@ -24,6 +24,10 @@ import accord.api.DataStore;
 import accord.local.CommandStores.RangesForEpochHolder;
 import accord.utils.async.AsyncChain;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -32,6 +36,8 @@ import java.util.function.Function;
  */
 public abstract class CommandStore
 {
+    private static final Logger logger = LoggerFactory.getLogger(CommandStore.class);
+
     public interface Factory
     {
         CommandStore create(int id,
@@ -55,6 +61,8 @@ public abstract class CommandStore
     }
 
     public abstract Agent agent();
+    public abstract SafeCommandStore beginOperation(PreExecuteContext context);
+    public abstract PostExecuteContext completeOperation(SafeCommandStore store);
     public abstract AsyncChain<Void> execute(PreLoadContext context, Consumer<? super SafeCommandStore> consumer);
     public abstract <T> AsyncChain<T> submit(PreLoadContext context, Function<? super SafeCommandStore, T> apply);
     public abstract void shutdown();

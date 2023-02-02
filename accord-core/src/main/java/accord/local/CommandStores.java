@@ -35,7 +35,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.IntStream;
 
 import static accord.local.PreLoadContext.empty;
@@ -233,6 +236,29 @@ public abstract class CommandStores<S extends CommandStore>
         this(new Supplier(time, agent, store, progressLogFactory, shardFactory), shardDistributor);
     }
 
+    protected  <T> T mapReduceDirectUnsafe(Predicate<S> predicate, Function<S, T> map, BiFunction<T, T, T> reduce)
+    {
+        Snapshot snapshot = current;
+        int idx = 0;
+        T result = null;
+        for (ShardedRanges ranges : snapshot.ranges)
+        {
+            for (CommandStore store : ranges.shards)
+            {
+                if (predicate.test((S) store))
+                {
+                    T value = map.apply((S) store);
+                    if (idx++ == 0)
+                        result = value;
+                    else
+                        result = reduce.apply(result, value);
+                }
+            }
+        }
+
+        return result;
+    }
+
     public Topology local()
     {
         return current.local;
@@ -287,13 +313,54 @@ public abstract class CommandStores<S extends CommandStore>
         return new Snapshot(result.toArray(new ShardHolder[0]), newLocalTopology, newTopology);
     }
 
-    interface MapReduceAdapter<S extends CommandStore, Intermediate, Accumulator, O>
+    public interface MapReduceAdapter<S extends CommandStore, Intermediate, Accumulator, O>
     {
         Accumulator allocate();
         Intermediate apply(MapReduce<? super SafeCommandStore, O> map, S commandStore, PreLoadContext context);
         Accumulator reduce(MapReduce<? super SafeCommandStore, O> reduce, Accumulator accumulator, Intermediate next);
         void consume(MapReduceConsume<?, O> consume, Intermediate reduced);
         Intermediate reduce(MapReduce<?, O> reduce, Accumulator accumulator);
+    }
+
+    // TODO: remove this and the adapter interface
+    public static class AsyncMapReduceAdapter<O> implements MapReduceAdapter<CommandStore, AsyncChain<O>, List<AsyncChain<O>>, O>
+    {
+        private static final AsyncChain<?> SUCCESS = AsyncChains.success(null);
+        private static final AsyncMapReduceAdapter<?> INSTANCE = new AsyncMapReduceAdapter<>();
+        public static <O> AsyncMapReduceAdapter<O> instance() { return (AsyncMapReduceAdapter<O>) INSTANCE; }
+
+        @Override
+        public List<AsyncChain<O>> allocate()
+        {
+            return new ArrayList<>();
+        }
+
+        @Override
+        public AsyncChain<O> apply(MapReduce<? super SafeCommandStore, O> map, CommandStore commandStore, PreLoadContext context)
+        {
+            return commandStore.submit(context, map);
+        }
+
+        @Override
+        public List<AsyncChain<O>> reduce(MapReduce<? super SafeCommandStore, O> reduce, List<AsyncChain<O>> chains, AsyncChain<O> next)
+        {
+            chains.add(next);
+            return chains;
+        }
+
+        @Override
+        public void consume(MapReduceConsume<?, O> reduceAndConsume, AsyncChain<O> chain)
+        {
+            chain.begin(reduceAndConsume);
+        }
+
+        @Override
+        public AsyncChain<O> reduce(MapReduce<?, O> reduce, List<AsyncChain<O>> futures)
+        {
+            if (futures.isEmpty())
+                return (AsyncChain<O>) SUCCESS;
+            return AsyncChains.reduce(futures, reduce::reduce);
+        }
     }
 
     public AsyncChain<Void> forEach(Consumer<SafeCommandStore> forEach)
@@ -341,7 +408,7 @@ public abstract class CommandStores<S extends CommandStore>
 
                 return null;
             }
-        }, AsyncCommandStores.AsyncMapReduceAdapter.instance());
+        }, AsyncMapReduceAdapter.instance());
     }
 
     /**

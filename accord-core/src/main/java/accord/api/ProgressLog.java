@@ -23,9 +23,9 @@ import java.util.Set;
 import javax.annotation.Nullable;
 
 import accord.coordinate.InformHomeOfTxn;
-import accord.local.Command;
 import accord.local.CommandStore;
 import accord.local.Node.Id;
+import accord.local.SafeCommandStore;
 import accord.local.Status.Known;
 import accord.primitives.Unseekables;
 import accord.primitives.TxnId;
@@ -102,7 +102,7 @@ public interface ProgressLog
      * A non-home shard should begin monitoring this transaction only to ensure it reaches the Accept phase, or is
      * witnessed by a majority of the home shard.
      */
-    void preaccepted(Command command, ProgressShard shard);
+    void preaccepted(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard);
 
     /**
      * Has been accepted
@@ -110,7 +110,7 @@ public interface ProgressLog
      * A home shard should monitor this transaction for global progress.
      * A non-home shard can safely ignore this transaction, as it has been witnessed by a majority of the home shard.
      */
-    void accepted(Command command, ProgressShard shard);
+    void accepted(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard);
 
     /**
      * Has committed
@@ -118,7 +118,7 @@ public interface ProgressLog
      * A home shard should monitor this transaction for global progress.
      * A non-home shard can safely ignore this transaction, as it has been witnessed by a majority of the home shard.
      */
-    void committed(Command command, ProgressShard shard);
+    void committed(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard);
 
     /**
      * The transaction is waiting to make progress, as all local dependencies have applied.
@@ -126,7 +126,7 @@ public interface ProgressLog
      * A home shard should monitor this transaction for global progress.
      * A non-home shard can safely ignore this transaction, as it has been witnessed by a majority of the home shard.
      */
-    void readyToExecute(Command command, ProgressShard shard);
+    void readyToExecute(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard);
 
     /**
      * The transaction's outcome has been durably recorded (but not necessarily applied) locally.
@@ -137,12 +137,12 @@ public interface ProgressLog
      *
      * May also permit aborting a pending waitingOn-triggered event.
      */
-    void executed(Command command, ProgressShard shard);
+    void executed(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard);
 
     /**
      * The transaction has been durably invalidated
      */
-    void invalidated(Command command, ProgressShard shard);
+    void invalidated(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard);
 
     /**
      * The transaction's outcome has been durably recorded (but not necessarily applied) locally at all shards.
@@ -161,7 +161,7 @@ public interface ProgressLog
      * Otherwise, this transaction no longer needs to be monitored, but implementations may wish to ensure that
      * the result is propagated to every live replica.
      */
-    void durable(Command command, @Nullable Set<Id> persistedOn);
+    void durable(SafeCommandStore safeStore, TxnId txnId, @Nullable Set<Id> persistedOn);
 
     /**
      * The transaction's outcome has been durably recorded (but not necessarily applied) at a quorum of all shards.

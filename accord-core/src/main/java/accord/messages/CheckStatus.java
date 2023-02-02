@@ -248,8 +248,8 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusOk>
             super(node, command);
             this.partialTxn = command.partialTxn();
             this.committedDeps = command.status().compareTo(Committed) >= 0 ? command.partialDeps() : null;
-            this.writes = command.writes();
-            this.result = command.result();
+            this.writes = command.isExecuted() ? command.asExecuted().writes() : null;
+            this.result = command.isExecuted() ? command.asExecuted().result() : null;
         }
 
         protected CheckStatusOkFull(SaveStatus status, Ballot promised, Ballot accepted, Timestamp executeAt,
