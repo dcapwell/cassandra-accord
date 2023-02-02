@@ -51,7 +51,7 @@ public class InformOfTxnId extends AbstractEpochRequest<Reply> implements Reques
         Command command = safeStore.command(txnId);
         if (!command.hasBeen(Status.PreAccepted))
         {
-            command.updateHomeKey(safeStore, homeKey);
+            Commands.updateHomeKey(safeStore, command, homeKey);
             safeStore.progressLog().unwitnessed(txnId, homeKey, Home);
         }
         return Ok;

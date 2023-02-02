@@ -21,14 +21,14 @@ package accord.coordinate;
 import java.util.function.BiConsumer;
 
 import accord.local.*;
+import accord.local.Commands.ApplyOutcome;
+import accord.local.Commands.CommitOutcome;
 import accord.primitives.*;
 import accord.utils.Invariants;
 import accord.utils.MapReduceConsume;
 import com.google.common.base.Preconditions;
 
 import accord.api.RoutingKey;
-import accord.local.Command.ApplyOutcome;
-import accord.local.Command.CommitOutcome;
 import accord.local.Node.Id;
 import accord.messages.CheckStatus.CheckStatusOk;
 import accord.messages.CheckStatus.CheckStatusOkFull;
@@ -174,7 +174,6 @@ public class CheckOn extends CheckShards
         @Override
         public Void apply(SafeCommandStore safeStore)
         {
-            Command command = safeStore.command(txnId);
             switch (sufficientFor.propagate())
             {
                 default: throw new IllegalStateException();
@@ -185,30 +184,30 @@ public class CheckOn extends CheckShards
                     throw new IllegalStateException("Invalid states to propagate");
 
                 case Invalidated:
-                    command.commitInvalidate(safeStore);
+                    Commands.commitInvalidate(safeStore, txnId);
                     break;
 
                 case Applied:
                 case PreApplied:
                     if (untilLocalEpoch >= full.executeAt.epoch())
                     {
-                        confirm(command.commit(safeStore, maxRoute, progressKey, partialTxn, full.executeAt, partialDeps));
-                        confirm(command.apply(safeStore, untilLocalEpoch, maxRoute, full.executeAt, partialDeps, full.writes, full.result));
+                        confirm(Commands.commit(safeStore, txnId, maxRoute, progressKey, partialTxn, full.executeAt, partialDeps));
+                        confirm(Commands.apply(safeStore, txnId, untilLocalEpoch, maxRoute, full.executeAt, partialDeps, full.writes, full.result));
                         break;
                     }
 
                 case Committed:
                 case ReadyToExecute:
-                    confirm(command.commit(safeStore, maxRoute, progressKey, partialTxn, full.executeAt, partialDeps));
+                    confirm(Commands.commit(safeStore, txnId, maxRoute, progressKey, partialTxn, full.executeAt, partialDeps));
                     break;
 
                 case PreCommitted:
-                    command.precommit(safeStore, full.executeAt);
+                    Commands.precommit(safeStore, txnId, full.executeAt);
                     if (!sufficientFor.definition.isKnown())
                         break;
 
                 case PreAccepted:
-                    command.preaccept(safeStore, partialTxn, maxRoute, progressKey);
+                    Commands.preaccept(safeStore, txnId, partialTxn, maxRoute, progressKey);
                     break;
 
                 case NotWitnessed:
@@ -223,8 +222,8 @@ public class CheckOn extends CheckShards
                 return null;
 
             Timestamp executeAt = merged.saveStatus.known.executeAt.hasDecidedExecuteAt() ? merged.executeAt : null;
-            command.setDurability(safeStore, merged.durability, homeKey, executeAt);
-            safeStore.progressLog().durable(command, null);
+            Commands.setDurability(safeStore, txnId, merged.durability, homeKey, executeAt);
+            safeStore.progressLog().durable(safeStore, txnId, null);
             return null;
         }
 

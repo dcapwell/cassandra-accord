@@ -40,6 +40,7 @@ import static accord.local.PreLoadContext.empty;
 import static accord.primitives.Routable.Domain.Key;
 import static accord.primitives.Txn.Kind.Write;
 
+import static accord.local.PreLoadContext.contextFor;
 import static accord.utils.async.AsyncChains.awaitUninterruptibly;
 import static accord.utils.async.AsyncResults.awaitUninterruptibly;
 
@@ -66,7 +67,7 @@ public class TopologyChangeTest
             TxnId txnId1 = node1.nextTxnId(Write, Key);
             Txn txn1 = writeTxn(keys);
             awaitUninterruptibly(node1.coordinate(txnId1, txn1));
-            awaitUninterruptibly(node1.commandStores().forEach(empty(), keys, 1, 1, commands -> {
+            awaitUninterruptibly(node1.commandStores().forEach(contextFor(txnId1), keys, 1, 1, commands -> {
                 Command command = commands.command(txnId1);
                 Assertions.assertTrue(command.partialDeps().isEmpty());
             }));
@@ -79,9 +80,8 @@ public class TopologyChangeTest
             awaitUninterruptibly(node4.coordinate(txnId2, txn2));
 
             // new nodes should have the previous epochs operation as a dependency
-            PreLoadContext context = PreLoadContext.contextFor(txnId2);
             cluster.nodes(4, 5, 6).forEach(node -> {
-                awaitUninterruptibly(node.commandStores().forEach(context, keys, 2, 2, commands -> {
+                awaitUninterruptibly(node.commandStores().forEach(contextFor(txnId1, txnId2), keys, 2, 2, commands -> {
                     Command command = commands.command(txnId2);
                     Assertions.assertTrue(command.partialDeps().contains(txnId1));
                 }));

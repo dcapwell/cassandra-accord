@@ -20,7 +20,6 @@ package accord.messages;
 
 import accord.api.RoutingKey;
 import accord.impl.*;
-import accord.impl.InMemoryCommandsForKey.InMemoryCommandTimeseries;
 import accord.impl.IntKey.Raw;
 import accord.impl.mock.*;
 import accord.local.Node;
@@ -105,8 +104,11 @@ public class PreAcceptTest
             clock.increment(10);
             preAccept.process(node, ID2, REPLY_CONTEXT);
 
-            Command command = ((InMemoryCommandTimeseries)inMemory(commandStore).commandsForKey(key).byId()).all().findFirst().get();
-            Assertions.assertEquals(Status.PreAccepted, command.status());
+            commandStore.execute(PreLoadContext.contextFor(txnId, txn.keys()), safeStore -> {
+                CommandsForKey.TxnIdWithExecuteAt commandId = safeStore.commandsForKey(key).uncommitted().all().findFirst().get();
+                Command command = safeStore.command(commandId.txnId());
+                Assertions.assertEquals(Status.PreAccepted, command.status());
+            });
 
             messageSink.assertHistorySizes(0, 1);
             Assertions.assertEquals(ID2, messageSink.responses.get(0).to);
@@ -234,8 +236,11 @@ public class PreAcceptTest
             clock.increment(10);
             preAccept.process(node, ID2, REPLY_CONTEXT);
 
-            Command command = ((InMemoryCommandTimeseries)inMemory(commandStore).commandsForKey(key).byId()).all().findFirst().get();
-            Assertions.assertEquals(Status.PreAccepted, command.status());
+            commandStore.execute(PreLoadContext.contextFor(txnId, txn.keys()), safeStore -> {
+                CommandsForKey.TxnIdWithExecuteAt commandId = safeStore.commandsForKey(key).uncommitted().all().findFirst().get();
+                Command command = safeStore.command(commandId.txnId());
+                Assertions.assertEquals(Status.PreAccepted, command.status());
+            });
 
             messageSink.assertHistorySizes(0, 1);
             Assertions.assertEquals(ID2, messageSink.responses.get(0).to);

@@ -21,10 +21,6 @@ package accord.local;
 import accord.api.ProgressLog;
 import accord.api.RoutingKey;
 import accord.api.TestableConfigurationService;
-import accord.impl.InMemoryCommandStores;
-import accord.impl.IntKey;
-import accord.impl.TestAgent;
-import accord.impl.TopologyFactory;
 import accord.impl.*;
 import accord.impl.mock.MockCluster;
 import accord.impl.mock.MockConfigurationService;
@@ -33,6 +29,7 @@ import accord.local.Node.Id;
 import accord.local.Status.Known;
 import accord.primitives.*;
 import accord.topology.Topology;
+import accord.utils.TestContext;
 import com.google.common.collect.Lists;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -42,6 +39,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -52,7 +50,7 @@ import static accord.primitives.Routable.Domain.Key;
 import static accord.primitives.Txn.Kind.Write;
 import static accord.utils.async.AsyncChains.getUninterruptibly;
 
-public class CommandTest
+public class ImmutableCommandTest
 {
     private static final Node.Id ID1 = id(1);
     private static final Node.Id ID2 = id(2);
@@ -89,32 +87,32 @@ public class CommandTest
         }
 
         @Override
-        public void preaccepted(Command command, ProgressShard shard)
+        public void preaccepted(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
         }
 
         @Override
-        public void accepted(Command command, ProgressShard shard)
+        public void accepted(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
         }
 
         @Override
-        public void committed(Command command, ProgressShard shard)
+        public void committed(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
         }
 
         @Override
-        public void readyToExecute(Command command, ProgressShard shard)
+        public void readyToExecute(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
         }
 
         @Override
-        public void executed(Command command, ProgressShard shard)
+        public void executed(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
         }
 
         @Override
-        public void invalidated(Command command, ProgressShard shard)
+        public void invalidated(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
         }
 
@@ -124,7 +122,7 @@ public class CommandTest
         }
 
         @Override
-        public void durable(Command command, @Nullable Set<Id> persistedOn)
+        public void durable(SafeCommandStore safeStore, TxnId txnId, @Nullable Set<Id> persistedOn)
         {
         }
 
@@ -153,13 +151,22 @@ public class CommandTest
         CommandStore commands = createStore(support);
         MockCluster.Clock clock = new MockCluster.Clock(100);
         TxnId txnId = clock.idForNode(1, 1);
-        Txn txn = writeTxn(Keys.of(KEY));
+        Keys keys = Keys.of(KEY);
+        Txn txn = writeTxn(keys);
 
-        Command command = new InMemoryCommand(commands, txnId);
-        Assertions.assertEquals(Status.NotWitnessed, command.status());
-        Assertions.assertNull(command.executeAt());
-
-        command.preaccept(inMemory(commands), txn.slice(FULL_RANGES, true), ROUTE, HOME_KEY);
+        {
+            Command command = Command.NotWitnessed.create(txnId);
+            command.markActive();
+            Assertions.assertNull(inMemory(commands).command(txnId));
+            Assertions.assertEquals(Status.NotWitnessed, command.status());
+            Assertions.assertNull(command.executeAt());
+        }
+        TestContext context = new TestContext();
+        context.addEmpty(txnId);
+        context.addKeys(keys);
+        SafeCommandStore safeStore = commands.beginOperation(context);
+        Commands.preaccept(safeStore, txnId, txn.slice(FULL_RANGES, true), ROUTE, HOME_KEY);
+        Command command = safeStore.command(txnId);
         Assertions.assertEquals(Status.PreAccepted, command.status());
         Assertions.assertEquals(txnId, command.executeAt());
     }
@@ -172,17 +179,26 @@ public class CommandTest
         CommandStore commands = node.unsafeByIndex(0);
         TxnId txnId = node.nextTxnId(Write, Key);
         ((MockCluster.Clock)node.unsafeGetNowSupplier()).increment(10);
-        Txn txn = writeTxn(Keys.of(KEY));
+        Keys keys = Keys.of(KEY);
+        Txn txn = writeTxn(keys);
 
-        Command command = new InMemoryCommand(commands, txnId);
-        Assertions.assertEquals(Status.NotWitnessed, command.status());
-        Assertions.assertNull(command.executeAt());
+        {
+            Command command = Command.NotWitnessed.create(txnId);
+            command.markActive();
+            Assertions.assertNull(inMemory(commands).command(txnId));
+            Assertions.assertEquals(Status.NotWitnessed, command.status());
+            Assertions.assertNull(command.executeAt());
+        }
+        PreLoadContext context = PreLoadContext.contextFor(txnId, keys);
 
         setTopologyEpoch(support.local, 2);
         ((TestableConfigurationService)node.configService()).reportTopology(support.local.get().withEpoch(2));
         Timestamp expectedTimestamp = Timestamp.fromValues(2, 110, ID1);
-        getUninterruptibly(commands.execute(null, (Consumer<? super SafeCommandStore>) store -> command.preaccept(store, txn.slice(FULL_RANGES, true), ROUTE, HOME_KEY)));
-        Assertions.assertEquals(Status.PreAccepted, command.status());
-        Assertions.assertEquals(expectedTimestamp, command.executeAt());
+        getUninterruptibly(commands.execute(context, (Consumer<? super SafeCommandStore>) store -> Commands.preaccept(store, txnId, txn.slice(FULL_RANGES, true), ROUTE, HOME_KEY)));
+        commands.execute(PreLoadContext.contextFor(txnId, txn.keys()), safeStore -> {
+            Command command = safeStore.command(txnId);
+            Assertions.assertEquals(Status.PreAccepted, command.status());
+            Assertions.assertEquals(expectedTimestamp, command.executeAt());
+        });
     }
 }

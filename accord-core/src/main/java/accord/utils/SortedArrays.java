@@ -21,6 +21,7 @@ package accord.utils;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.function.IntFunction;
+import java.util.function.Predicate;
 
 import accord.utils.ArrayBuffers.ObjectBuffers;
 import accord.utils.ArrayBuffers.IntBufferAllocator;

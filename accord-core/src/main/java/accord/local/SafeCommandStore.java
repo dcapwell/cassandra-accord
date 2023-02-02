@@ -21,14 +21,21 @@ package accord.local;
 import accord.api.Agent;
 import accord.api.DataStore;
 import accord.api.ProgressLog;
+import accord.impl.CommandsForKey;
 import accord.primitives.*;
+import accord.api.*;
+import accord.primitives.Keys;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
-import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncCallbacks;
 
 import javax.annotation.Nullable;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.Comparator;
+import java.util.Objects;
+
+import static accord.utils.Utils.listOf;
 
 /**
  * A CommandStore with exclusive access; a reference to this should not be retained outside of the scope of the method
@@ -49,11 +56,22 @@ public interface SafeCommandStore
     Command ifLoaded(TxnId txnId);
     Command command(TxnId txnId);
 
+    boolean canExecuteWith(PreLoadContext context);
+
     /**
      * Register a listener against the given TxnId, then load the associated transaction and invoke the listener
      * with its current state.
      */
-    void addAndInvokeListener(TxnId txnId, CommandListener listener);
+    default void addAndInvokeListener(TxnId txnId, TxnId listenerId)
+    {
+        PreLoadContext context = PreLoadContext.contextFor(listOf(txnId, listenerId), Keys.EMPTY);
+        commandStore().execute(context, safeStore -> {
+            Command command = safeStore.command(txnId);
+            CommandListener listener = Command.listener(listenerId);
+            Command.addListener(safeStore, command, listener);
+            listener.onChange(safeStore, txnId);
+        }).begin(AsyncCallbacks.noop());
+    }
 
     interface CommandFunction<I, O>
     {
@@ -75,10 +93,10 @@ public interface SafeCommandStore
      * Within each key or range visits TxnId in ascending order of queried timestamp.
      */
     <T> T mapReduce(Seekables<?, ?> keys, Ranges slice,
-                       TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp,
-                       TestDep testDep, @Nullable TxnId depId,
-                       @Nullable Status minStatus, @Nullable Status maxStatus,
-                       CommandFunction<T, T> map, T initialValue, T terminalValue);
+                    TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp,
+                    TestDep testDep, @Nullable TxnId depId,
+                    @Nullable Status minStatus, @Nullable Status maxStatus,
+                    CommandFunction<T, T> map, T initialValue, T terminalValue);
 
     void register(Seekables<?, ?> keysOrRanges, Ranges slice, Command command);
     void register(Seekable keyOrRange, Ranges slice, Command command);
@@ -92,6 +110,37 @@ public interface SafeCommandStore
     long latestEpoch();
     Timestamp preaccept(TxnId txnId, Seekables<?, ?> keys);
 
-    AsyncChain<Void> execute(PreLoadContext context, Consumer<? super SafeCommandStore> consumer);
-    <T> AsyncChain<T> submit(PreLoadContext context, Function<? super SafeCommandStore, T> function);
+    default void notifyListeners(Command command)
+    {
+        TxnId txnId = command.txnId();
+        for (CommandListener listener : command.listeners())
+        {
+            PreLoadContext context = listener.listenerPreLoadContext(command.txnId());
+            if (canExecuteWith(context))
+            {
+                listener.onChange(this, txnId);
+            }
+            else
+            {
+                commandStore().execute(context, safeStore -> listener.onChange(safeStore, txnId)).begin(AsyncCallbacks.noop());
+            }
+        }
+    }
+
+    Command.Update beginUpdate(Command command);
+
+    default Command.Update beginUpdate(TxnId txnId)
+    {
+        return beginUpdate(command(txnId));
+    }
+
+    void completeUpdate(Command.Update update, Command current, Command updated);
+
+    CommandsForKey.Update beginUpdate(CommandsForKey commandsForKey);
+
+    void completeUpdate(CommandsForKey.Update update, CommandsForKey current, CommandsForKey updated);
+
+    PostExecuteContext complete();
+
+    CommandsForKey.CommandLoader<?> cfkLoader();
 }

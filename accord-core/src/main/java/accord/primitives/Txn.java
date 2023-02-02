@@ -22,9 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-import accord.local.Command;
-
 import accord.api.*;
+import accord.local.Command;
 import accord.local.SafeCommandStore;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
@@ -150,7 +149,13 @@ public interface Txn
         @Override
         public int hashCode()
         {
-            throw new UnsupportedOperationException();
+            int hash = 1;
+            hash = 31 * hash + Objects.hashCode(kind);
+            hash = 31 * hash + Objects.hashCode(keys);
+            hash = 31 * hash + Objects.hashCode(read);
+            hash = 31 * hash + Objects.hashCode(query);
+            hash = 31 * hash + Objects.hashCode(update);
+            return hash;
         }
 
         public String toString()
@@ -186,7 +191,7 @@ public interface Txn
         return new Writes(executeAt, update.keys(), update.apply(data));
     }
 
-    default AsyncChain<Data> read(SafeCommandStore safeStore, Command command)
+    default AsyncChain<Data> read(SafeCommandStore safeStore, Command.Committed command)
     {
         Ranges ranges = safeStore.ranges().at(command.executeAt().epoch());
         List<AsyncChain<Data>> futures = Routables.foldlMinimal(keys(), ranges, (key, accumulate, index) -> {

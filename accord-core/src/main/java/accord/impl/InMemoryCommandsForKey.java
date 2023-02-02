@@ -39,6 +39,7 @@ import static accord.local.Status.KnownDeps.DepsUnknown;
 import static accord.local.Status.PreAccepted;
 import static accord.local.Status.PreCommitted;
 
+// FIXME: delete
 public class InMemoryCommandsForKey extends CommandsForKey
 {
     public static class InMemoryCommandTimeseries implements CommandTimeseries

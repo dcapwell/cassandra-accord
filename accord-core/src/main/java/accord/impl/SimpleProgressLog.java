@@ -253,8 +253,7 @@ public class SimpleProgressLog implements ProgressLog.Factory
                                                 if (token.durability.isDurable())
                                                 {
                                                     commandStore.execute(contextFor(txnId), safeStore -> {
-                                                        Command cmd = safeStore.command(txnId);
-                                                        cmd.setDurability(safeStore, token.durability, homeKey, null);
+                                                        Command cmd = Commands.setDurability(safeStore, txnId, token.durability, homeKey, null);
                                                         safeStore.progressLog().durable(txnId, cmd.maxUnseekables(), null);
                                                     }).begin(commandStore.agent());
                                                 }
@@ -700,9 +699,10 @@ public class SimpleProgressLog implements ProgressLog.Factory
         }
 
         @Override
-        public void preaccepted(Command command, ProgressShard shard)
+        public void preaccepted(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
             Invariants.checkState(shard != Unsure);
+            Command command = safeStore.command(txnId);
 
             if (shard.isProgress())
             {
@@ -713,34 +713,39 @@ public class SimpleProgressLog implements ProgressLog.Factory
         }
 
         @Override
-        public void accepted(Command command, ProgressShard shard)
+        public void accepted(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
+            Command command = safeStore.command(txnId);
             ensureSafeOrAtLeast(command, shard, Uncommitted, Expected);
         }
 
         @Override
-        public void committed(Command command, ProgressShard shard)
+        public void committed(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
+            Command command = safeStore.command(txnId);
             ensureSafeOrAtLeast(command, shard, CoordinateStatus.Committed, NoneExpected);
         }
 
         @Override
-        public void readyToExecute(Command command, ProgressShard shard)
+        public void readyToExecute(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
+            Command command = safeStore.command(txnId);
             ensureSafeOrAtLeast(command, shard, ReadyToExecute, Expected);
         }
 
         @Override
-        public void executed(Command command, ProgressShard shard)
+        public void executed(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
+            Command command = safeStore.command(txnId);
             recordApply(command.txnId());
             // this is the home shard's state ONLY, so we don't know it is fully durable locally
             ensureSafeOrAtLeast(command, shard, ReadyToExecute, Expected);
         }
 
         @Override
-        public void invalidated(Command command, ProgressShard shard)
+        public void invalidated(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
         {
+            Command command = safeStore.command(txnId);
             State state = recordApply(command.txnId());
 
             Invariants.checkState(shard == Home || state == null || state.coordinateState == null);
@@ -763,8 +768,9 @@ public class SimpleProgressLog implements ProgressLog.Factory
         }
 
         @Override
-        public void durable(Command command, @Nullable Set<Id> persistedOn)
+        public void durable(SafeCommandStore safeStore, TxnId txnId, @Nullable Set<Id> persistedOn)
         {
+            Command command = safeStore.command(txnId);
             State state = ensure(command.txnId());
             if (!command.status().hasBeen(PreApplied))
                 state.recordBlocking(command.txnId(), PreApplied.minKnown, command.maxUnseekables());

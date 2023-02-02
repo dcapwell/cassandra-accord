@@ -22,7 +22,7 @@ import accord.primitives.TxnId;
 
 public interface CommandListener
 {
-    void onChange(SafeCommandStore safeStore, Command command);
+    void onChange(SafeCommandStore safeStore, TxnId txnId);
 
     /**
      * Scope needed to run onChange
