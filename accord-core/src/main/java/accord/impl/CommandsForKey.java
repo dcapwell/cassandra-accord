@@ -88,7 +88,6 @@ public class CommandsForKey extends ImmutableState
 
         TxnId txnId(D data);
         Timestamp executeAt(D data);
-        Txn.Kind txnKind(D data);
         SaveStatus saveStatus(D data);
         PartialDeps partialDeps(D data);
 
@@ -433,7 +432,7 @@ public class CommandsForKey extends ImmutableState
 
     private static long getTimestampMicros(Timestamp timestamp)
     {
-        return timestamp.msb + timestamp.lsb;
+        return timestamp.hlc();
     }
 
 

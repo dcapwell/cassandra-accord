@@ -341,12 +341,6 @@ public abstract class InMemoryCommandStore extends CommandStore
         }
 
         @Override
-        public Txn.Kind txnKind(TxnId txnId)
-        {
-            return loadForCFK(txnId).partialTxn().kind();
-        }
-
-        @Override
         public SaveStatus saveStatus(TxnId txnId)
         {
             return loadForCFK(txnId).saveStatus();
