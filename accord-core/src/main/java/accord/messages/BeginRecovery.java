@@ -84,7 +84,6 @@ public class BeginRecovery extends TxnRequest<BeginRecovery.RecoverReply>
 
     public RecoverReply apply(SafeCommandStore safeStore)
     {
-        AcceptOutcome outcome = Commands.recover(safeStore, txnId, partialTxn, route != null ? route : scope, progressKey, ballot);
         switch (Commands.recover(safeStore, txnId, partialTxn, route != null ? route : scope, progressKey, ballot))
         {
             default:

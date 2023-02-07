@@ -1395,7 +1395,7 @@ public abstract class Command extends ImmutableState
             Invariants.checkState(command.hasBeen(Status.AcceptedInvalidate));
             if (isSameClass(command, Accepted.class))
                 return complete(Accepted.Factory.update(command.asAccepted(), this, SaveStatus.get(command.status(), DefinitionOnly), promised));
-            return (Accepted) complete(Command.updateAttributes(command, this));
+            return (Accepted) complete(Command.updateAttributes(command, this, promised));
         }
 
         public Command updatePromised(Ballot promised)
