@@ -666,9 +666,13 @@ public abstract class InMemoryCommandStore extends CommandStore
             {
                 case Range:
                     RangeCommand existing = state.rangeCommands.get(txnId);
-                    RangeCommand updated = new RangeCommand(update.current());
-                    if (existing != null) updated.update(existing.ranges);
-                    state.rangeCommands.put(txnId, updated);
+                    // range commands are only added to the rangeCommands via register
+                    if (existing != null)
+                    {
+                        RangeCommand updated = new RangeCommand(update.current());
+                        updated.update(existing.ranges);
+                        state.rangeCommands.put(txnId, updated);
+                    }
                 case Key:
                     state.commands.put(txnId, update.current());
                     return;

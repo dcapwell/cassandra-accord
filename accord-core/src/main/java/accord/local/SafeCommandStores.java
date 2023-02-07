@@ -155,7 +155,10 @@ public class SafeCommandStores
                 if (current == emptySentinel)
                     current = null;
 
-                result.put(key, new ContextValue<>(original, current));
+                // we sometimes specify cfks in our preload context that we don't end up updating
+                // if they're out of range, so we skip writing them into state here
+                if (original != null || current != null)
+                    result.put(key, new ContextValue<>(original, current));
             });
             completed = true;
             return result.build();
