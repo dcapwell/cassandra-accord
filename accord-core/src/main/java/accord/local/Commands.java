@@ -102,18 +102,20 @@ public class Commands
             return AcceptOutcome.RejectedBallot;
         }
 
+        Command.Update update = safeStore.beginUpdate(command);
+
         if (command.known().definition.isKnown())
         {
             Invariants.checkState(command.status() == Invalidated || command.executeAt() != null);
             logger.trace("{}: skipping preaccept - already known ({})", txnId, command.status());
             // in case of Ballot.ZERO, we must either have a competing recovery coordinator or have late delivery of the
             // preaccept; in the former case we should abandon coordination, and in the latter we have already completed
+            update.updatePromised(ballot);
             return ballot.equals(Ballot.ZERO) ? AcceptOutcome.Redundant : AcceptOutcome.Success;
         }
 
         Ranges coordinateRanges = coordinateRanges(safeStore, command);
         Invariants.checkState(!coordinateRanges.isEmpty());
-        Command.Update update = safeStore.beginUpdate(command);
         ProgressShard shard = progressShard(safeStore, update, route, progressKey, coordinateRanges);
         if (!validate(update, Ranges.EMPTY, coordinateRanges, shard, route, Set, partialTxn, Set, null, Ignore))
             throw new IllegalStateException();
@@ -611,15 +613,6 @@ public class Commands
         Command command = safeStore.command(txnId);
         return setDurability(safeStore, command, durability, homeKey, executeAt);
     }
-
-    public static void saveRoute(SafeCommandStore safeStore, TxnId txnId, Route route)
-    {
-        Command.Update update = safeStore.beginUpdate(txnId);
-        update.route(route);
-        updateHomeKey(safeStore, update, route.homeKey());
-        update.updateAttributes();
-    }
-
 
     private static TxnId firstWaitingOnCommit(Command command)
     {
