@@ -489,9 +489,9 @@ public abstract class InMemoryCommandStore extends CommandStore
             // TODO (find lib, efficiency): this is super inefficient, need to store Command in something queryable
             Seekables<?, ?> sliced = keysOrRanges.slice(slice, Minimal);
             Map<Range, List<Command>> collect = new TreeMap<>(Range::compare);
-            for (RangeCommand rangeCommand : state.rangeCommands.values())
-            {
-                Command command = rangeCommand.command;
+            state.rangeCommands.forEach(((txnId, rangeCommand) -> {
+                Command inMemory = ifPresent(txnId);  // the in memory command may supersede the one in the rangeCommand map
+                Command command = inMemory != null ? inMemory : rangeCommand.command;
                 ensureActiveState(command, () -> {
 
                     switch (testTimestamp)
@@ -541,8 +541,7 @@ public abstract class InMemoryCommandStore extends CommandStore
                         return in;
                     }, collect);
                 });
-            }
-
+            }));
             for (Map.Entry<Range, List<Command>> e : collect.entrySet())
             {
                 for (Command command : e.getValue())
@@ -661,16 +660,17 @@ public abstract class InMemoryCommandStore extends CommandStore
     private void applyPostExecuteCtx(PostExecuteContext context)
     {
         context.commands.forEach(((txnId, update) -> {
+            Command current = update.current();
+            Invariants.checkState(current != null);
             switch (txnId.domain())
             {
-                case Key:
-                    state.commands.put(txnId, update.current());
-                    return;
                 case Range:
                     RangeCommand existing = state.rangeCommands.get(txnId);
                     RangeCommand updated = new RangeCommand(update.current());
-                    updated.update(existing.ranges);;
+                    if (existing != null) updated.update(existing.ranges);
                     state.rangeCommands.put(txnId, updated);
+                case Key:
+                    state.commands.put(txnId, update.current());
                     return;
                 default:
                     throw new IllegalStateException();
