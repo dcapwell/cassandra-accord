@@ -142,16 +142,14 @@ public abstract class Command extends ImmutableState
 
     private static SaveStatus validateCommandClass(SaveStatus status, Class<?> klass)
     {
-        switch (status)
+        switch (status.status)
         {
             case NotWitnessed:
                 return validateCommandClass(status, NotWitnessed.class, klass);
             case PreAccepted:
                 return validateCommandClass(status, Preaccepted.class, klass);
             case AcceptedInvalidate:
-            case AcceptedInvalidateWithDefinition:
             case Accepted:
-            case AcceptedWithDefinition:
             case PreCommitted:
                 return validateCommandClass(status, Accepted.class, klass);
             case Committed:
@@ -1081,16 +1079,15 @@ public abstract class Command extends ImmutableState
 
     private static Command updateAttributes(Command command, CommonAttributes attributes, Ballot promised)
     {
-        switch (command.saveStatus())
+        switch (command.status())
         {
             case NotWitnessed:
                 return NotWitnessed.Factory.update((NotWitnessed) command, attributes, promised);
             case PreAccepted:
                 return Preaccepted.Factory.update((Preaccepted) command, attributes, promised);
             case AcceptedInvalidate:
-            case AcceptedInvalidateWithDefinition:
             case Accepted:
-            case AcceptedWithDefinition:
+            case PreCommitted:
                 return Accepted.Factory.update((Accepted) command, attributes, promised);
             case Committed:
             case ReadyToExecute:
@@ -1393,7 +1390,6 @@ public abstract class Command extends ImmutableState
 
         public Accepted markDefined(Ballot promised)
         {
-            Invariants.checkState(command.hasBeen(Status.AcceptedInvalidate));
             if (isSameClass(command, Accepted.class))
                 return complete(Accepted.Factory.update(command.asAccepted(), this, SaveStatus.enrich(command.saveStatus(), DefinitionOnly), promised));
             return (Accepted) complete(Command.updateAttributes(command, this, promised));

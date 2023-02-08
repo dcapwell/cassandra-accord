@@ -416,6 +416,7 @@ public class Commands
             case PreAccepted:
             case Accepted:
             case AcceptedInvalidate:
+            case PreCommitted:
                 break;
 
             case Committed:
