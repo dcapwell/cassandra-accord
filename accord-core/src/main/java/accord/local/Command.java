@@ -152,6 +152,7 @@ public abstract class Command extends ImmutableState
             case AcceptedInvalidateWithDefinition:
             case Accepted:
             case AcceptedWithDefinition:
+            case PreCommitted:
                 return validateCommandClass(status, Accepted.class, klass);
             case Committed:
             case ReadyToExecute:
@@ -1381,12 +1382,12 @@ public abstract class Command extends ImmutableState
             else if (command.status() == Status.AcceptedInvalidate && command.executeAt() == null)
             {
                 Accepted accepted = command.asAccepted();
-                return complete(Accepted.Factory.create(this, accepted.saveStatus(), executeAt, accepted.promised(), accepted.accepted()));
+                return complete(Accepted.Factory.create(this, accepted.saveStatus(), executeAt, ballot, accepted.accepted()));
             }
             else
             {
                 Invariants.checkState(command.status() == Status.Accepted);
-                return (Preaccepted) complete(Command.updateAttributes(command, this));
+                return (Preaccepted) complete(Command.updateAttributes(command, this, ballot));
             }
         }
 
@@ -1394,7 +1395,7 @@ public abstract class Command extends ImmutableState
         {
             Invariants.checkState(command.hasBeen(Status.AcceptedInvalidate));
             if (isSameClass(command, Accepted.class))
-                return complete(Accepted.Factory.update(command.asAccepted(), this, SaveStatus.get(command.status(), DefinitionOnly), promised));
+                return complete(Accepted.Factory.update(command.asAccepted(), this, SaveStatus.enrich(command.saveStatus(), DefinitionOnly), promised));
             return (Accepted) complete(Command.updateAttributes(command, this, promised));
         }
 
@@ -1405,7 +1406,7 @@ public abstract class Command extends ImmutableState
 
         public Accepted accept(Timestamp executeAt, Ballot ballot)
         {
-            return complete(new Accepted(this, SaveStatus.Accepted, executeAt, ballot, ballot));
+            return complete(new Accepted(this, SaveStatus.get(Status.Accepted, command.known()), executeAt, ballot, ballot));
         }
 
         public Accepted acceptInvalidated(Ballot ballot)
@@ -1421,7 +1422,7 @@ public abstract class Command extends ImmutableState
 
         public Command precommit(Timestamp executeAt)
         {
-            throw new UnsupportedOperationException("TODO: figure out what this should be");
+            return complete(new Accepted(this, SaveStatus.PreCommitted, executeAt, command.promised(), command.accepted()));
         }
 
         public Committed commitInvalidated(Timestamp executeAt)
