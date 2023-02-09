@@ -48,11 +48,6 @@ public interface SafeCommandStore
     Command ifLoaded(TxnId txnId);
     Command command(TxnId txnId);
 
-    CommandsForKey ifLoaded(RoutableKey key);
-    CommandsForKey commandsForKey(RoutableKey key);
-    CommandsForKey maybeCommandsForKey(RoutableKey key);
-
-
     boolean canExecuteWith(PreLoadContext context);
 
     /**

@@ -117,7 +117,6 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         return command;
     }
 
-    @Override
     public CommandsForKey ifLoaded(RoutableKey key)
     {
         CommandsForKey cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded, CommandsForKey.EMPTY);
@@ -128,7 +127,6 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         return cfk;
     }
 
-    @Override
     public CommandsForKey commandsForKey(RoutableKey key)
     {
         CommandsForKey cfk = commandsForKey.get(key);
@@ -141,7 +139,6 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
 
     protected abstract CommandsForKey getIfLoaded(RoutableKey key);
 
-    @Override
     public CommandsForKey maybeCommandsForKey(RoutableKey key)
     {
         CommandsForKey cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded, CommandsForKey.EMPTY);

@@ -42,7 +42,7 @@ public class CommandsForKeys
         return true;
     }
 
-    public static void register(SafeCommandStore safeStore, Command command, RoutableKey key, Ranges slice)
+    public static void register(AbstractSafeCommandStore safeStore, Command command, RoutableKey key, Ranges slice)
     {
         CommandsForKey cfk = safeStore.commandsForKey(key);
         CommandsForKey.Update update = safeStore.beginUpdate(cfk);
@@ -52,7 +52,7 @@ public class CommandsForKeys
         update.complete();
     }
 
-    static void register(SafeCommandStore safeStore, Key key, Command command)
+    static void register(AbstractSafeCommandStore safeStore, Key key, Command command)
     {
         register(safeStore, safeStore.commandsForKey(key), command);
     }
