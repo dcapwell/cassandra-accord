@@ -1,0 +1,174 @@
+package accord.local;
+
+import accord.api.RoutingKey;
+import accord.primitives.PartialDeps;
+import accord.primitives.PartialTxn;
+import accord.primitives.Route;
+import accord.primitives.TxnId;
+import accord.utils.Invariants;
+import com.google.common.collect.ImmutableSet;
+
+import java.util.Set;
+
+import static accord.utils.Utils.ensureImmutable;
+import static accord.utils.Utils.ensureMutable;
+
+// TODO: remove or cleanup
+public interface CommonAttributes
+{
+    TxnId txnId();
+    Status.Durability durability();
+    RoutingKey homeKey();
+    RoutingKey progressKey();
+    Route<?> route();
+    PartialTxn partialTxn();
+    PartialDeps partialDeps();
+    ImmutableSet<CommandListener> listeners();
+
+    default Mutable mutable()
+    {
+        return new Mutable(this);
+    }
+
+    class Mutable implements CommonAttributes
+    {
+        private TxnId txnId;
+        private Status.Durability durability;
+        private RoutingKey homeKey;
+        private RoutingKey progressKey;
+        private Route<?> route;
+        private PartialTxn partialTxn;
+        private PartialDeps partialDeps;
+        private Set<CommandListener> listeners;
+
+        public Mutable(TxnId txnId)
+        {
+            this.txnId = txnId;
+        }
+
+        public Mutable(CommonAttributes attributes)
+        {
+            this.txnId = attributes.txnId();
+            this.durability = attributes.durability();
+            this.homeKey = attributes.homeKey();
+            this.progressKey = attributes.progressKey();
+            this.route = attributes.route();
+            this.partialTxn = attributes.partialTxn();
+            this.partialDeps = attributes.partialDeps();
+            this.listeners = attributes.listeners();
+        }
+
+        @Override
+        public Mutable mutable()
+        {
+            return this;
+        }
+
+        @Override
+        public TxnId txnId()
+        {
+            return txnId;
+        }
+
+        public Mutable txnId(TxnId txnId)
+        {
+            this.txnId = txnId;
+            return this;
+        }
+
+        @Override
+        public Status.Durability durability()
+        {
+            return durability;
+        }
+
+        public Mutable durability(Status.Durability durability)
+        {
+            this.durability = durability;
+            return this;
+        }
+
+        @Override
+        public RoutingKey homeKey()
+        {
+            return homeKey;
+        }
+
+        public Mutable homeKey(RoutingKey homeKey)
+        {
+            this.homeKey = homeKey;
+            return this;
+        }
+
+        @Override
+        public RoutingKey progressKey()
+        {
+            return progressKey;
+        }
+
+        public Mutable progressKey(RoutingKey progressKey)
+        {
+            Invariants.checkArgument(progressKey == null || progressKey.equals(progressKey));
+            this.progressKey = progressKey;
+            return this;
+        }
+
+        @Override
+        public Route<?> route()
+        {
+            return route;
+        }
+
+        public Mutable route(Route<?> route)
+        {
+            this.route = route;
+            return this;
+        }
+
+        @Override
+        public PartialTxn partialTxn()
+        {
+            return partialTxn;
+        }
+
+        public Mutable partialTxn(PartialTxn partialTxn)
+        {
+            this.partialTxn = partialTxn;
+            return this;
+        }
+
+        @Override
+        public PartialDeps partialDeps()
+        {
+            return partialDeps;
+        }
+
+        public Mutable partialDeps(PartialDeps partialDeps)
+        {
+            this.partialDeps = partialDeps;
+            return this;
+        }
+
+        @Override
+        public ImmutableSet<CommandListener> listeners()
+        {
+            return ensureImmutable(listeners);
+        }
+
+        public Mutable addListener(CommandListener listener)
+        {
+            listeners = ensureMutable(listeners);
+            listeners.add(listener);
+            return this;
+        }
+
+        public Mutable removeListener(CommandListener listener)
+        {
+            if (listener == null || listeners.isEmpty())
+                return this;
+            listeners = ensureMutable(listeners);
+            listeners.remove(listener);
+            return this;
+        }
+    }
+}

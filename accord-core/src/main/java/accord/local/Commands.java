@@ -116,12 +116,13 @@ public class Commands
 
         Ranges coordinateRanges = coordinateRanges(safeStore, command);
         Invariants.checkState(!coordinateRanges.isEmpty());
-        ProgressShard shard = progressShard(safeStore, update, route, progressKey, coordinateRanges);
-        if (!validate(update, Ranges.EMPTY, coordinateRanges, shard, route, Set, partialTxn, Set, null, Ignore))
+        CommonAttributes attrs = updateHomeAndProgressKeys(safeStore, command.txnId(), command, route, progressKey, coordinateRanges);
+        ProgressShard shard = progressShard(attrs, progressKey, coordinateRanges);
+        if (!validate(command.status(), attrs, Ranges.EMPTY, coordinateRanges, shard, route, Set, partialTxn, Set, null, Ignore))
             throw new IllegalStateException();
 
         // FIXME: this should go into a consumer method
-        set(safeStore, update, Ranges.EMPTY, coordinateRanges, shard, route, partialTxn, Set, null, Ignore);
+        attrs = set(safeStore, command, attrs, Ranges.EMPTY, coordinateRanges, shard, route, partialTxn, Set, null, Ignore);
         if (command.executeAt() == null)
         {
             // unlike in the Accord paper, we partition shards within a node, so that to ensure a total order we must either:
@@ -177,9 +178,10 @@ public class Commands
         Invariants.checkState(!acceptRanges.isEmpty());
 
         Command.Update update = safeStore.beginUpdate(command);
-        ProgressShard shard = progressShard(safeStore, update, route, progressKey, coordinateRanges);
 
-        if (!validate(update, coordinateRanges, Ranges.EMPTY, shard, route, Ignore, null, Ignore, partialDeps, Set))
+        CommonAttributes attrs = updateHomeAndProgressKeys(safeStore, command.txnId(), command, route, progressKey, coordinateRanges);
+        ProgressShard shard = progressShard(attrs, progressKey, coordinateRanges);
+        if (!validate(command.status(), attrs, coordinateRanges, Ranges.EMPTY, shard, route, Ignore, null, Ignore, partialDeps, Set))
         {
             throw new AssertionError("Invalid response from validate function");
         }
@@ -187,11 +189,11 @@ public class Commands
         // TODO (desired, clarity/efficiency): we don't need to set the route here, and perhaps we don't even need to
         //  distributed partialDeps at all, since all we gain is not waiting for these transactions to commit during
         //  recovery. We probably don't want to directly persist a Route in any other circumstances, either, to ease persistence.
-        set(safeStore, update, coordinateRanges, acceptRanges, shard, route, null, Ignore, partialDeps, Set);
+        attrs = set(safeStore, command, attrs, coordinateRanges, acceptRanges, shard, route, null, Ignore, partialDeps, Set);
 
         // set only registers by transaction keys, which we mightn't already have received
         if (!command.known().isDefinitionKnown())
-            update.registerWith(keys, acceptRanges);
+            safeStore.register(keys, acceptRanges, command);
 
         command = update.accept(executeAt, ballot);
         safeStore.progressLog().accepted(safeStore, txnId, shard);
@@ -246,16 +248,18 @@ public class Commands
         Ranges executeRanges = executeRanges(safeStore, executeAt);
 
         Command.Update update = safeStore.beginUpdate(command);
-        ProgressShard shard = progressShard(safeStore, update, route, progressKey, coordinateRanges);
 
-        if (!validate(update, coordinateRanges, executeRanges, shard, route, Check, partialTxn, Add, partialDeps, Set))
+        CommonAttributes attrs = updateHomeAndProgressKeys(safeStore, command.txnId(), command, route, progressKey, coordinateRanges);
+        ProgressShard shard = progressShard(attrs, progressKey, coordinateRanges);
+
+        if (!validate(command.status(), attrs, coordinateRanges, executeRanges, shard, route, Check, partialTxn, Add, partialDeps, Set))
         {
             update.updateAttributes();
             return CommitOutcome.Insufficient;
         }
 
         // FIXME: split up set
-        set(safeStore, update, coordinateRanges, executeRanges, shard, route, partialTxn, Add, partialDeps, Set);
+        attrs = set(safeStore, command, attrs, coordinateRanges, executeRanges, shard, route, partialTxn, Add, partialDeps, Set);
 
         logger.trace("{}: committed with executeAt: {}, deps: {}", txnId, executeAt, partialDeps);
         WaitingOn waitingOn = populateWaitingOn(safeStore, txnId, executeAt, partialDeps);
@@ -384,16 +388,17 @@ public class Commands
         }
 
         Command.Update update = safeStore.beginUpdate(command);
-        ProgressShard shard = progressShard(safeStore, update, route, coordinateRanges);
+        CommonAttributes attrs = updateHomeAndProgressKeys(safeStore, command.txnId(), command, route, command.progressKey(), coordinateRanges);
+        ProgressShard shard = progressShard(attrs, coordinateRanges);
 
-        if (!validate(update, coordinateRanges, executeRanges, shard, route, Check, null, Check, partialDeps, command.hasBeen(Committed) ? Add : TrySet))
+        if (!validate(command.status(), attrs, coordinateRanges, executeRanges, shard, route, Check, null, Check, partialDeps, command.hasBeen(Committed) ? Add : TrySet))
         {
             update.updateAttributes();
             return ApplyOutcome.Insufficient; // TODO (expected, consider): this should probably be an assertion failure if !TrySet
         }
 
         WaitingOn waitingOn = !command.hasBeen(Committed) ? populateWaitingOn(safeStore, txnId, executeAt, partialDeps) : command.asCommitted().waitingOn();
-        set(safeStore, update, coordinateRanges, executeRanges, shard, route, null, Check, partialDeps, command.hasBeen(Committed) ? Add : TrySet);
+        attrs = set(safeStore, command, attrs, coordinateRanges, executeRanges, shard, route, null, Check, partialDeps, command.hasBeen(Committed) ? Add : TrySet);
 
         command = update.preapplied(executeAt, waitingOn, writes, result);
         logger.trace("{}: apply, status set to Executed with executeAt: {}, deps: {}", txnId, executeAt, partialDeps);
@@ -602,7 +607,7 @@ public class Commands
     private static Command setDurability(SafeCommandStore safeStore, Command command, Durability durability, RoutingKey homeKey, @Nullable Timestamp executeAt)
     {
         Command.Update update = safeStore.beginUpdate(command);
-        updateHomeKey(safeStore, update, homeKey);
+        CommonAttributes attrs = updateHomeKey(safeStore, command.txnId(), command, homeKey);
         if (executeAt != null && update.status().hasBeen(Committed) && !command.asCommitted().executeAt().equals(executeAt))
             safeStore.agent().onInconsistentTimestamp(command, command.asCommitted().executeAt(), executeAt);
         update.durability(durability);
@@ -772,41 +777,50 @@ public class Commands
      * Note that for ProgressLog purposes the "home shard" is the shard as of txnId.epoch.
      * For recovery purposes the "home shard" is as of txnId.epoch until Committed, and executeAt.epoch once Executed
      */
-    public static void updateHomeKey(SafeCommandStore safeStore, Command.Update update, RoutingKey homeKey)
+    public static CommonAttributes updateHomeKey(SafeCommandStore safeStore, TxnId txnId, CommonAttributes attrs, RoutingKey homeKey)
     {
-        if (update.homeKey() == null)
+        if (attrs.homeKey() == null)
         {
-            update.homeKey(homeKey);
+            attrs = attrs.mutable().homeKey(homeKey);
             // TODO (low priority, safety): if we're processed on a node that does not know the latest epoch,
             //      do we guarantee the home key calculation is unchanged since the prior epoch?
-            if (update.progressKey() == null && owns(safeStore, update.txnId().epoch(), homeKey))
-                update.progressKey(homeKey);
+            if (attrs.progressKey() == null && owns(safeStore, txnId.epoch(), homeKey))
+                attrs = attrs.mutable().progressKey(homeKey);
         }
-        else if (!update.homeKey().equals(homeKey))
+        else if (!attrs.homeKey().equals(homeKey))
         {
             throw new IllegalStateException();
         }
+        return attrs;
     }
 
-    private static ProgressShard progressShard(SafeCommandStore safeStore, Command.Update update, Route<?> route, @Nullable RoutingKey progressKey, Ranges coordinateRanges)
+    private static CommonAttributes updateHomeAndProgressKeys(SafeCommandStore safeStore, TxnId txnId, CommonAttributes attrs, Route<?> route, @Nullable RoutingKey progressKey, Ranges coordinateRanges)
     {
-        updateHomeKey(safeStore, update, route.homeKey());
+        attrs = updateHomeKey(safeStore, txnId, attrs, route.homeKey());
+        if (attrs.progressKey() == null)
+            attrs = attrs.mutable().progressKey(progressKey != null ? progressKey : NO_PROGRESS_KEY);
+        else if (!attrs.progressKey().equals(progressKey))
+            throw new AssertionError();
+        return attrs;
+    }
 
+    private static ProgressShard progressShard(CommonAttributes attrs, @Nullable RoutingKey progressKey, Ranges coordinateRanges)
+    {
         if (progressKey == null || progressKey == NO_PROGRESS_KEY)
-        {
-            if (update.progressKey() == null)
-                update.progressKey(NO_PROGRESS_KEY);
-
             return No;
-        }
-
-        if (update.progressKey() == null) update.progressKey(progressKey);
-        else if (!update.progressKey().equals(progressKey)) throw new AssertionError();
 
         if (!coordinateRanges.contains(progressKey))
             return No;
 
-        return progressKey.equals(update.homeKey()) ? Home : Local;
+        return progressKey.equals(attrs.homeKey()) ? Home : Local;
+    }
+
+    private static ProgressShard progressShard(CommonAttributes attrs, Ranges coordinateRanges)
+    {
+        if (attrs.progressKey() == null)
+            return Unsure;
+
+        return progressShard(attrs, attrs.progressKey(), coordinateRanges);
     }
 
     private static ProgressShard progressShard(SafeCommandStore safeStore, Command command)
@@ -826,14 +840,6 @@ public class Commands
     }
 
 
-    private static ProgressShard progressShard(SafeCommandStore safeStore, Command.Update update, Route<?> route, Ranges coordinateRanges)
-    {
-        if (update.progressKey() == null)
-            return Unsure;
-
-        return progressShard(safeStore, update, route, update.progressKey(), coordinateRanges);
-    }
-
     private static Ranges coordinateRanges(SafeCommandStore safeStore, Command command)
     {
         return safeStore.ranges().at(command.txnId().epoch());
@@ -846,16 +852,18 @@ public class Commands
 
     enum EnsureAction {Ignore, Check, Add, TrySet, Set}
 
-    private static void set(SafeCommandStore safeStore, Command.Update update,
-                            Ranges existingRanges, Ranges additionalRanges, ProgressShard shard, Route<?> route,
-                            @Nullable PartialTxn partialTxn, EnsureAction ensurePartialTxn,
-                            @Nullable PartialDeps partialDeps, EnsureAction ensurePartialDeps)
+    private static CommonAttributes set(SafeCommandStore safeStore, Command command, CommonAttributes attrs,
+                                        Ranges existingRanges, Ranges additionalRanges, ProgressShard shard, Route<?> route,
+                                        @Nullable PartialTxn partialTxn, EnsureAction ensurePartialTxn,
+                                        @Nullable PartialDeps partialDeps, EnsureAction ensurePartialDeps)
     {
-        Invariants.checkState(update.progressKey() != null);
+        Invariants.checkState(attrs.progressKey() != null);
         Ranges allRanges = existingRanges.with(additionalRanges);
 
-        if (shard.isProgress()) update.route(Route.merge(update.route(), (Route)route));
-        else update.route(route.slice(allRanges));
+        if (shard.isProgress())
+            attrs = attrs.mutable().route(Route.merge(attrs.route(), (Route)route));
+        else
+            attrs = attrs.mutable().route(route.slice(allRanges));
 
         // TODO (soon): stop round-robin hashing; partition only on ranges
         switch (ensurePartialTxn)
@@ -864,24 +872,24 @@ public class Commands
                 if (partialTxn == null)
                     break;
 
-                if (update.partialTxn() != null)
+                if (attrs.partialTxn() != null)
                 {
                     partialTxn = partialTxn.slice(allRanges, shard.isHome());
-                    Routables.foldlMissing((Seekables)partialTxn.keys(), update.partialTxn().keys(), (keyOrRange, p, v, i) -> {
+                    Routables.foldlMissing((Seekables)partialTxn.keys(), attrs.partialTxn().keys(), (keyOrRange, p, v, i) -> {
                         // TODO (expected, efficiency): we may register the same ranges more than once
-                        update.registerWith(keyOrRange, allRanges);
+                        safeStore.register(keyOrRange, allRanges, command);
                         return v;
                     }, 0, 0, 1);
-                    update.partialTxn(update.partialTxn().with(partialTxn));
+                    attrs = attrs.mutable().partialTxn(attrs.partialTxn().with(partialTxn));
                     break;
                 }
 
             case Set:
             case TrySet:
-                update.partialTxn(partialTxn = partialTxn.slice(allRanges, shard.isHome()));
+                attrs = attrs.mutable().partialTxn(partialTxn = partialTxn.slice(allRanges, shard.isHome()));
                 // TODO (expected, efficiency): we may register the same ranges more than once
                 // TODO (desirable, efficiency): no need to register on PreAccept if already Accepted
-                update.registerWith(partialTxn.keys(), allRanges);
+                safeStore.register(partialTxn.keys(), allRanges, command);
                 break;
         }
 
@@ -891,24 +899,25 @@ public class Commands
                 if (partialDeps == null)
                     break;
 
-                if (update.partialDeps() != null)
+                if (attrs.partialDeps() != null)
                 {
-                    update.partialDeps(update.partialDeps().with(partialDeps.slice(allRanges)));
+                    attrs = attrs.mutable().partialDeps(attrs.partialDeps().with(partialDeps.slice(allRanges)));
                     break;
                 }
 
             case Set:
             case TrySet:
-                update.partialDeps(partialDeps.slice(allRanges));
+                attrs = attrs.mutable().partialDeps(partialDeps.slice(allRanges));
                 break;
         }
+        return attrs;
     }
 
     /**
      * Validate we have sufficient information for the route, partialTxn and partialDeps fields, and if so update them;
      * otherwise return false (or throw an exception if an illegal state is encountered)
      */
-    private static boolean validate(Command.Update command, Ranges existingRanges, Ranges additionalRanges, ProgressShard shard,
+    private static boolean validate(Status status, CommonAttributes attrs, Ranges existingRanges, Ranges additionalRanges, ProgressShard shard,
                                     Route<?> route, EnsureAction ensureRoute,
                                     @Nullable PartialTxn partialTxn, EnsureAction ensurePartialTxn,
                                     @Nullable PartialDeps partialDeps, EnsureAction ensurePartialDeps)
@@ -923,7 +932,7 @@ public class Commands
             {
                 default: throw new AssertionError();
                 case Check:
-                    if (!isFullRoute(command.route()) && !isFullRoute(route))
+                    if (!isFullRoute(attrs.route()) && !isFullRoute(route))
                         return false;
                 case Ignore:
                     break;
@@ -950,22 +959,22 @@ public class Commands
         // invalid to Add deps to Accepted or AcceptedInvalidate statuses, as Committed deps are not equivalent
         // and we may erroneously believe we have covered a wider range than we have infact covered
         if (ensurePartialDeps == Add)
-            Invariants.checkState(command.status() != Accepted && command.status() != AcceptedInvalidate);
+            Invariants.checkState(status != Accepted && status != AcceptedInvalidate);
 
         // validate new partial txn
-        if (!validate(ensurePartialTxn, existingRanges, additionalRanges, covers(command.partialTxn()), covers(partialTxn), "txn", partialTxn))
+        if (!validate(ensurePartialTxn, existingRanges, additionalRanges, covers(attrs.partialTxn()), covers(partialTxn), "txn", partialTxn))
             return false;
 
-        if (partialTxn != null && command.txnId().rw() != null && !command.txnId().rw().equals(partialTxn.kind()))
+        if (partialTxn != null && attrs.txnId().rw() != null && !attrs.txnId().rw().equals(partialTxn.kind()))
             throw new IllegalArgumentException("Transaction has different kind to its TxnId");
 
         if (shard.isHome() && ensurePartialTxn != Ignore)
         {
-            if (!hasQuery(command.partialTxn()) && !hasQuery(partialTxn))
+            if (!hasQuery(attrs.partialTxn()) && !hasQuery(partialTxn))
                 throw new IllegalStateException();
         }
 
-        return validate(ensurePartialDeps, existingRanges, additionalRanges, covers(command.partialDeps()), covers(partialDeps), "deps", partialDeps);
+        return validate(ensurePartialDeps, existingRanges, additionalRanges, covers(attrs.partialDeps()), covers(partialDeps), "deps", partialDeps);
     }
 
     // FIXME (immutable-state): has this been removed?
