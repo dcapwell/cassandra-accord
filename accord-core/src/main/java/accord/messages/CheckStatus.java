@@ -107,9 +107,10 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusOk>
     }
 
     @Override
-    public CheckStatusOk apply(SafeCommandStore instance)
+    public CheckStatusOk apply(SafeCommandStore safeStore)
     {
-        Command command = instance.command(txnId);
+        LiveCommand liveCommand = safeStore.command(txnId);
+        Command command = liveCommand.current();
         switch (includeInfo)
         {
             default: throw new IllegalStateException();

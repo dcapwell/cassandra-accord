@@ -23,6 +23,7 @@ import java.util.Set;
 import accord.api.RoutingKey;
 import accord.local.Command;
 import accord.local.Commands;
+import accord.local.LiveCommand;
 import accord.local.Node;
 import accord.local.Node.Id;
 import accord.local.Status.Durability;
@@ -53,9 +54,9 @@ public class InformHomeDurable implements Request
     {
         // TODO (expected, efficiency): do not load txnId first
         node.ifLocal(contextFor(txnId), homeKey, txnId.epoch(), safeStore -> {
-            Command command = safeStore.command(txnId);
+            LiveCommand liveCommand = safeStore.command(txnId);
             Commands.setDurability(safeStore, txnId, durability, homeKey, executeAt);
-            safeStore.progressLog().durable(safeStore, txnId, persistedOn);
+            safeStore.progressLog().durable(liveCommand.current(), persistedOn);
         }).begin(node.agent());
     }
 

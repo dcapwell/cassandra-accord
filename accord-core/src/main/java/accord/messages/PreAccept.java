@@ -105,7 +105,7 @@ public class PreAccept extends WithUnsynced<PreAccept.PreAcceptReply>
             default:
             case Success:
             case Redundant:
-                Command command = safeStore.command(txnId);
+                Command command = safeStore.command(txnId).current();
                 return new PreAcceptOk(txnId, command.executeAt(),
                         calculatePartialDeps(safeStore, txnId, partialTxn.keys(), txnId, safeStore.ranges().between(minUnsyncedEpoch, txnId.epoch())));
 

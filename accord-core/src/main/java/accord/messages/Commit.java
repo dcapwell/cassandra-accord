@@ -160,11 +160,11 @@ public class Commit extends TxnRequest<ReadNack>
                 return null;
 
             case Insufficient:
-                Command command = safeStore.command(txnId);
-                Invariants.checkState(!command.hasBeenWitnessed());
+                LiveCommand liveCommand = safeStore.command(txnId);
+                Invariants.checkState(!liveCommand.current().hasBeenWitnessed());
                 if (defer == null)
                     defer = new Defer(DefinitionOnly, Committed.minKnown, Commit.this);
-                defer.add(safeStore, command, safeStore.commandStore());
+                defer.add(safeStore, liveCommand, safeStore.commandStore());
                 return ReadNack.NotCommitted;
         }
     }

@@ -133,7 +133,7 @@ public class Commands
                     ? safeStore.preaccept(txnId, partialTxn.keys())
                     : safeStore.time().uniqueNow(txnId);
             command = liveCommand.preaccept(attrs, executeAt, ballot);
-            safeStore.progressLog().preaccepted(safeStore, txnId, shard);
+            safeStore.progressLog().preaccepted(command, shard);
         }
         else
         {
@@ -195,15 +195,14 @@ public class Commands
             safeStore.register(keys, acceptRanges, command);
 
         command = liveCommand.accept(attrs, executeAt, ballot);
-        safeStore.progressLog().accepted(safeStore, txnId, shard);
+        safeStore.progressLog().accepted(command, shard);
         safeStore.notifyListeners(command);
 
         return AcceptOutcome.Success;
     }
 
-    public static AcceptOutcome acceptInvalidate(SafeCommandStore safeStore, TxnId txnId, Ballot ballot)
+    public static AcceptOutcome acceptInvalidate(SafeCommandStore safeStore, LiveCommand liveCommand, Ballot ballot)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
         if (command.promised().compareTo(ballot) > 0)
         {
@@ -263,7 +262,7 @@ public class Commands
         WaitingOn waitingOn = populateWaitingOn(safeStore, txnId, executeAt, partialDeps);
         command = liveCommand.commit(attrs, executeAt, waitingOn);
 
-        safeStore.progressLog().committed(safeStore, txnId, shard);
+        safeStore.progressLog().committed(command, shard);
 
         // TODO (expected, safety): introduce intermediate status to avoid reentry when notifying listeners (which might notify us)
         maybeExecute(safeStore, liveCommand, shard, true, true);
@@ -352,7 +351,7 @@ public class Commands
         }
 
         ProgressShard shard = progressShard(safeStore, command);
-        safeStore.progressLog().invalidated(safeStore, txnId, shard);
+        safeStore.progressLog().invalidated(command, shard);
 
         CommonAttributes attrs = command;
         if (command.partialDeps() == null)
@@ -404,7 +403,7 @@ public class Commands
         logger.trace("{}: apply, status set to Executed with executeAt: {}, deps: {}", txnId, executeAt, partialDeps);
 
         maybeExecute(safeStore, liveCommand, shard, true, true);
-        safeStore.progressLog().executed(safeStore, txnId, shard);
+        safeStore.progressLog().executed(liveCommand.current(), shard);
 
         return ApplyOutcome.Success;
     }
@@ -497,7 +496,7 @@ public class Commands
                 // TODO (desirable, efficiency): maintain distinct ReadyToRead and ReadyToWrite states
                 command = liveCommand.readyToExecute();
                 logger.trace("{}: set to ReadyToExecute", command.txnId());
-                safeStore.progressLog().readyToExecute(safeStore, command.txnId(), shard);
+                safeStore.progressLog().readyToExecute(command, shard);
                 safeStore.notifyListeners(command);
                 return true;
 
@@ -530,13 +529,14 @@ public class Commands
      * @param dependency is either committed or invalidated
      * @return true iff {@code maybeExecute} might now have a different outcome
      */
-    private static boolean updatePredecessor(SafeCommandStore safeStore, Command.Committed command, WaitingOn.Update waitingOn, Command dependency)
+    private static boolean updatePredecessor(LiveCommand liveCommand, WaitingOn.Update waitingOn, Command dependency)
     {
+        Command.Committed command = liveCommand.asCommitted();
         Invariants.checkState(dependency.hasBeen(PreCommitted));
         if (dependency.hasBeen(Invalidated))
         {
             logger.trace("{}: {} is invalidated. Stop listening and removing from waiting on commit set.", command.txnId(), dependency.txnId());
-            Command.removeListener(safeStore, dependency, command.asListener());
+            liveCommand.removeListener(command.asListener()).asCommitted();
             waitingOn.removeWaitingOnCommit(dependency.txnId());
             return true;
         }
@@ -545,14 +545,14 @@ public class Commands
             // dependency cannot be a predecessor if it executes later
             logger.trace("{}: {} executes after us. Stop listening and removing from waiting on apply set.", command.txnId(), dependency.txnId());
             waitingOn.removeWaitingOn(dependency.txnId(), dependency.executeAt());
-            Command.removeListener(safeStore, dependency, command.asListener());
+            liveCommand.removeListener(command.asListener());
             return true;
         }
         else if (dependency.hasBeen(Applied))
         {
             logger.trace("{}: {} has been applied. Stop listening and removing from waiting on apply set.", command.txnId(), dependency.txnId());
             waitingOn.removeWaitingOn(dependency.txnId(), dependency.executeAt());
-            Command.removeListener(safeStore, dependency, command.asListener());
+            liveCommand.removeListener(command.asListener());
             return true;
         }
         else if (command.isWaitingOnDependency())
@@ -598,8 +598,8 @@ public class Commands
             return;
 
         WaitingOn.Update waitingOn = new WaitingOn.Update(command);
-        boolean attemptExecution = updatePredecessor(safeStore, command, waitingOn, predecessor);
-        command = Command.updateWaitingOn(safeStore, command, waitingOn);
+        boolean attemptExecution = updatePredecessor(liveCommand, waitingOn, predecessor);
+        command = liveCommand.updateWaitingOn(safeStore, command, waitingOn);
 
         if (attemptExecution)
             maybeExecute(safeStore, liveCommand, progressShard(safeStore, command), false, notifyWaitingOn);

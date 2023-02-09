@@ -112,7 +112,8 @@ public class ReadData extends AbstractEpochRequest<ReadData.ReadNack> implements
     @Override
     public synchronized void onChange(SafeCommandStore safeStore, TxnId txnId)
     {
-        Command command = safeStore.command(txnId);
+        LiveCommand liveCommand = safeStore.command(txnId);
+        Command command = liveCommand.current();
         logger.trace("{}: updating as listener in response to change on {} with status {} ({})",
                 this, command.txnId(), command.status(), command);
         switch (command.status())
@@ -133,7 +134,7 @@ public class ReadData extends AbstractEpochRequest<ReadData.ReadNack> implements
             case ReadyToExecute:
         }
 
-        command = Command.removeListener(safeStore, command, this);
+        command = liveCommand.removeListener(this);
 
         if (!isObsolete)
             read(safeStore, command.asCommitted());
@@ -142,7 +143,8 @@ public class ReadData extends AbstractEpochRequest<ReadData.ReadNack> implements
     @Override
     public synchronized ReadNack apply(SafeCommandStore safeStore)
     {
-        Command command = safeStore.command(txnId);
+        LiveCommand liveCommand = safeStore.command(txnId);
+        Command command = liveCommand.current();
         Status status = command.status();
         logger.trace("{}: setting up read with status {} on {}", txnId, status, safeStore);
         switch (command.status()) {
@@ -157,7 +159,7 @@ public class ReadData extends AbstractEpochRequest<ReadData.ReadNack> implements
                 waitingOn.set(safeStore.commandStore().id());
                 ++waitingOnCount;
 
-                Command.addListener(safeStore, command, this);
+                command = liveCommand.addListener(this);
 
                 if (status == Committed)
                     return null;
@@ -190,7 +192,7 @@ public class ReadData extends AbstractEpochRequest<ReadData.ReadNack> implements
 
     private void removeListener(SafeCommandStore safeStore, TxnId txnId)
     {
-        Command.removeListener(safeStore, safeStore.command(txnId), this);
+        safeStore.command(txnId).removeListener(this);
     }
 
     @Override
