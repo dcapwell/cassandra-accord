@@ -22,7 +22,6 @@ import accord.api.Data;
 import accord.api.Result;
 import accord.api.RoutingKey;
 import accord.impl.CommandsForKey;
-import accord.impl.CommandsForKeys;
 import accord.primitives.*;
 import accord.utils.Invariants;
 import accord.utils.Utils;
@@ -40,7 +39,7 @@ import static accord.local.Status.Known.DefinitionOnly;
 import static accord.utils.Utils.*;
 import static java.lang.String.format;
 
-public abstract class Command extends ImmutableState
+public abstract class Command extends ImmutableState implements CommonAttributes
 {
     // sentinel value to indicate a command requested in a preexecute context was not found
     // should not escape the safe command store
@@ -83,18 +82,6 @@ public abstract class Command extends ImmutableState
         if (status.compareTo(SaveStatus.PreApplied) >= 0 && durability == NotDurable)
             return Local; // not necessary anywhere, but helps for logical consistency
         return durability;
-    }
-
-    public interface CommonAttributes
-    {
-        TxnId txnId();
-        Status.Durability durability();
-        RoutingKey homeKey();
-        RoutingKey progressKey();
-        Route<?> route();
-        PartialTxn partialTxn();
-        PartialDeps partialDeps();
-        ImmutableSet<CommandListener> listeners();
     }
 
     public static class SerializerSupport
@@ -166,12 +153,16 @@ public abstract class Command extends ImmutableState
 
     public static Command addListener(SafeCommandStore safeStore, Command command, CommandListener listener)
     {
-        return safeStore.beginUpdate(command).addListener(listener).updateAttributes();
+        Update update = safeStore.beginUpdate(command);
+        update.addListener(listener);
+        return update.updateAttributes();
     }
 
     public static Command removeListener(SafeCommandStore safeStore, Command command, CommandListener listener)
     {
-        return safeStore.beginUpdate(command).removeListener(listener).updateAttributes();
+        Update update = safeStore.beginUpdate(command);
+        update.removeListener(listener);
+        return update.updateAttributes();
     }
 
     public static Committed updateWaitingOn(SafeCommandStore safeStore, Committed command, WaitingOn.Update waitingOn)
@@ -377,6 +368,14 @@ public abstract class Command extends ImmutableState
      * If hasBeen(Committed) this must contain the keys for both txnId.epoch and executeAt.epoch
      */
     public abstract Route<?> route();
+
+    /**
+     * A key nominated to be the primary shard within this node for managing progress of the command.
+     * It is nominated only as of txnId.epoch, and may be null (indicating that this node does not monitor
+     * the progress of this command).
+     *
+     * Preferentially, this is homeKey on nodes that replicate it, and otherwise any key that is replicated, as of txnId.epoch
+     */
     public abstract RoutingKey progressKey();
 
     /**
@@ -1106,7 +1105,7 @@ public abstract class Command extends ImmutableState
         return updateAttributes(command, attributes, command.promised());
     }
 
-    public static class Update implements CommonAttributes
+    public static class Update extends Mutable
     {
         private static class ToRegister<T>
         {
@@ -1142,13 +1141,6 @@ public abstract class Command extends ImmutableState
         public final SafeCommandStore safeStore;
         private final Command command;
 
-        private RoutingKey homeKey;
-        private RoutingKey progressKey;
-        private Route<?> route;
-        private Status.Durability durability;
-
-        private PartialTxn partialTxn;
-        private @Nullable PartialDeps partialDeps;
 
         private Set<ToRegister<Seekable>> singleRegistrations = new HashSet<>();
         private Set<ToRegister<Seekables<?, ?>>> multiRegistrations = new HashSet<>();
@@ -1156,20 +1148,11 @@ public abstract class Command extends ImmutableState
 
         public Update(SafeCommandStore safeStore, Command command)
         {
+            super(command);
             this.safeStore = safeStore;
             command.checkCanUpdate();
             this.command = command;
-            this.homeKey = command.homeKey();
-            this.progressKey = command.progressKey();
-            this.route = command.route();
-            this.durability = command.durability();
             this.listeners = command.listeners();
-            if (command.isWitnessed())
-            {
-                Preaccepted preaccepted = command.asWitnessed();
-                this.partialTxn = preaccepted.partialTxn();
-                this.partialDeps = preaccepted.partialDeps();
-            }
         }
 
         private void checkNotCompleted()
@@ -1190,53 +1173,16 @@ public abstract class Command extends ImmutableState
         }
 
         @Override
-        public RoutingKey homeKey()
-        {
-            checkNotCompleted();
-            return homeKey;
-        }
-
-        public Update homeKey(RoutingKey homeKey)
-        {
-            checkNotCompleted();
-            this.homeKey = homeKey;
-            return this;
-        }
-
-        @Override
-        public RoutingKey progressKey()
-        {
-            checkNotCompleted();
-            return progressKey;
-        }
-
-        /**
-         * A key nominated to be the primary shard within this node for managing progress of the command.
-         * It is nominated only as of txnId.epoch, and may be null (indicating that this node does not monitor
-         * the progress of this command).
-         *
-         * Preferentially, this is homeKey on nodes that replicate it, and otherwise any key that is replicated, as of txnId.epoch
-         */
-        public Update progressKey(RoutingKey progressKey)
-        {
-            checkNotCompleted();
-            RoutingKey current = command.progressKey();
-            Invariants.checkArgument(current == null || current.equals(progressKey));
-            this.progressKey = progressKey;
-            return this;
-        }
-
-        @Override
         public Route<?> route()
         {
             checkNotCompleted();
-            return route;
+            return super.route();
         }
 
-        public Update route(Route<?> route)
+        public Mutable route(Route<?> route)
         {
             checkNotCompleted();
-            this.route = route;
+            super.route(route);
             return this;
         }
 
@@ -1244,13 +1190,13 @@ public abstract class Command extends ImmutableState
         public Status.Durability durability()
         {
             checkNotCompleted();
-            return Command.durability(durability, command.saveStatus());
+            return Command.durability(super.durability(), command.saveStatus());
         }
 
-        public Update durability(Status.Durability durability)
+        public Mutable durability(Status.Durability durability)
         {
             checkNotCompleted();
-            this.durability = durability;
+            super.durability(durability);
             return this;
         }
 
@@ -1260,14 +1206,14 @@ public abstract class Command extends ImmutableState
             return ensureImmutable(listeners);
         }
 
-        public Update addListener(CommandListener listener)
+        public Mutable addListener(CommandListener listener)
         {
             listeners = ensureMutable(listeners);
             listeners.add(listener);
             return this;
         }
 
-        public Update removeListener(CommandListener listener)
+        public Mutable removeListener(CommandListener listener)
         {
             if (listener == null || listeners.isEmpty())
                 return this;
@@ -1276,35 +1222,7 @@ public abstract class Command extends ImmutableState
             return this;
         }
 
-        @Override
-        public PartialTxn partialTxn()
-        {
-            checkNotCompleted();
-            return partialTxn;
-        }
-
-        public Update partialTxn(PartialTxn partialTxn)
-        {
-            checkNotCompleted();
-            this.partialTxn = partialTxn;
-            return this;
-        }
-
-        @Override
-        public @Nullable PartialDeps partialDeps()
-        {
-            checkNotCompleted();
-            return partialDeps;
-        }
-
-        public Update partialDeps(@Nullable PartialDeps partialDeps)
-        {
-            checkNotCompleted();
-            this.partialDeps = partialDeps;
-            return this;
-        }
-
-        public Update registerWith(Seekables<?, ?> keysOrRanges, Ranges slice)
+        public Mutable registerWith(Seekables<?, ?> keysOrRanges, Ranges slice)
         {
             checkNotCompleted();
             multiRegistrations.add(new ToRegister<>(keysOrRanges, slice));
@@ -1312,7 +1230,7 @@ public abstract class Command extends ImmutableState
         }
 
 
-        public Update registerWith(Seekable keyOrRange, Ranges slice)
+        public Mutable registerWith(Seekable keyOrRange, Ranges slice)
         {
             checkNotCompleted();
             singleRegistrations.add(new ToRegister<>(keyOrRange, slice));
