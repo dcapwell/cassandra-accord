@@ -133,13 +133,13 @@ public class Commands
             Timestamp executeAt = ballot.equals(Ballot.ZERO)
                     ? safeStore.preaccept(txnId, partialTxn.keys())
                     : safeStore.time().uniqueNow(txnId);
-            command = update.preaccept(executeAt, ballot);
+            command = update.preaccept(attrs, executeAt, ballot);
             safeStore.progressLog().preaccepted(safeStore, txnId, shard);
         }
         else
         {
             // TODO (expected, ?): in the case that we are pre-committed but had not been preaccepted/accepted, should we inform progressLog?
-            command = update.markDefined(ballot);
+            command = update.markDefined(attrs, ballot);
         }
 
         safeStore.notifyListeners(command);
@@ -195,7 +195,7 @@ public class Commands
         if (!command.known().isDefinitionKnown())
             safeStore.register(keys, acceptRanges, command);
 
-        command = update.accept(executeAt, ballot);
+        command = update.accept(attrs, executeAt, ballot);
         safeStore.progressLog().accepted(safeStore, txnId, shard);
         safeStore.notifyListeners(command);
 
@@ -254,7 +254,7 @@ public class Commands
 
         if (!validate(command.status(), attrs, coordinateRanges, executeRanges, shard, route, Check, partialTxn, Add, partialDeps, Set))
         {
-            update.updateAttributes();
+            update.updateAttributes(attrs);
             return CommitOutcome.Insufficient;
         }
 
@@ -263,7 +263,7 @@ public class Commands
 
         logger.trace("{}: committed with executeAt: {}, deps: {}", txnId, executeAt, partialDeps);
         WaitingOn waitingOn = populateWaitingOn(safeStore, txnId, executeAt, partialDeps);
-        command = update.commit(executeAt, waitingOn);
+        command = update.commit(attrs, executeAt, waitingOn);
 
         safeStore.progressLog().committed(safeStore, txnId, shard);
 
@@ -354,10 +354,11 @@ public class Commands
         ProgressShard shard = progressShard(safeStore, command);
         safeStore.progressLog().invalidated(safeStore, txnId, shard);
 
+        CommonAttributes attrs = command;
         Command.Update update = safeStore.beginUpdate(command);
         if (command.partialDeps() == null)
-            update.partialDeps(PartialDeps.NONE);
-        command = update.commitInvalidated(txnId);
+            attrs = attrs.mutableAttrs().partialDeps(PartialDeps.NONE);
+        command = update.commitInvalidated(attrs, txnId);
         logger.trace("{}: committed invalidated", txnId);
 
         safeStore.notifyListeners(command);
@@ -393,14 +394,14 @@ public class Commands
 
         if (!validate(command.status(), attrs, coordinateRanges, executeRanges, shard, route, Check, null, Check, partialDeps, command.hasBeen(Committed) ? Add : TrySet))
         {
-            update.updateAttributes();
+            update.updateAttributes(attrs);
             return ApplyOutcome.Insufficient; // TODO (expected, consider): this should probably be an assertion failure if !TrySet
         }
 
         WaitingOn waitingOn = !command.hasBeen(Committed) ? populateWaitingOn(safeStore, txnId, executeAt, partialDeps) : command.asCommitted().waitingOn();
         attrs = set(safeStore, command, attrs, coordinateRanges, executeRanges, shard, route, null, Check, partialDeps, command.hasBeen(Committed) ? Add : TrySet);
 
-        command = update.preapplied(executeAt, waitingOn, writes, result);
+        command = update.preapplied(attrs, executeAt, waitingOn, writes, result);
         logger.trace("{}: apply, status set to Executed with executeAt: {}, deps: {}", txnId, executeAt, partialDeps);
 
         maybeExecute(safeStore, command, shard, true, true);
@@ -610,8 +611,8 @@ public class Commands
         CommonAttributes attrs = updateHomeKey(safeStore, command.txnId(), command, homeKey);
         if (executeAt != null && update.status().hasBeen(Committed) && !command.asCommitted().executeAt().equals(executeAt))
             safeStore.agent().onInconsistentTimestamp(command, command.asCommitted().executeAt(), executeAt);
-        update.durability(durability);
-        return update.updateAttributes();
+        attrs = attrs.mutableAttrs().durability(durability);
+        return update.updateAttributes(attrs);
     }
 
     public static Command setDurability(SafeCommandStore safeStore, TxnId txnId, Durability durability, RoutingKey homeKey, @Nullable Timestamp executeAt)
@@ -751,21 +752,9 @@ public class Commands
 
     public static Command updateHomeKey(SafeCommandStore safeStore, Command command, RoutingKey homeKey)
     {
-        if (command.homeKey() == null)
-        {
-            Command.Update update = safeStore.beginUpdate(command);
-            update.homeKey(homeKey);
-            if (update.progressKey() == null && owns(safeStore, update.txnId().epoch(), homeKey))
-                update.progressKey(homeKey);
-
-            return update.updateAttributes();
-        }
-        else if (!command.homeKey().equals(homeKey))
-        {
-            throw new IllegalStateException();
-        }
-
-        return command;
+        Command.Update update = safeStore.beginUpdate(command);
+        CommonAttributes attrs = updateHomeKey(safeStore, command.txnId(), command, homeKey);
+        return update.updateAttributes(attrs);
     }
 
     /**
@@ -781,11 +770,11 @@ public class Commands
     {
         if (attrs.homeKey() == null)
         {
-            attrs = attrs.mutable().homeKey(homeKey);
+            attrs = attrs.mutableAttrs().homeKey(homeKey);
             // TODO (low priority, safety): if we're processed on a node that does not know the latest epoch,
             //      do we guarantee the home key calculation is unchanged since the prior epoch?
             if (attrs.progressKey() == null && owns(safeStore, txnId.epoch(), homeKey))
-                attrs = attrs.mutable().progressKey(homeKey);
+                attrs = attrs.mutableAttrs().progressKey(homeKey);
         }
         else if (!attrs.homeKey().equals(homeKey))
         {
@@ -798,7 +787,7 @@ public class Commands
     {
         attrs = updateHomeKey(safeStore, txnId, attrs, route.homeKey());
         if (attrs.progressKey() == null)
-            attrs = attrs.mutable().progressKey(progressKey != null ? progressKey : NO_PROGRESS_KEY);
+            attrs = attrs.mutableAttrs().progressKey(progressKey != null ? progressKey : NO_PROGRESS_KEY);
         else if (!attrs.progressKey().equals(progressKey))
             throw new AssertionError();
         return attrs;
@@ -861,9 +850,9 @@ public class Commands
         Ranges allRanges = existingRanges.with(additionalRanges);
 
         if (shard.isProgress())
-            attrs = attrs.mutable().route(Route.merge(attrs.route(), (Route)route));
+            attrs = attrs.mutableAttrs().route(Route.merge(attrs.route(), (Route)route));
         else
-            attrs = attrs.mutable().route(route.slice(allRanges));
+            attrs = attrs.mutableAttrs().route(route.slice(allRanges));
 
         // TODO (soon): stop round-robin hashing; partition only on ranges
         switch (ensurePartialTxn)
@@ -880,13 +869,13 @@ public class Commands
                         safeStore.register(keyOrRange, allRanges, command);
                         return v;
                     }, 0, 0, 1);
-                    attrs = attrs.mutable().partialTxn(attrs.partialTxn().with(partialTxn));
+                    attrs = attrs.mutableAttrs().partialTxn(attrs.partialTxn().with(partialTxn));
                     break;
                 }
 
             case Set:
             case TrySet:
-                attrs = attrs.mutable().partialTxn(partialTxn = partialTxn.slice(allRanges, shard.isHome()));
+                attrs = attrs.mutableAttrs().partialTxn(partialTxn = partialTxn.slice(allRanges, shard.isHome()));
                 // TODO (expected, efficiency): we may register the same ranges more than once
                 // TODO (desirable, efficiency): no need to register on PreAccept if already Accepted
                 safeStore.register(partialTxn.keys(), allRanges, command);
@@ -901,13 +890,13 @@ public class Commands
 
                 if (attrs.partialDeps() != null)
                 {
-                    attrs = attrs.mutable().partialDeps(attrs.partialDeps().with(partialDeps.slice(allRanges)));
+                    attrs = attrs.mutableAttrs().partialDeps(attrs.partialDeps().with(partialDeps.slice(allRanges)));
                     break;
                 }
 
             case Set:
             case TrySet:
-                attrs = attrs.mutable().partialDeps(partialDeps.slice(allRanges));
+                attrs = attrs.mutableAttrs().partialDeps(partialDeps.slice(allRanges));
                 break;
         }
         return attrs;
