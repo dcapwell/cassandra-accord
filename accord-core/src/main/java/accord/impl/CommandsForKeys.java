@@ -18,7 +18,6 @@
 
 package accord.impl;
 
-import accord.api.Key;
 import accord.local.Command;
 import accord.local.CommandListener;
 import accord.local.SafeCommandStore;
