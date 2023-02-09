@@ -25,34 +25,13 @@ import accord.api.ProgressLog;
 import accord.local.CommandStore;
 import accord.primitives.Routables;
 import accord.utils.MapReduce;
-import accord.utils.MapReduceConsume;
-import accord.utils.async.AsyncChains;
 
 import java.util.function.BiFunction;
 import java.util.function.Function;
-import java.util.stream.IntStream;
 
-
-public abstract class InMemoryCommandStores<S extends InMemoryCommandStore> extends CommandStores<S>
+public class InMemoryCommandStores
 {
-    public InMemoryCommandStores(NodeTimeService time, Agent agent, DataStore store, ShardDistributor shardDistributor, ProgressLog.Factory progressLogFactory, CommandStore.Factory shardFactory)
-    {
-        super(time, agent, store, shardDistributor, progressLogFactory, shardFactory);
-    }
-
-    @Override
-    public <O> void mapReduceConsume(PreLoadContext context, Routables<?, ?> keys, long minEpoch, long maxEpoch, MapReduceConsume<? super SafeCommandStore, O> mapReduceConsume)
-    {
-        mapReduceConsume(context, keys, minEpoch, maxEpoch, mapReduceConsume, CommandStores.AsyncMapReduceAdapter.instance());
-    }
-
-    @Override
-    public <O> void mapReduceConsume(PreLoadContext context, IntStream commandStoreIds, MapReduceConsume<? super SafeCommandStore, O> mapReduceConsume)
-    {
-        mapReduceConsume(context, commandStoreIds, mapReduceConsume, CommandStores.AsyncMapReduceAdapter.instance());
-    }
-
-    public static class Synchronized extends InMemoryCommandStores<InMemoryCommandStore.Synchronized>
+    public static class Synchronized extends SyncCommandStores
     {
         public Synchronized(NodeTimeService time, Agent agent, DataStore store, ShardDistributor shardDistributor, ProgressLog.Factory progressLogFactory)
         {
@@ -61,7 +40,7 @@ public abstract class InMemoryCommandStores<S extends InMemoryCommandStore> exte
 
         public <T> T mapReduce(PreLoadContext context, Routables<?, ?> keys, long minEpoch, long maxEpoch, MapReduce<? super SafeCommandStore, T> map)
         {
-            return AsyncChains.getUninterruptibly(super.mapReduce(context, keys, minEpoch, maxEpoch, map, AsyncMapReduceAdapter.instance()));
+            return super.mapReduce(context, keys, minEpoch, maxEpoch, map, SyncMapReduceAdapter.instance());
         }
 
         public <T> T mapReduce(PreLoadContext context, Routables<?, ?> keys, long minEpoch, long maxEpoch, Function<? super SafeCommandStore, T> map, BiFunction<T, T, T> reduce)
@@ -82,7 +61,7 @@ public abstract class InMemoryCommandStores<S extends InMemoryCommandStore> exte
         }
     }
 
-    public static class SingleThread extends InMemoryCommandStores<InMemoryCommandStore.SingleThread>
+    public static class SingleThread extends AsyncCommandStores
     {
         public SingleThread(NodeTimeService time, Agent agent, DataStore store, ShardDistributor shardDistributor, ProgressLog.Factory progressLogFactory)
         {
