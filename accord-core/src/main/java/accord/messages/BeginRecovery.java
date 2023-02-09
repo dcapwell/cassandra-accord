@@ -84,6 +84,7 @@ public class BeginRecovery extends TxnRequest<BeginRecovery.RecoverReply>
 
     public RecoverReply apply(SafeCommandStore safeStore)
     {
+        LiveCommand liveCommand = safeStore.command(txnId);
         switch (Commands.recover(safeStore, txnId, partialTxn, route != null ? route : scope, progressKey, ballot))
         {
             default:
@@ -93,13 +94,12 @@ public class BeginRecovery extends TxnRequest<BeginRecovery.RecoverReply>
                 throw new IllegalStateException("Invalid Outcome");
 
             case RejectedBallot:
-                Command command = safeStore.command(txnId);
-                return new RecoverNack(command.promised());
+                return new RecoverNack(liveCommand.current().promised());
 
             case Success:
         }
 
-        Command command = safeStore.command(txnId);
+        Command command = liveCommand.current();
         PartialDeps deps = command.partialDeps();
         if (!command.known().deps.hasProposedOrDecidedDeps())
         {

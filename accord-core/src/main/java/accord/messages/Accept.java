@@ -21,6 +21,7 @@ package accord.messages;
 import accord.local.Command;
 import accord.local.Commands;
 import accord.local.Commands.AcceptOutcome;
+import accord.local.LiveCommand;
 import accord.local.SafeCommandStore;
 import accord.primitives.*;
 import accord.local.Node.Id;
@@ -95,8 +96,7 @@ public class Accept extends TxnRequest.WithUnsynced<Accept.AcceptReply>
             case Redundant:
                 return AcceptReply.REDUNDANT;
             case RejectedBallot:
-                Command command = safeStore.command(txnId);
-                return new AcceptReply(command.promised());
+                return new AcceptReply(safeStore.command(txnId).current().promised());
             case Success:
                 // TODO (desirable, efficiency): we don't need to calculate deps if executeAt == txnId
                 return new AcceptReply(calculatePartialDeps(safeStore));
@@ -242,7 +242,8 @@ public class Accept extends TxnRequest.WithUnsynced<Accept.AcceptReply>
         @Override
         public AcceptReply apply(SafeCommandStore safeStore)
         {
-            switch (Commands.acceptInvalidate(safeStore, txnId, ballot))
+            LiveCommand liveCommand = safeStore.command(txnId);
+            switch (Commands.acceptInvalidate(safeStore, liveCommand, ballot))
             {
                 default:
                 case Redundant:
@@ -250,7 +251,7 @@ public class Accept extends TxnRequest.WithUnsynced<Accept.AcceptReply>
                 case Success:
                     return AcceptReply.ACCEPT_INVALIDATE;
                 case RejectedBallot:
-                    return new AcceptReply(safeStore.command(txnId).promised());
+                    return new AcceptReply(liveCommand.current().promised());
             }
         }
 

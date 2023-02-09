@@ -57,24 +57,25 @@ class Defer implements CommandListener
         this.request = request;
     }
 
-    void add(SafeCommandStore safeStore, Command command, CommandStore commandStore)
+    void add(SafeCommandStore safeStore, LiveCommand liveCommand, CommandStore commandStore)
     {
         if (isDone)
             throw new IllegalStateException("Recurrent retry of " + request);
 
         waitingOn.add(commandStore.id());
         ++waitingOnCount;
-        Command.addListener(safeStore, command, this);
+        liveCommand.addListener(this);
     }
 
     @Override
     public void onChange(SafeCommandStore safeStore, TxnId txnId)
     {
-        Command command = safeStore.command(txnId);
+        LiveCommand liveCommand = safeStore.command(txnId);
+        Command command = liveCommand.current();
         Ready ready = waitUntil.apply(command);
         if (ready == No) return;
 
-        Command.removeListener(safeStore, command, this);
+        liveCommand.removeListener(this);
 
         if (ready == Expired) return;
 

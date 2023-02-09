@@ -174,6 +174,7 @@ public class CheckOn extends CheckShards
         @Override
         public Void apply(SafeCommandStore safeStore)
         {
+            LiveCommand liveCommand = safeStore.command(txnId);
             switch (sufficientFor.propagate())
             {
                 default: throw new IllegalStateException();
@@ -223,7 +224,7 @@ public class CheckOn extends CheckShards
 
             Timestamp executeAt = merged.saveStatus.known.executeAt.hasDecidedExecuteAt() ? merged.executeAt : null;
             Commands.setDurability(safeStore, txnId, merged.durability, homeKey, executeAt);
-            safeStore.progressLog().durable(safeStore, txnId, null);
+            safeStore.progressLog().durable(liveCommand.current(), null);
             return null;
         }
 
