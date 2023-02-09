@@ -154,15 +154,15 @@ public abstract class Command extends ImmutableState implements CommonAttributes
     public static Command addListener(SafeCommandStore safeStore, Command command, CommandListener listener)
     {
         Update update = safeStore.beginUpdate(command);
-        update.addListener(listener);
-        return update.updateAttributes();
+        CommonAttributes attrs = command.mutableAttrs().addListener(listener);
+        return update.updateAttributes(attrs);
     }
 
     public static Command removeListener(SafeCommandStore safeStore, Command command, CommandListener listener)
     {
         Update update = safeStore.beginUpdate(command);
-        update.removeListener(listener);
-        return update.updateAttributes();
+        CommonAttributes attrs = command.mutableAttrs().removeListener(listener);
+        return update.updateAttributes(attrs);
     }
 
     public static Committed updateWaitingOn(SafeCommandStore safeStore, Committed command, WaitingOn.Update waitingOn)
@@ -172,8 +172,8 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
         Update update = safeStore.beginUpdate(command);
         Committed updated =  command instanceof Executed ?
-                Executed.Factory.update(command.asExecuted(), update, waitingOn.build()) :
-                Committed.Factory.update(command, update, waitingOn.build());
+                Executed.Factory.update(command.asExecuted(), command, waitingOn.build()) :
+                Committed.Factory.update(command, command, waitingOn.build());
         return update.complete(updated);
     }
 
@@ -1105,7 +1105,7 @@ public abstract class Command extends ImmutableState implements CommonAttributes
         return updateAttributes(command, attributes, command.promised());
     }
 
-    public static class Update extends Mutable
+    public static class Update
     {
         private static class ToRegister<T>
         {
@@ -1148,7 +1148,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
         public Update(SafeCommandStore safeStore, Command command)
         {
-            super(command);
             this.safeStore = safeStore;
             command.checkCanUpdate();
             this.command = command;
@@ -1161,7 +1160,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
                 throw new IllegalStateException(this + " has been completed");
         }
 
-        @Override
         public TxnId txnId()
         {
             return command.txnId();
@@ -1170,71 +1168,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
         public Status status()
         {
             return command.status();
-        }
-
-        @Override
-        public Route<?> route()
-        {
-            checkNotCompleted();
-            return super.route();
-        }
-
-        public Mutable route(Route<?> route)
-        {
-            checkNotCompleted();
-            super.route(route);
-            return this;
-        }
-
-        @Override
-        public Status.Durability durability()
-        {
-            checkNotCompleted();
-            return Command.durability(super.durability(), command.saveStatus());
-        }
-
-        public Mutable durability(Status.Durability durability)
-        {
-            checkNotCompleted();
-            super.durability(durability);
-            return this;
-        }
-
-        @Override
-        public ImmutableSet<CommandListener> listeners()
-        {
-            return ensureImmutable(listeners);
-        }
-
-        public Mutable addListener(CommandListener listener)
-        {
-            listeners = ensureMutable(listeners);
-            listeners.add(listener);
-            return this;
-        }
-
-        public Mutable removeListener(CommandListener listener)
-        {
-            if (listener == null || listeners.isEmpty())
-                return this;
-            listeners = ensureMutable(listeners);
-            listeners.remove(listener);
-            return this;
-        }
-
-        public Mutable registerWith(Seekables<?, ?> keysOrRanges, Ranges slice)
-        {
-            checkNotCompleted();
-            multiRegistrations.add(new ToRegister<>(keysOrRanges, slice));
-            return this;
-        }
-
-
-        public Mutable registerWith(Seekable keyOrRange, Ranges slice)
-        {
-            checkNotCompleted();
-            singleRegistrations.add(new ToRegister<>(keyOrRange, slice));
-            return this;
         }
 
         protected  <T extends Command> T complete(T updated)
@@ -1246,27 +1179,27 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
             updated.markActive();
 
-            int initialListenerSize = listeners.size();
+            CommonAttributes attrs = updated;
 
             for (ToRegister<Seekables<?, ?>> toRegister : multiRegistrations)
             {
                 safeStore.register(toRegister.value, toRegister.slice, updated);
                 for (Seekable seekable: toRegister.value)
                     if (seekable.domain() == Routable.Domain.Key)
-                        addListener(CommandsForKey.listener(seekable.asKey()));
+                        attrs = attrs.mutableAttrs().addListener(CommandsForKey.listener(seekable.asKey()));
             }
 
             for (ToRegister<Seekable> toRegister : singleRegistrations)
             {
                 safeStore.register(toRegister.value, toRegister.slice, updated);
                 if (toRegister.value.domain() == Routable.Domain.Key)
-                    addListener(CommandsForKey.listener(toRegister.value.asKey()));
+                    attrs = attrs.mutableAttrs().addListener(CommandsForKey.listener(toRegister.value.asKey()));
             }
 
-            if (listeners.size() > initialListenerSize)
+            if (attrs != updated)
             {
                 Command preUpdate = updated;
-                updated = (T) Command.updateAttributes(updated, this);
+                updated = (T) Command.updateAttributes(updated, attrs);
                 if (updated != preUpdate)
                 {
                     preUpdate.markInvalidated();
@@ -1283,85 +1216,85 @@ public abstract class Command extends ImmutableState implements CommonAttributes
             return updated;
         }
 
-        public Command updateAttributes()
+        public Command updateAttributes(CommonAttributes attrs)
         {
-            return complete(Command.updateAttributes(command, this));
+            return complete(Command.updateAttributes(command, attrs));
         }
 
-        public Preaccepted preaccept(Timestamp executeAt, Ballot ballot)
+        public Preaccepted preaccept(CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
         {
             if (command.status() == Status.NotWitnessed)
             {
-                return complete(Preaccepted.Factory.create(this, executeAt, ballot));
+                return complete(Preaccepted.Factory.create(attrs, executeAt, ballot));
             }
             else if (command.status() == Status.AcceptedInvalidate && command.executeAt() == null)
             {
                 Accepted accepted = command.asAccepted();
-                return complete(Accepted.Factory.create(this, accepted.saveStatus(), executeAt, ballot, accepted.accepted()));
+                return complete(Accepted.Factory.create(attrs, accepted.saveStatus(), executeAt, ballot, accepted.accepted()));
             }
             else
             {
                 Invariants.checkState(command.status() == Status.Accepted);
-                return (Preaccepted) complete(Command.updateAttributes(command, this, ballot));
+                return (Preaccepted) complete(Command.updateAttributes(command, attrs, ballot));
             }
         }
 
-        public Accepted markDefined(Ballot promised)
+        public Accepted markDefined(CommonAttributes attributes, Ballot promised)
         {
             if (isSameClass(command, Accepted.class))
-                return complete(Accepted.Factory.update(command.asAccepted(), this, SaveStatus.enrich(command.saveStatus(), DefinitionOnly), promised));
-            return (Accepted) complete(Command.updateAttributes(command, this, promised));
+                return complete(Accepted.Factory.update(command.asAccepted(), attributes, SaveStatus.enrich(command.saveStatus(), DefinitionOnly), promised));
+            return (Accepted) complete(Command.updateAttributes(command, attributes, promised));
         }
 
         public Command updatePromised(Ballot promised)
         {
-            return complete(Command.updateAttributes(command, this, promised));
+            return complete(Command.updateAttributes(command, command, promised));
         }
 
-        public Accepted accept(Timestamp executeAt, Ballot ballot)
+        public Accepted accept(CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
         {
-            return complete(new Accepted(this, SaveStatus.get(Status.Accepted, command.known()), executeAt, ballot, ballot));
+            return complete(new Accepted(attrs, SaveStatus.get(Status.Accepted, command.known()), executeAt, ballot, ballot));
         }
 
         public Accepted acceptInvalidated(Ballot ballot)
         {
             Timestamp executeAt = command.isWitnessed() ? command.asWitnessed().executeAt() : null;
-            return complete(new Accepted(this, SaveStatus.AcceptedInvalidate, executeAt, ballot, ballot));
+            return complete(new Accepted(command, SaveStatus.AcceptedInvalidate, executeAt, ballot, ballot));
         }
 
-        public Committed commit(Timestamp executeAt, WaitingOn waitingOn)
+        public Committed commit(CommonAttributes attrs, Timestamp executeAt, WaitingOn waitingOn)
         {
-            return complete(Committed.Factory.create(this, SaveStatus.Committed, executeAt, command.promised(), command.accepted(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply));
+            return complete(Committed.Factory.create(attrs, SaveStatus.Committed, executeAt, command.promised(), command.accepted(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply));
         }
 
         public Command precommit(Timestamp executeAt)
         {
-            return complete(new Accepted(this, SaveStatus.PreCommitted, executeAt, command.promised(), command.accepted()));
+            return complete(new Accepted(command, SaveStatus.PreCommitted, executeAt, command.promised(), command.accepted()));
         }
 
-        public Committed commitInvalidated(Timestamp executeAt)
+        public Committed commitInvalidated(CommonAttributes attrs, Timestamp executeAt)
         {
-            return complete(Executed.Factory.create(this, SaveStatus.Invalidated, executeAt, command.promised(), command.accepted(), WaitingOn.EMPTY, null, null));
+            return complete(Executed.Factory.create(attrs, SaveStatus.Invalidated, executeAt, command.promised(), command.accepted(), WaitingOn.EMPTY, null, null));
         }
 
         public Committed readyToExecute()
         {
-            return complete(Committed.Factory.update(command.asCommitted(), this, SaveStatus.ReadyToExecute));
+            return complete(Committed.Factory.update(command.asCommitted(), command, SaveStatus.ReadyToExecute));
         }
 
-        public Executed preapplied(Timestamp executeAt, WaitingOn waitingOn, Writes writes, Result result)
+        public Executed preapplied(CommonAttributes attrs, Timestamp executeAt, WaitingOn waitingOn, Writes writes, Result result)
         {
-            return complete(Executed.Factory.create(this, SaveStatus.PreApplied, executeAt, command.promised(), command.accepted(), waitingOn, writes, result));
+            return complete(Executed.Factory.create(attrs, SaveStatus.PreApplied, executeAt, command.promised(), command.accepted(), waitingOn, writes, result));
         }
 
         public Committed noopApplied()
         {
-            return complete(Executed.Factory.update(command.asExecuted(), this, SaveStatus.Applied));
+            return complete(Executed.Factory.update(command.asExecuted(), command, SaveStatus.Applied));
         }
 
         public Executed applied()
         {
-            return complete(Executed.Factory.update(command.asExecuted(), this, SaveStatus.Applied));
+            return complete(Executed.Factory.update(command.asExecuted(), command, SaveStatus.Applied));
         }
     }
 }
