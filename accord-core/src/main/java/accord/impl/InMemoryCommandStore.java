@@ -511,7 +511,7 @@ public class InMemoryCommandStore
         };
     }
 
-    private static class InMemorySafeStore extends SafeCommandStores.AbstractSafeCommandStore
+    private static class InMemorySafeStore extends AbstractSafeCommandStore
     {
         private final State state;
         private final CFKLoader cfkLoader;

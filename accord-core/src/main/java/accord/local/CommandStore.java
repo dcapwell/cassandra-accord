@@ -21,13 +21,11 @@ package accord.local;
 import accord.api.*;
 import accord.api.ProgressLog;
 import accord.api.DataStore;
+import accord.impl.PostExecuteContext;
+import accord.impl.PreExecuteContext;
 import accord.local.CommandStores.RangesForEpochHolder;
 import accord.utils.async.AsyncChain;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -36,8 +34,6 @@ import java.util.function.Function;
  */
 public abstract class CommandStore
 {
-    private static final Logger logger = LoggerFactory.getLogger(CommandStore.class);
-
     public interface Factory
     {
         CommandStore create(int id,
