@@ -284,7 +284,7 @@ public class InMemoryCommandStore
             }
         }
 
-        public void register(SafeCommandStore safeStore, Seekables<?, ?> keysOrRanges, Ranges slice, Command command)
+        public void register(InMemorySafeStore safeStore, Seekables<?, ?> keysOrRanges, Ranges slice, Command command)
         {
             switch (keysOrRanges.domain())
             {
@@ -298,7 +298,7 @@ public class InMemoryCommandStore
             }
         }
 
-        public void register(SafeCommandStore safeStore, Seekable keyOrRange, Ranges slice, Command command)
+        public void register(InMemorySafeStore safeStore, Seekable keyOrRange, Ranges slice, Command command)
         {
             switch (keyOrRange.domain())
             {
@@ -312,7 +312,7 @@ public class InMemoryCommandStore
             }
         }
 
-        private <O> O mapReduceForKey(SafeCommandStore safeStore, Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<CommandsForKey, O, O> map, O accumulate, O terminalValue)
+        private <O> O mapReduceForKey(InMemorySafeStore safeStore, Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<CommandsForKey, O, O> map, O accumulate, O terminalValue)
         {
             switch (keysOrRanges.domain()) {
                 default:
