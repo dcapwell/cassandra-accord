@@ -19,6 +19,7 @@
 package accord.local;
 
 import accord.api.*;
+import accord.local.AsyncCommandStores.AsyncMapReduceAdapter;
 import accord.primitives.*;
 import accord.api.RoutingKey;
 import accord.topology.Topology;
@@ -35,10 +36,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.stream.IntStream;
 
 import static accord.local.PreLoadContext.empty;
@@ -297,47 +295,6 @@ public abstract class CommandStores<S extends CommandStore>
         Accumulator reduce(MapReduce<? super SafeCommandStore, O> reduce, Accumulator accumulator, Intermediate next);
         void consume(MapReduceConsume<?, O> consume, Intermediate reduced);
         Intermediate reduce(MapReduce<?, O> reduce, Accumulator accumulator);
-    }
-
-    // TODO: remove this and the adapter interface
-    public static class AsyncMapReduceAdapter<O> implements MapReduceAdapter<CommandStore, AsyncChain<O>, List<AsyncChain<O>>, O>
-    {
-        private static final AsyncChain<?> SUCCESS = AsyncChains.success(null);
-        private static final AsyncMapReduceAdapter<?> INSTANCE = new AsyncMapReduceAdapter<>();
-        public static <O> AsyncMapReduceAdapter<O> instance() { return (AsyncMapReduceAdapter<O>) INSTANCE; }
-
-        @Override
-        public List<AsyncChain<O>> allocate()
-        {
-            return new ArrayList<>();
-        }
-
-        @Override
-        public AsyncChain<O> apply(MapReduce<? super SafeCommandStore, O> map, CommandStore commandStore, PreLoadContext context)
-        {
-            return commandStore.submit(context, map);
-        }
-
-        @Override
-        public List<AsyncChain<O>> reduce(MapReduce<? super SafeCommandStore, O> reduce, List<AsyncChain<O>> chains, AsyncChain<O> next)
-        {
-            chains.add(next);
-            return chains;
-        }
-
-        @Override
-        public void consume(MapReduceConsume<?, O> reduceAndConsume, AsyncChain<O> chain)
-        {
-            chain.begin(reduceAndConsume);
-        }
-
-        @Override
-        public AsyncChain<O> reduce(MapReduce<?, O> reduce, List<AsyncChain<O>> futures)
-        {
-            if (futures.isEmpty())
-                return (AsyncChain<O>) SUCCESS;
-            return AsyncChains.reduce(futures, reduce::reduce);
-        }
     }
 
     public AsyncChain<Void> forEach(Consumer<SafeCommandStore> forEach)
