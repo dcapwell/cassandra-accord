@@ -24,17 +24,30 @@ import accord.primitives.*;
 import accord.utils.Invariants;
 import com.google.common.collect.ImmutableMap;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 
 public abstract class AbstractSafeCommandStore implements SafeCommandStore
 {
+    private static class PendingRegistration<T>
+    {
+        final T value;
+        final Ranges slice;
+        final TxnId txnId;
+
+        public PendingRegistration(T value, Ranges slice, TxnId txnId)
+        {
+            this.value = value;
+            this.slice = slice;
+            this.txnId = txnId;
+        }
+    }
     protected final PreExecuteContext context;
     protected final ContextState<TxnId, Command, Command.Update> commands;
     protected final ContextState<RoutableKey, CommandsForKey, CommandsForKey.Update> commandsForKey;
+
+    private List<PendingRegistration<Seekable>> pendingSeekableRegistrations = null;
+    private List<PendingRegistration<Seekables<?, ?>>> pendingSeekablesRegistrations = null;
 
     public AbstractSafeCommandStore(PreExecuteContext context)
     {
@@ -153,6 +166,22 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         return context.isSubsetOf(this.context);
     }
 
+    @Override
+    public void register(Seekables<?, ?> keysOrRanges, Ranges slice, Command command)
+    {
+        if (pendingSeekablesRegistrations == null)
+            pendingSeekablesRegistrations = new ArrayList<>();
+        pendingSeekablesRegistrations.add(new PendingRegistration<>(keysOrRanges, slice, command.txnId()));
+    }
+
+    @Override
+    public void register(Seekable keyOrRange, Ranges slice, Command command)
+    {
+        if (pendingSeekableRegistrations == null)
+            pendingSeekableRegistrations = new ArrayList<>();
+        pendingSeekableRegistrations.add(new PendingRegistration<>(keyOrRange, slice, command.txnId()));
+    }
+
     protected abstract Timestamp maxConflict(Seekables<?, ?> keysOrRanges, Ranges slice);
 
     @Override
@@ -201,9 +230,41 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         commandsForKey.completeUpdate(update.key(), update, current, updated);
     }
 
+    abstract CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, Command command, CommonAttributes attrs);
+
+    abstract CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, Command command, CommonAttributes attrs);
+
+    private interface RegistrationCompleter<T>
+    {
+        CommonAttributes complete(T value, Ranges ranges, Command command, CommonAttributes attrs);
+    }
+
+    private <T> void completeRegistrations(Map<TxnId, CommonAttributes> updates, List<PendingRegistration<T>> pendingRegistrations, RegistrationCompleter<T> completer)
+    {
+        if (pendingRegistrations == null)
+            return;
+
+        for (PendingRegistration<T> pendingRegistration : pendingRegistrations)
+        {
+            TxnId txnId = pendingRegistration.txnId;
+            Command command = command(pendingRegistration.txnId);
+            CommonAttributes attrs = updates.getOrDefault(txnId, command);
+            attrs = completer.complete(pendingRegistration.value, pendingRegistration.slice, command, attrs);
+            if (attrs != command)
+                updates.put(txnId, attrs);
+        }
+    }
+
     @Override
     public PostExecuteContext complete()
     {
+        if (pendingSeekableRegistrations != null || pendingSeekablesRegistrations != null)
+        {
+            Map<TxnId, CommonAttributes> attributeUpdates = new HashMap<>();
+            completeRegistrations(attributeUpdates, pendingSeekablesRegistrations, this::completeRegistration);
+            completeRegistrations(attributeUpdates, pendingSeekableRegistrations, this::completeRegistration);
+            attributeUpdates.forEach(((txnId, attributes) -> beginUpdate(command(txnId)).updateAttributes(attributes)));
+        }
         return new PostExecuteContext(commands.complete(), commandsForKey.complete());
     }
 

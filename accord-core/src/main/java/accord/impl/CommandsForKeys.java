@@ -20,6 +20,7 @@ package accord.impl;
 
 import accord.api.Key;
 import accord.local.Command;
+import accord.local.CommandListener;
 import accord.local.SafeCommandStore;
 import accord.primitives.Ranges;
 import accord.primitives.RoutableKey;
@@ -32,29 +33,15 @@ public class CommandsForKeys
 
     private CommandsForKeys() {}
 
-    public static boolean register(SafeCommandStore safeStore, CommandsForKey cfk, Command command)
-    {
-        CommandsForKey.Update update = safeStore.beginUpdate(cfk);
-        update.updateMax(command.executeAt());
-        update.byId().add(command.txnId(), command);
-        update.byExecuteAt().add(command.txnId(), command);
-        update.complete();
-        return true;
-    }
-
-    public static void register(AbstractSafeCommandStore safeStore, Command command, RoutableKey key, Ranges slice)
+    public static CommandListener register(AbstractSafeCommandStore safeStore, Command command, RoutableKey key, Ranges slice)
     {
         CommandsForKey cfk = safeStore.commandsForKey(key);
         CommandsForKey.Update update = safeStore.beginUpdate(cfk);
         update.updateMax(command.executeAt());
         update.byId().add(command.txnId(), command);
         update.byExecuteAt().add(command.txnId(), command);
-        update.complete();
-    }
-
-    static void register(AbstractSafeCommandStore safeStore, Key key, Command command)
-    {
-        register(safeStore, safeStore.commandsForKey(key), command);
+        cfk = update.complete();
+        return CommandsForKey.listener(cfk.key());
     }
 
     public static void listenerUpdate(SafeCommandStore safeStore, CommandsForKey listener, Command command)

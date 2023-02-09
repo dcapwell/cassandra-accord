@@ -284,32 +284,36 @@ public class InMemoryCommandStore
             }
         }
 
-        public void register(InMemorySafeStore safeStore, Seekables<?, ?> keysOrRanges, Ranges slice, Command command)
+        public CommonAttributes register(InMemorySafeStore safeStore, Seekables<?, ?> keysOrRanges, Ranges slice, Command command, CommonAttributes attrs)
         {
             switch (keysOrRanges.domain())
             {
                 default: throw new AssertionError();
                 case Key:
-                    forEach(keysOrRanges, slice, key -> CommandsForKeys.register(safeStore, command, key, slice));
-                    break;
+                    CommonAttributes.Mutable mutable = attrs.mutableAttrs();
+                    forEach(keysOrRanges, slice, key -> mutable.addListener(CommandsForKeys.register(safeStore, command, key, slice)));
+                    return mutable;
                 case Range:
                     rangeCommands.computeIfAbsent(command.txnId(), ignore -> new RangeCommand(command))
                             .update((Ranges)keysOrRanges);
             }
+            return attrs;
         }
 
-        public void register(InMemorySafeStore safeStore, Seekable keyOrRange, Ranges slice, Command command)
+        public CommonAttributes register(InMemorySafeStore safeStore, Seekable keyOrRange, Ranges slice, Command command, CommonAttributes attrs)
         {
             switch (keyOrRange.domain())
             {
                 default: throw new AssertionError();
                 case Key:
-                    forEach(keyOrRange, slice, key -> CommandsForKeys.register(safeStore, command, key, slice));
-                    break;
+                    CommonAttributes.Mutable mutable = attrs.mutableAttrs();
+                    forEach(keyOrRange, slice, key -> mutable.addListener(CommandsForKeys.register(safeStore, command, key, slice)));
+                    return mutable;
                 case Range:
                     rangeCommands.computeIfAbsent(command.txnId(), ignore -> new RangeCommand(command))
                             .update(Ranges.of((Range)keyOrRange));
             }
+            return attrs;
         }
 
         private <O> O mapReduceForKey(InMemorySafeStore safeStore, Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<CommandsForKey, O, O> map, O accumulate, O terminalValue)
@@ -695,15 +699,15 @@ public class InMemoryCommandStore
         }
 
         @Override
-        public void register(Seekables<?, ?> keysOrRanges, Ranges slice, Command command)
+        CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, Command command, CommonAttributes attrs)
         {
-            state.register(this, keysOrRanges, slice, command);
+            return state.register(this, keysOrRanges, slice, command, attrs);
         }
 
         @Override
-        public void register(Seekable keyOrRange, Ranges slice, Command command)
+        CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, Command command, CommonAttributes attrs)
         {
-            state.register(this, keyOrRange, slice, command);
+            return state.register(this, keyOrRange, slice, command, attrs);
         }
 
         public void addListener(TxnId command, TxnId listener)
