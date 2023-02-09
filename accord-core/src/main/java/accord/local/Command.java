@@ -151,32 +151,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
         }
     }
 
-    public static Command addListener(SafeCommandStore safeStore, Command command, CommandListener listener)
-    {
-        Update update = safeStore.beginUpdate(command);
-        CommonAttributes attrs = command.mutableAttrs().addListener(listener);
-        return update.updateAttributes(attrs);
-    }
-
-    public static Command removeListener(SafeCommandStore safeStore, Command command, CommandListener listener)
-    {
-        Update update = safeStore.beginUpdate(command);
-        CommonAttributes attrs = command.mutableAttrs().removeListener(listener);
-        return update.updateAttributes(attrs);
-    }
-
-    public static Committed updateWaitingOn(SafeCommandStore safeStore, Committed command, WaitingOn.Update waitingOn)
-    {
-        if (!waitingOn.hasChanges())
-            return command;
-
-        Update update = safeStore.beginUpdate(command);
-        Committed updated =  command instanceof Executed ?
-                Executed.Factory.update(command.asExecuted(), command, waitingOn.build()) :
-                Committed.Factory.update(command, command, waitingOn.build());
-        return update.complete(updated);
-    }
-
     public static class Listener implements CommandListener
     {
         protected final TxnId listenerId;
@@ -215,7 +189,7 @@ public abstract class Command extends ImmutableState implements CommonAttributes
         @Override
         public void onChange(SafeCommandStore safeStore, TxnId txnId)
         {
-            Commands.listenerUpdate(safeStore, safeStore.command(listenerId), safeStore.command(txnId));
+            Commands.listenerUpdate(safeStore, safeStore.command(listenerId), safeStore.command(txnId).current());
         }
 
         @Override
@@ -396,7 +370,7 @@ public abstract class Command extends ImmutableState implements CommonAttributes
     public abstract ImmutableSet<CommandListener> listeners();
     public abstract SaveStatus saveStatus();
 
-    private static boolean isSameClass(Command command, Class<? extends Command> klass)
+    static boolean isSameClass(Command command, Class<? extends Command> klass)
     {
         return command.getClass() == klass;
     }
@@ -577,7 +551,7 @@ public abstract class Command extends ImmutableState implements CommonAttributes
             return new NotWitnessed(txnId, SaveStatus.NotWitnessed, NotDurable, null, null, null, Ballot.ZERO, null);
         }
 
-        private static class Factory
+        static class Factory
         {
             public static NotWitnessed create(CommonAttributes common, Ballot promised)
             {
@@ -665,7 +639,7 @@ public abstract class Command extends ImmutableState implements CommonAttributes
             return hash;
         }
 
-        private static class Factory
+        static class Factory
         {
             public static Preaccepted create(CommonAttributes common, Timestamp executeAt, Ballot promised)
             {
@@ -715,7 +689,7 @@ public abstract class Command extends ImmutableState implements CommonAttributes
     {
         private final Ballot accepted;
 
-        private Accepted(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted)
+        Accepted(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted)
         {
             super(common, status, executeAt, promised);
             this.accepted = accepted;
@@ -739,7 +713,7 @@ public abstract class Command extends ImmutableState implements CommonAttributes
             return hash;
         }
 
-        private static class Factory
+        static class Factory
         {
             static Accepted create(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted)
             {
@@ -805,7 +779,7 @@ public abstract class Command extends ImmutableState implements CommonAttributes
             return hash;
         }
 
-        private static class Factory
+        static class Factory
         {
             private static Committed update(Committed command, CommonAttributes common, Ballot promised, SaveStatus status, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
             {
@@ -814,27 +788,27 @@ public abstract class Command extends ImmutableState implements CommonAttributes
                 return new Committed(common, status, command.executeAt(), promised, command.accepted(), waitingOnCommit, waitingOnApply);
             }
 
-            private static Committed update(Committed command, CommonAttributes common, Ballot promised)
+            static Committed update(Committed command, CommonAttributes common, Ballot promised)
             {
                 return update(command, common, promised, command.saveStatus(), command.waitingOnCommit(), command.waitingOnApply());
             }
 
-            private static Committed update(Committed command, CommonAttributes common, SaveStatus status)
+            static Committed update(Committed command, CommonAttributes common, SaveStatus status)
             {
                 return update(command, common, command.promised(), status, command.waitingOnCommit(), command.waitingOnApply());
             }
 
-            private static Committed update(Committed command, CommonAttributes common, WaitingOn waitingOn)
+            static Committed update(Committed command, CommonAttributes common, WaitingOn waitingOn)
             {
                 return update(command, common, command.promised(), command.saveStatus(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply);
             }
 
-            public static Committed create(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
+            static Committed create(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
             {
                 return new Committed(common, status, executeAt, promised, accepted, waitingOnCommit, waitingOnApply);
             }
 
-            public static Committed create(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, WaitingOn waitingOn)
+            static Committed create(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, WaitingOn waitingOn)
             {
                 return new Committed(common, status, executeAt, promised, accepted, waitingOn.waitingOnCommit, waitingOn.waitingOnApply);
             }
@@ -940,7 +914,7 @@ public abstract class Command extends ImmutableState implements CommonAttributes
             return hash;
         }
 
-        private static class Factory
+        static class Factory
         {
             public static Executed update(Executed command, CommonAttributes common, SaveStatus status, Ballot promised, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
             {
@@ -1103,198 +1077,5 @@ public abstract class Command extends ImmutableState implements CommonAttributes
     private static Command updateAttributes(Command command, CommonAttributes attributes)
     {
         return updateAttributes(command, attributes, command.promised());
-    }
-
-    public static class Update
-    {
-        private static class ToRegister<T>
-        {
-            private final T value;
-            private final Ranges slice;
-
-            public ToRegister(T value, Ranges slice)
-            {
-                this.value = value;
-                this.slice = slice;
-            }
-
-            @Override
-            public boolean equals(Object o)
-            {
-                if (this == o) return true;
-                if (o == null || getClass() != o.getClass()) return false;
-                ToRegister<?> that = (ToRegister<?>) o;
-                return value.equals(that.value) && slice.equals(that.slice);
-            }
-
-            @Override
-            public int hashCode()
-            {
-                int hash = 1;
-                hash = 31 * hash + value.hashCode();
-                hash = 31 * hash + slice.hashCode();
-                return hash;
-            }
-        }
-
-        private boolean completed = false;
-        public final SafeCommandStore safeStore;
-        private final Command command;
-
-
-        private Set<ToRegister<Seekable>> singleRegistrations = new HashSet<>();
-        private Set<ToRegister<Seekables<?, ?>>> multiRegistrations = new HashSet<>();
-        private Set<CommandListener> listeners;
-
-        public Update(SafeCommandStore safeStore, Command command)
-        {
-            this.safeStore = safeStore;
-            command.checkCanUpdate();
-            this.command = command;
-            this.listeners = command.listeners();
-        }
-
-        private void checkNotCompleted()
-        {
-            if (completed)
-                throw new IllegalStateException(this + " has been completed");
-        }
-
-        public TxnId txnId()
-        {
-            return command.txnId();
-        }
-
-        public Status status()
-        {
-            return command.status();
-        }
-
-        protected  <T extends Command> T complete(T updated)
-        {
-            checkNotCompleted();
-
-            if (updated == command)
-                throw new IllegalStateException("Update is the same as the original");
-
-            updated.markActive();
-
-            CommonAttributes attrs = updated;
-
-            for (ToRegister<Seekables<?, ?>> toRegister : multiRegistrations)
-            {
-                safeStore.register(toRegister.value, toRegister.slice, updated);
-                for (Seekable seekable: toRegister.value)
-                    if (seekable.domain() == Routable.Domain.Key)
-                        attrs = attrs.mutableAttrs().addListener(CommandsForKey.listener(seekable.asKey()));
-            }
-
-            for (ToRegister<Seekable> toRegister : singleRegistrations)
-            {
-                safeStore.register(toRegister.value, toRegister.slice, updated);
-                if (toRegister.value.domain() == Routable.Domain.Key)
-                    attrs = attrs.mutableAttrs().addListener(CommandsForKey.listener(toRegister.value.asKey()));
-            }
-
-            if (attrs != updated)
-            {
-                Command preUpdate = updated;
-                updated = (T) Command.updateAttributes(updated, attrs);
-                if (updated != preUpdate)
-                {
-                    preUpdate.markInvalidated();
-                    updated.markActive();
-                }
-            }
-
-            if (command != null)
-                command.markSuperseded();
-
-            safeStore.completeUpdate(this, command, updated);
-            completed = true;
-
-            return updated;
-        }
-
-        public Command updateAttributes(CommonAttributes attrs)
-        {
-            return complete(Command.updateAttributes(command, attrs));
-        }
-
-        public Preaccepted preaccept(CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
-        {
-            if (command.status() == Status.NotWitnessed)
-            {
-                return complete(Preaccepted.Factory.create(attrs, executeAt, ballot));
-            }
-            else if (command.status() == Status.AcceptedInvalidate && command.executeAt() == null)
-            {
-                Accepted accepted = command.asAccepted();
-                return complete(Accepted.Factory.create(attrs, accepted.saveStatus(), executeAt, ballot, accepted.accepted()));
-            }
-            else
-            {
-                Invariants.checkState(command.status() == Status.Accepted);
-                return (Preaccepted) complete(Command.updateAttributes(command, attrs, ballot));
-            }
-        }
-
-        public Accepted markDefined(CommonAttributes attributes, Ballot promised)
-        {
-            if (isSameClass(command, Accepted.class))
-                return complete(Accepted.Factory.update(command.asAccepted(), attributes, SaveStatus.enrich(command.saveStatus(), DefinitionOnly), promised));
-            return (Accepted) complete(Command.updateAttributes(command, attributes, promised));
-        }
-
-        public Command updatePromised(Ballot promised)
-        {
-            return complete(Command.updateAttributes(command, command, promised));
-        }
-
-        public Accepted accept(CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
-        {
-            return complete(new Accepted(attrs, SaveStatus.get(Status.Accepted, command.known()), executeAt, ballot, ballot));
-        }
-
-        public Accepted acceptInvalidated(Ballot ballot)
-        {
-            Timestamp executeAt = command.isWitnessed() ? command.asWitnessed().executeAt() : null;
-            return complete(new Accepted(command, SaveStatus.AcceptedInvalidate, executeAt, ballot, ballot));
-        }
-
-        public Committed commit(CommonAttributes attrs, Timestamp executeAt, WaitingOn waitingOn)
-        {
-            return complete(Committed.Factory.create(attrs, SaveStatus.Committed, executeAt, command.promised(), command.accepted(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply));
-        }
-
-        public Command precommit(Timestamp executeAt)
-        {
-            return complete(new Accepted(command, SaveStatus.PreCommitted, executeAt, command.promised(), command.accepted()));
-        }
-
-        public Committed commitInvalidated(CommonAttributes attrs, Timestamp executeAt)
-        {
-            return complete(Executed.Factory.create(attrs, SaveStatus.Invalidated, executeAt, command.promised(), command.accepted(), WaitingOn.EMPTY, null, null));
-        }
-
-        public Committed readyToExecute()
-        {
-            return complete(Committed.Factory.update(command.asCommitted(), command, SaveStatus.ReadyToExecute));
-        }
-
-        public Executed preapplied(CommonAttributes attrs, Timestamp executeAt, WaitingOn waitingOn, Writes writes, Result result)
-        {
-            return complete(Executed.Factory.create(attrs, SaveStatus.PreApplied, executeAt, command.promised(), command.accepted(), waitingOn, writes, result));
-        }
-
-        public Committed noopApplied()
-        {
-            return complete(Executed.Factory.update(command.asExecuted(), command, SaveStatus.Applied));
-        }
-
-        public Executed applied()
-        {
-            return complete(Executed.Factory.update(command.asExecuted(), command, SaveStatus.Applied));
-        }
     }
 }

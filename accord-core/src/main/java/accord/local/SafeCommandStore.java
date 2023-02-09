@@ -37,7 +37,7 @@ import static accord.utils.Utils.listOf;
  */
 public interface SafeCommandStore
 {
-    Command ifPresent(TxnId txnId);
+    LiveCommand ifPresent(TxnId txnId);
 
     /**
      * If the transaction is in memory, return it (and make it visible to future invocations of {@code command}, {@code ifPresent} etc).
@@ -45,8 +45,8 @@ public interface SafeCommandStore
      *
      * This permits efficient operation when a transaction involved in processing another transaction happens to be in memory.
      */
-    Command ifLoaded(TxnId txnId);
-    Command command(TxnId txnId);
+    LiveCommand ifLoaded(TxnId txnId);
+    LiveCommand command(TxnId txnId);
 
     boolean canExecuteWith(PreLoadContext context);
 
@@ -58,9 +58,9 @@ public interface SafeCommandStore
     {
         PreLoadContext context = PreLoadContext.contextFor(listOf(txnId, listenerId), Keys.EMPTY);
         commandStore().execute(context, safeStore -> {
-            Command command = safeStore.command(txnId);
+            LiveCommand command = safeStore.command(txnId);
             CommandListener listener = Command.listener(listenerId);
-            Command.addListener(safeStore, command, listener);
+            command.addListener(listener);
             listener.onChange(safeStore, txnId);
         }).begin(agent());
     }
@@ -118,15 +118,6 @@ public interface SafeCommandStore
             }
         }
     }
-
-    Command.Update beginUpdate(Command command);
-
-    default Command.Update beginUpdate(TxnId txnId)
-    {
-        return beginUpdate(command(txnId));
-    }
-
-    void completeUpdate(Command.Update update, Command current, Command updated);
 
     CommandsForKey.Update beginUpdate(CommandsForKey commandsForKey);
 
