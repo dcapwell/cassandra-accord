@@ -21,7 +21,7 @@ package accord.local;
 import accord.api.Data;
 import accord.api.Result;
 import accord.api.RoutingKey;
-import accord.impl.CommandsForKey;
+import accord.api.VisibleForImplementation;
 import accord.primitives.*;
 import accord.utils.Invariants;
 import accord.utils.Utils;
@@ -35,7 +35,6 @@ import java.util.*;
 
 import static accord.local.Status.Durability.Local;
 import static accord.local.Status.Durability.NotDurable;
-import static accord.local.Status.Known.DefinitionOnly;
 import static accord.utils.Utils.*;
 import static java.lang.String.format;
 
@@ -54,13 +53,9 @@ public abstract class Command implements CommonAttributes
         return durability;
     }
 
+    @VisibleForImplementation
     public static class SerializerSupport
     {
-        public static Command.Listener listener(TxnId txnId)
-        {
-            return new Command.Listener(txnId);
-        }
-
         public static NotWitnessed notWitnessed(CommonAttributes attributes, Ballot promised)
         {
             return NotWitnessed.Factory.create(attributes, promised);
