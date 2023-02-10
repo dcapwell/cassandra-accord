@@ -354,19 +354,22 @@ public class InMemoryCommandStore
             return current;
         }
 
-        public PostExecuteContext completeOperation(SafeCommandStore store)
+        public void completeOperation(SafeCommandStore store)
         {
             if (store != current)
                 throw new IllegalStateException("This operation has already been cleared");
             try
             {
-                PostExecuteContext result = current.complete();
-                current = null;
-                return result;
+                current.complete();
             }
             catch (Throwable t)
             {
+                logger.error("Exception completing operation", t);
                 throw t;
+            }
+            finally
+            {
+                current = null;
             }
         }
 
@@ -747,9 +750,9 @@ public class InMemoryCommandStore
         }
 
         @Override
-        public PostExecuteContext completeOperation(SafeCommandStore store)
+        public void completeOperation(SafeCommandStore store)
         {
-            return state.completeOperation(store);
+            state.completeOperation(store);
         }
 
         @Override
@@ -819,9 +822,9 @@ public class InMemoryCommandStore
         }
 
         @Override
-        public PostExecuteContext completeOperation(SafeCommandStore store)
+        public void completeOperation(SafeCommandStore store)
         {
-            return state.completeOperation(store);
+            state.completeOperation(store);
         }
 
         @Override

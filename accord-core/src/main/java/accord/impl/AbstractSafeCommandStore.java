@@ -205,7 +205,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         }
     }
 
-    public PostExecuteContext complete()
+    public void complete()
     {
         if (pendingSeekableRegistrations != null || pendingSeekablesRegistrations != null)
         {
@@ -214,6 +214,5 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
             completeRegistrations(attributeUpdates, pendingSeekableRegistrations, this::completeRegistration);
             attributeUpdates.forEach(((txnId, attributes) -> command(txnId).updateAttributes(attributes)));
         }
-        return new PostExecuteContext(ImmutableMap.copyOf(commands), ImmutableMap.copyOf(commandsForKey));
     }
 }
