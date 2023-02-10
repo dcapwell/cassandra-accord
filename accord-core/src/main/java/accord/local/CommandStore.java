@@ -21,7 +21,6 @@ package accord.local;
 import accord.api.*;
 import accord.api.ProgressLog;
 import accord.api.DataStore;
-import accord.impl.PostExecuteContext;
 import accord.impl.PreExecuteContext;
 import accord.local.CommandStores.RangesForEpochHolder;
 import accord.utils.async.AsyncChain;
@@ -58,7 +57,7 @@ public abstract class CommandStore
 
     public abstract Agent agent();
     public abstract SafeCommandStore beginOperation(PreExecuteContext context);
-    public abstract PostExecuteContext completeOperation(SafeCommandStore store);
+    public abstract void completeOperation(SafeCommandStore store);
     public abstract AsyncChain<Void> execute(PreLoadContext context, Consumer<? super SafeCommandStore> consumer);
     public abstract <T> AsyncChain<T> submit(PreLoadContext context, Function<? super SafeCommandStore, T> apply);
     public abstract void shutdown();
