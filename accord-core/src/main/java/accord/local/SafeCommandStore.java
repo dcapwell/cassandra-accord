@@ -118,8 +118,4 @@ public interface SafeCommandStore
             }
         }
     }
-
-    PostExecuteContext complete();
-
-    CommandsForKey.CommandLoader<?> cfkLoader();
 }

@@ -18,6 +18,7 @@
 
 package accord.impl;
 
+import accord.impl.CommandsForKey.CommandLoader;
 import accord.local.*;
 import accord.primitives.*;
 import com.google.common.collect.ImmutableMap;
@@ -109,6 +110,8 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
             command.notWitnessed();
         return command;
     }
+
+    protected abstract CommandLoader<?> cfkLoader();
 
     public LiveCommandsForKey ifLoaded(RoutableKey key)
     {
@@ -202,7 +205,6 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         }
     }
 
-    @Override
     public PostExecuteContext complete()
     {
         if (pendingSeekableRegistrations != null || pendingSeekablesRegistrations != null)
