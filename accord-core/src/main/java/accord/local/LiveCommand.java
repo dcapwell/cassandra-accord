@@ -45,13 +45,13 @@ public abstract class LiveCommand extends LiveState<Command>
     {
         Command current = current();
         boolean result = current.status().hasBeen(Status.PreAccepted);
-        Invariants.checkState(result == (current instanceof Command.Preaccepted));
+        Invariants.checkState(result == (current instanceof Command.PreAccepted));
         return result;
     }
 
-    public final Command.Preaccepted asWitnessed()
+    public final Command.PreAccepted asWitnessed()
     {
-        return (Command.Preaccepted) current();
+        return (Command.PreAccepted) current();
     }
 
     public final boolean isAccepted()
@@ -112,7 +112,7 @@ public abstract class LiveCommand extends LiveState<Command>
             case NotWitnessed:
                 return Command.NotWitnessed.notWitnessed((Command.NotWitnessed) command, attributes, promised);
             case PreAccepted:
-                return Command.Preaccepted.preAccepted((Command.Preaccepted) command, attributes, promised);
+                return Command.PreAccepted.preAccepted((Command.PreAccepted) command, attributes, promised);
             case AcceptedInvalidate:
             case Accepted:
             case PreCommitted:
@@ -162,11 +162,11 @@ public abstract class LiveCommand extends LiveState<Command>
         return complete(updateAttributes(current(), attrs));
     }
 
-    public Command.Preaccepted preaccept(CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
+    public Command.PreAccepted preaccept(CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
     {
         if (current().status() == Status.NotWitnessed)
         {
-            return complete(Command.Preaccepted.preAccepted(attrs, executeAt, ballot));
+            return complete(Command.PreAccepted.preAccepted(attrs, executeAt, ballot));
         }
         else if (current().status() == Status.AcceptedInvalidate && current().executeAt() == null)
         {
@@ -176,7 +176,7 @@ public abstract class LiveCommand extends LiveState<Command>
         else
         {
             Invariants.checkState(current().status() == Status.Accepted);
-            return (Command.Preaccepted) complete(updateAttributes(current(), attrs, ballot));
+            return (Command.PreAccepted) complete(updateAttributes(current(), attrs, ballot));
         }
     }
 
