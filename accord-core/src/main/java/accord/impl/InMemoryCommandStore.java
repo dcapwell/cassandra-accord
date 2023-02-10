@@ -662,7 +662,7 @@ public class InMemoryCommandStore
                 for (Command command : e.getValue())
                 {
                     T initial = accumulate;
-                    accumulate = ensureActiveState(command, () -> map.apply(e.getKey(), command.txnId(), command.executeAt(), initial));
+                    accumulate = map.apply(e.getKey(), command.txnId(), command.executeAt(), initial);
                 }
             }
 
