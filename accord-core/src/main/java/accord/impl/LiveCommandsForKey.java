@@ -19,6 +19,7 @@
 package accord.impl;
 
 import accord.api.Key;
+import accord.api.VisibleForImplementation;
 import accord.impl.CommandsForKey.CommandLoader;
 import accord.impl.CommandsForKey.CommandTimeseries;
 import accord.local.Command;
@@ -119,6 +120,7 @@ public abstract class LiveCommandsForKey extends LiveState<CommandsForKey>
                                          byExecuteAt.build()));
     }
 
+    @VisibleForImplementation
     public <D> CommandsForKey updateLastExecutionTimestamps(Timestamp executeAt, boolean isForWriteTxn)
     {
         CommandsForKey current = current();
