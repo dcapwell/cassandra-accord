@@ -531,7 +531,7 @@ public class Commands
      */
     private static boolean updatePredecessor(LiveCommand liveCommand, WaitingOn.Update waitingOn, Command dependency)
     {
-        Command.Committed command = liveCommand.asCommitted();
+        Command.Committed command = liveCommand.current().asCommitted();
         Invariants.checkState(dependency.hasBeen(PreCommitted));
         if (dependency.hasBeen(Invalidated))
         {
@@ -593,13 +593,13 @@ public class Commands
 
     static void updatePredecessorAndMaybeExecute(SafeCommandStore safeStore, LiveCommand liveCommand, Command predecessor, boolean notifyWaitingOn)
     {
-        Command.Committed command = liveCommand.asCommitted();
+        Command.Committed command = liveCommand.current().asCommitted();
         if (command.hasBeen(Applied))
             return;
 
         WaitingOn.Update waitingOn = new WaitingOn.Update(command);
         boolean attemptExecution = updatePredecessor(liveCommand, waitingOn, predecessor);
-        command = liveCommand.updateWaitingOn(safeStore, command, waitingOn);
+        command = liveCommand.updateWaitingOn(waitingOn);
 
         if (attemptExecution)
             maybeExecute(safeStore, liveCommand, progressShard(safeStore, command), false, notifyWaitingOn);

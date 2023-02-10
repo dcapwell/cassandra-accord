@@ -25,8 +25,6 @@ import accord.primitives.TxnId;
 import accord.primitives.Writes;
 import accord.utils.Invariants;
 
-import static accord.local.Status.Known.DefinitionOnly;
-
 public abstract class LiveCommand extends LiveState<Command>
 {
     private final TxnId txnId;
@@ -41,206 +39,95 @@ public abstract class LiveCommand extends LiveState<Command>
         return txnId;
     }
 
-    public final boolean isWitnessed()
-    {
-        Command current = current();
-        boolean result = current.status().hasBeen(Status.PreAccepted);
-        Invariants.checkState(result == (current instanceof Command.PreAccepted));
-        return result;
-    }
-
-    public final Command.PreAccepted asWitnessed()
-    {
-        return (Command.PreAccepted) current();
-    }
-
-    public final boolean isAccepted()
-    {
-        Command current = current();
-        boolean result = current.status().hasBeen(Status.AcceptedInvalidate);
-        Invariants.checkState(result == (current instanceof Command.Accepted));
-        return result;
-    }
-
-    public final Command.Accepted asAccepted()
-    {
-        return (Command.Accepted) current();
-    }
-
-    public final boolean isCommitted()
-    {
-        Command current = current();
-        boolean result = current.status().hasBeen(Status.Committed);
-        Invariants.checkState(result == (current instanceof Command.Committed));
-        return result;
-    }
-
-    public final Command.Committed asCommitted()
-    {
-        return (Command.Committed) current();
-    }
-
-    public final boolean isExecuted()
-    {
-        Command current = current();
-        boolean result = current.status().hasBeen(Status.PreApplied);
-        Invariants.checkState(result == (current instanceof Command.Executed));
-        return result;
-    }
-
-    public final Command.Executed asExecuted()
-    {
-        return (Command.Executed) current();
-    }
-
     private <C extends Command> C update(C update)
     {
         set(update);
         return update;
     }
 
-    // FIXME: remove - just stick w/ update
-    private <C extends Command> C complete(C update)
-    {
-        return update(update);
-    }
-
-    private static Command updateAttributes(Command command, CommonAttributes attributes, Ballot promised)
-    {
-        switch (command.status())
-        {
-            case NotWitnessed:
-                return Command.NotWitnessed.notWitnessed((Command.NotWitnessed) command, attributes, promised);
-            case PreAccepted:
-                return Command.PreAccepted.preAccepted((Command.PreAccepted) command, attributes, promised);
-            case AcceptedInvalidate:
-            case Accepted:
-            case PreCommitted:
-                return Command.Accepted.accepted((Command.Accepted) command, attributes, promised);
-            case Committed:
-            case ReadyToExecute:
-                return Command.Committed.committed((Command.Committed) command, attributes, promised);
-            case PreApplied:
-            case Applied:
-            case Invalidated:
-                return Command.Executed.executed((Command.Executed) command, attributes, promised);
-            default:
-                throw new IllegalStateException("Unhandled status " + command.status());
-        }
-    }
-
-    private static Command updateAttributes(Command command, CommonAttributes attributes)
-    {
-        return updateAttributes(command, attributes, command.promised());
-    }
-
     public Command addListener(CommandListener listener)
     {
-        CommonAttributes attrs = current().mutableAttrs().addListener(listener);
-        return complete(updateAttributes(current(), attrs));
+        return update(Command.addListener(current(), listener));
     }
 
     public Command removeListener(CommandListener listener)
     {
-        CommonAttributes attrs = current().mutableAttrs().removeListener(listener);
-        return complete(updateAttributes(current(), attrs));
+        return update(Command.removeListener(current(), listener));
     }
 
-    public Command.Committed updateWaitingOn(SafeCommandStore safeStore, Command.Committed command, Command.WaitingOn.Update waitingOn)
+    public Command.Committed updateWaitingOn(Command.WaitingOn.Update waitingOn)
     {
-        if (!waitingOn.hasChanges())
-            return command;
-
-        Command.Committed updated =  command instanceof Command.Executed ?
-                Command.Executed.executed(command.asExecuted(), command, waitingOn.build()) :
-                Command.Committed.committed(command, command, waitingOn.build());
-        return complete(updated);
+        return update(Command.updateWaitingOn(current().asCommitted(), waitingOn));
     }
 
     public Command updateAttributes(CommonAttributes attrs)
     {
-        return complete(updateAttributes(current(), attrs));
+        return update(Command.updateAttributes(current(), attrs));
     }
 
     public Command.PreAccepted preaccept(CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
     {
-        if (current().status() == Status.NotWitnessed)
-        {
-            return complete(Command.PreAccepted.preAccepted(attrs, executeAt, ballot));
-        }
-        else if (current().status() == Status.AcceptedInvalidate && current().executeAt() == null)
-        {
-            Command.Accepted accepted = asAccepted();
-            return complete(Command.Accepted.accepted(attrs, accepted.saveStatus(), executeAt, ballot, accepted.accepted()));
-        }
-        else
-        {
-            Invariants.checkState(current().status() == Status.Accepted);
-            return (Command.PreAccepted) complete(updateAttributes(current(), attrs, ballot));
-        }
+        return update(Command.preaccept(current(), attrs, executeAt, ballot));
     }
 
     public Command.Accepted markDefined(CommonAttributes attributes, Ballot promised)
     {
-        if (Command.isSameClass(current(), Command.Accepted.class))
-            return complete(Command.Accepted.accepted(asAccepted(), attributes, SaveStatus.enrich(current().saveStatus(), DefinitionOnly), promised));
-        return (Command.Accepted) complete(updateAttributes(current(), attributes, promised));
+        return update(Command.markDefined(current(), attributes, promised));
     }
 
     public Command updatePromised(Ballot promised)
     {
-        return complete(updateAttributes(current(), current(), promised));
+        return update(Command.updatePromised(current(), promised));
     }
 
     public Command.Accepted accept(CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
     {
-        return complete(new Command.Accepted(attrs, SaveStatus.get(Status.Accepted, current().known()), executeAt, ballot, ballot));
+        return update(Command.accept(current(), attrs, executeAt, ballot));
     }
 
     public Command.Accepted acceptInvalidated(Ballot ballot)
     {
-        Timestamp executeAt = isWitnessed() ? asWitnessed().executeAt() : null;
-        return complete(new Command.Accepted(current(), SaveStatus.AcceptedInvalidate, executeAt, ballot, ballot));
+        return update(Command.acceptInvalidated(current(), ballot));
     }
 
     public Command.Committed commit(CommonAttributes attrs, Timestamp executeAt, Command.WaitingOn waitingOn)
     {
-        return complete(Command.Committed.committed(attrs, SaveStatus.Committed, executeAt, current().promised(), current().accepted(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply));
+        return update(Command.commit(current(), attrs, executeAt, waitingOn));
     }
 
     public Command precommit(Timestamp executeAt)
     {
-        return complete(new Command.Accepted(current(), SaveStatus.PreCommitted, executeAt, current().promised(), current().accepted()));
+        return update(Command.precommit(current(), executeAt));
     }
 
     public Command.Committed commitInvalidated(CommonAttributes attrs, Timestamp executeAt)
     {
-        return complete(Command.Executed.executed(attrs, SaveStatus.Invalidated, executeAt, current().promised(), current().accepted(), Command.WaitingOn.EMPTY, null, null));
+        return update(Command.commitInvalidated(current(), attrs, executeAt));
     }
 
     public Command.Committed readyToExecute()
     {
-        return complete(Command.Committed.committed(current().asCommitted(), current(), SaveStatus.ReadyToExecute));
+        return update(Command.readyToExecute(current().asCommitted()));
     }
 
     public Command.Executed preapplied(CommonAttributes attrs, Timestamp executeAt, Command.WaitingOn waitingOn, Writes writes, Result result)
     {
-        return complete(Command.Executed.executed(attrs, SaveStatus.PreApplied, executeAt, current().promised(), current().accepted(), waitingOn, writes, result));
+        return update(Command.preapplied(current(), attrs, executeAt, waitingOn, writes, result));
     }
 
     public Command.Committed noopApplied()
     {
-        return complete(Command.Executed.executed(asExecuted(), current(), SaveStatus.Applied));
+        return update(Command.noopApplied(current().asExecuted()));
     }
 
     public Command.Executed applied()
     {
-        return complete(Command.Executed.executed(asExecuted(), current(), SaveStatus.Applied));
+        return update(Command.applied(current().asExecuted()));
     }
 
     public Command.NotWitnessed notWitnessed()
     {
         Invariants.checkArgument(current() == null);
-        return complete(Command.NotWitnessed.notWitnessed(txnId));
+        return update(Command.NotWitnessed.notWitnessed(txnId));
     }
 }

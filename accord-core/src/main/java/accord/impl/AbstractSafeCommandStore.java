@@ -76,7 +76,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
 
     protected abstract LiveCommand getIfLoaded(TxnId txnId);
 
-    private static <K, V extends LiveState<?>> V getIfLoaded(K key, Map<K, V> context, Function<K, V> getIfLoaded)
+    private static <K, V> V getIfLoaded(K key, Map<K, V> context, Function<K, V> getIfLoaded)
     {
         V value = context.get(key);
         if (value != null)
