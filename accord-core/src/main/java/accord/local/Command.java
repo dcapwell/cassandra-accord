@@ -39,38 +39,8 @@ import static accord.local.Status.Known.DefinitionOnly;
 import static accord.utils.Utils.*;
 import static java.lang.String.format;
 
-public abstract class Command extends ImmutableState implements CommonAttributes
+public abstract class Command implements CommonAttributes
 {
-    // sentinel value to indicate a command requested in a preexecute context was not found
-    // should not escape the safe command store
-    public static final Command EMPTY = new Command()
-    {
-        @Override public Route<?> route() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public RoutingKey progressKey() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public RoutingKey homeKey() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public TxnId txnId() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public Ballot promised() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public Status.Durability durability() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public ImmutableSet<CommandListener> listeners() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public SaveStatus saveStatus() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public Timestamp executeAt() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public Ballot accepted() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public PartialTxn partialTxn() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Nullable
-        @Override public PartialDeps partialDeps() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-
-        @Override
-        public String toString()
-        {
-            return "Command(EMPTY)";
-        }
-    };
-
-    static
-    {
-        EMPTY.markInvalidated();
-    }
-
     static PreLoadContext contextForCommand(Command command)
     {
         Invariants.checkState(command.hasBeen(Status.PreAccepted) && command.partialTxn() != null);
@@ -285,42 +255,36 @@ public abstract class Command extends ImmutableState implements CommonAttributes
         @Override
         public final RoutingKey homeKey()
         {
-            checkCanReadFrom();
             return homeKey;
         }
 
         @Override
         public final RoutingKey progressKey()
         {
-            checkCanReadFrom();
             return progressKey;
         }
 
         @Override
         public final Route<?> route()
         {
-            checkCanReadFrom();
             return route;
         }
 
         @Override
         public Ballot promised()
         {
-            checkCanReadFrom();
             return promised;
         }
 
         @Override
         public Status.Durability durability()
         {
-            checkCanReadFrom();
             return Command.durability(durability, saveStatus());
         }
 
         @Override
         public ImmutableSet<CommandListener> listeners()
         {
-            checkCanReadFrom();
             if (listeners == null)
                 return ImmutableSet.of();
             return listeners;
@@ -329,7 +293,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
         @Override
         public final SaveStatus saveStatus()
         {
-            checkCanReadFrom();
             return status;
         }
     }
@@ -400,7 +363,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
     // TODO (low priority, progress): callers should try to consult the local progress shard (if any) to obtain the full set of keys owned locally
     public final Route<?> someRoute()
     {
-        checkCanReadFrom();
         if (route() != null)
             return route();
 
@@ -421,7 +383,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
     public PreLoadContext contextForSelf()
     {
-        checkCanReadFrom();
         return contextForCommand(this);
     }
 
@@ -432,19 +393,16 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
     public final Status status()
     {
-        checkCanReadFrom();
         return saveStatus().status;
     }
 
     public final Status.Known known()
     {
-        checkCanReadFrom();
         return saveStatus().known;
     }
 
     public boolean hasBeenWitnessed()
     {
-        checkCanReadFrom();
         return partialTxn() != null;
     }
 
@@ -480,7 +438,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
     public final boolean isWitnessed()
     {
-        checkCanReadFrom();
         boolean result = status().hasBeen(Status.PreAccepted);
         Invariants.checkState(result == (this instanceof Preaccepted));
         return result;
@@ -488,13 +445,11 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
     public final Preaccepted asWitnessed()
     {
-        checkCanReadFrom();
         return (Preaccepted) this;
     }
 
     public final boolean isAccepted()
     {
-        checkCanReadFrom();
         boolean result = status().hasBeen(Status.AcceptedInvalidate);
         Invariants.checkState(result == (this instanceof Accepted));
         return result;
@@ -502,13 +457,11 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
     public final Accepted asAccepted()
     {
-        checkCanReadFrom();
         return (Accepted) this;
     }
 
     public final boolean isCommitted()
     {
-        checkCanReadFrom();
         boolean result = status().hasBeen(Status.Committed);
         Invariants.checkState(result == (this instanceof Committed));
         return result;
@@ -516,13 +469,11 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
     public final Committed asCommitted()
     {
-        checkCanReadFrom();
         return (Committed) this;
     }
 
     public final boolean isExecuted()
     {
-        checkCanReadFrom();
         boolean result = status().hasBeen(Status.PreApplied);
         Invariants.checkState(result == (this instanceof Executed));
         return result;
@@ -530,7 +481,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
     public final Executed asExecuted()
     {
-        checkCanReadFrom();
         return (Executed) this;
     }
 
@@ -561,7 +511,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
             public static NotWitnessed update(NotWitnessed command, CommonAttributes common, Ballot promised)
             {
                 checkSameClass(command, NotWitnessed.class, "Cannot update");
-                command.checkCanReadFrom();
                 Invariants.checkArgument(command.txnId().equals(common.txnId()));
                 return new NotWitnessed(common, command.saveStatus(), promised);
             }
@@ -570,35 +519,30 @@ public abstract class Command extends ImmutableState implements CommonAttributes
         @Override
         public Timestamp executeAt()
         {
-            checkCanReadFrom();
             return null;
         }
 
         @Override
         public Ballot promised()
         {
-            checkCanReadFrom();
             return Ballot.ZERO;
         }
 
         @Override
         public Ballot accepted()
         {
-            checkCanReadFrom();
             return Ballot.ZERO;
         }
 
         @Override
         public PartialTxn partialTxn()
         {
-            checkCanReadFrom();
             return null;
         }
 
         @Override
         public @Nullable PartialDeps partialDeps()
         {
-            checkCanReadFrom();
             return null;
         }
     }
@@ -651,7 +595,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
                 checkPromised(command, promised);
                 checkSameClass(command, Preaccepted.class, "Cannot update");
                 Invariants.checkArgument(command.getClass() == Preaccepted.class);
-                command.checkCanReadFrom();
                 return create(common, command.executeAt(), promised);
             }
         }
@@ -659,28 +602,24 @@ public abstract class Command extends ImmutableState implements CommonAttributes
         @Override
         public Timestamp executeAt()
         {
-            checkCanReadFrom();
             return executeAt;
         }
 
         @Override
         public Ballot accepted()
         {
-            checkCanReadFrom();
             return Ballot.ZERO;
         }
 
         @Override
         public PartialTxn partialTxn()
         {
-            checkCanReadFrom();
             return partialTxn;
         }
 
         @Override
         public @Nullable PartialDeps partialDeps()
         {
-            checkCanReadFrom();
             return partialDeps;
         }
     }
@@ -724,7 +663,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
             {
                 checkPromised(command, promised);
                 checkSameClass(command, Accepted.class, "Cannot update");
-                command.checkCanUpdate();
                 return new Accepted(common, status, command.executeAt(), promised, command.accepted());
             }
 
@@ -737,7 +675,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
         @Override
         public Ballot accepted()
         {
-            checkCanReadFrom();
             return accepted;
         }
     }
@@ -816,7 +753,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
         public AsyncChain<Data> read(SafeCommandStore safeStore)
         {
-            checkCanReadFrom();
             return partialTxn().read(safeStore, this);
         }
 
@@ -827,49 +763,41 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
         public ImmutableSortedSet<TxnId> waitingOnCommit()
         {
-            checkCanReadFrom();
             return waitingOnCommit;
         }
 
         public boolean isWaitingOnCommit()
         {
-            checkCanReadFrom();
             return waitingOnCommit != null && !waitingOnCommit.isEmpty();
         }
 
         public TxnId firstWaitingOnCommit()
         {
-            checkCanReadFrom();
             return isWaitingOnCommit() ? waitingOnCommit.first() : null;
         }
 
         public ImmutableSortedMap<Timestamp, TxnId> waitingOnApply()
         {
-            checkCanReadFrom();
             return waitingOnApply;
         }
 
         public boolean isWaitingOnApply()
         {
-            checkCanReadFrom();
             return waitingOnApply != null && !waitingOnApply.isEmpty();
         }
 
         public TxnId firstWaitingOnApply()
         {
-            checkCanReadFrom();
             return isWaitingOnApply() ? waitingOnApply.firstEntry().getValue() : null;
         }
 
         public boolean hasBeenWitnessed()
         {
-            checkCanReadFrom();
             return partialTxn() != null;
         }
 
         public boolean isWaitingOnDependency()
         {
-            checkCanReadFrom();
             return isWaitingOnCommit() || isWaitingOnApply();
         }
     }
@@ -919,7 +847,6 @@ public abstract class Command extends ImmutableState implements CommonAttributes
             public static Executed update(Executed command, CommonAttributes common, SaveStatus status, Ballot promised, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
             {
                 checkSameClass(command, Executed.class, "Cannot update");
-                command.checkCanUpdate();
                 return new Executed(common, status, command.executeAt(), promised, command.accepted(), waitingOnCommit, waitingOnApply, command.writes(), command.result());
             }
 
@@ -951,13 +878,11 @@ public abstract class Command extends ImmutableState implements CommonAttributes
 
         public Writes writes()
         {
-            checkCanReadFrom();
             return writes;
         }
 
         public Result result()
         {
-            checkCanReadFrom();
             return result;
         }
     }
