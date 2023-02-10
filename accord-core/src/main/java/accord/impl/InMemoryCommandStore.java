@@ -56,47 +56,6 @@ public class InMemoryCommandStore
 {
     private static final Logger logger = LoggerFactory.getLogger(InMemoryCommandStore.class);
 
-    public static <State extends ImmutableState, V> V withActiveState(State state, Callable<V> callable)
-    {
-        state.checkIsDormant();
-        state.markActive();
-        try
-        {
-            return callable.call();
-        }
-        catch (Exception e)
-        {
-            throw new RuntimeException(e);
-        }
-        finally
-        {
-            state.checkIsActive();
-            state.markDormant();
-        }
-    }
-
-    public static <State extends ImmutableState, V> V ensureActiveState(State state, Callable<V> callable)
-    {
-        boolean wasDormant = state.isDormant();
-        try
-        {
-            if (wasDormant)
-                state.markActive();
-            else
-                state.checkIsActive();
-            return callable.call();
-        }
-        catch (Exception e)
-        {
-            throw new RuntimeException(e);
-        }
-        finally
-        {
-            if (wasDormant)
-                state.markDormant();
-        }
-    }
-
     static class RangeCommand
     {
         final LiveCommand command;
