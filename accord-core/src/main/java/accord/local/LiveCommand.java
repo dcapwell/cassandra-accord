@@ -21,6 +21,7 @@ package accord.local;
 import accord.api.Result;
 import accord.primitives.Ballot;
 import accord.primitives.Timestamp;
+import accord.primitives.TxnId;
 import accord.primitives.Writes;
 import accord.utils.Invariants;
 
@@ -29,6 +30,18 @@ import static accord.local.Status.Known.DefinitionOnly;
 // FIXME: don't implement CommonAttributes
 public abstract class LiveCommand extends LiveState<Command>
 {
+    private final TxnId txnId;
+
+    public LiveCommand(TxnId txnId)
+    {
+        this.txnId = txnId;
+    }
+
+    public TxnId txnId()
+    {
+        return txnId;
+    }
+
     public final boolean isWitnessed()
     {
         Command current = current();
@@ -83,7 +96,7 @@ public abstract class LiveCommand extends LiveState<Command>
 
     private <C extends Command> C update(C update)
     {
-        update(update);
+        set(update);
         return update;
     }
 
@@ -224,5 +237,11 @@ public abstract class LiveCommand extends LiveState<Command>
     public Command.Executed applied()
     {
         return complete(Command.Executed.Factory.update(asExecuted(), current(), SaveStatus.Applied));
+    }
+
+    public Command.NotWitnessed notWitnessed()
+    {
+        Invariants.checkArgument(current() == null);
+        return complete(Command.NotWitnessed.create(txnId));
     }
 }

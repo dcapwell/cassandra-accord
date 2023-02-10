@@ -20,10 +20,22 @@ package accord.impl;
 
 import accord.local.Command;
 import accord.local.LiveCommand;
+import accord.primitives.TxnId;
 
 public class InMemoryLiveCommand extends LiveCommand
 {
     private volatile Command current = null;
+
+    public InMemoryLiveCommand(TxnId txnId, Command current)
+    {
+        super(txnId);
+        this.current = current;
+    }
+
+    public InMemoryLiveCommand(TxnId txnId)
+    {
+        this(txnId, null);
+    }
 
     @Override
     public Command current()
@@ -32,8 +44,8 @@ public class InMemoryLiveCommand extends LiveCommand
     }
 
     @Override
-    protected void update(Command update)
+    protected void set(Command update)
     {
-        throw new UnsupportedOperationException();
+        this.current = update;
     }
 }

@@ -21,5 +21,5 @@ package accord.local;
 public abstract class LiveState<T>
 {
     public abstract T current();
-    protected abstract void update(T update);
+    protected abstract void set(T update);
 }
