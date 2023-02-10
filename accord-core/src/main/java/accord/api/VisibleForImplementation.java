@@ -21,6 +21,7 @@ package accord.api;
 /**
  * Indicates an element exists or is more visible than otherwise needed to support implementations
  */
+
 public @interface VisibleForImplementation
 {
 }
