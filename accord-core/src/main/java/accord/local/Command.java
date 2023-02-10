@@ -61,9 +61,9 @@ public abstract class Command implements CommonAttributes
             return NotWitnessed.notWitnessed(attributes, promised);
         }
 
-        public static Preaccepted preaccepted(CommonAttributes common, Timestamp executeAt, Ballot promised)
+        public static PreAccepted preaccepted(CommonAttributes common, Timestamp executeAt, Ballot promised)
         {
-            return Preaccepted.preAccepted(common, executeAt, promised);
+            return PreAccepted.preAccepted(common, executeAt, promised);
         }
 
         public static Accepted accepted(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted)
@@ -99,7 +99,7 @@ public abstract class Command implements CommonAttributes
             case NotWitnessed:
                 return validateCommandClass(status, NotWitnessed.class, klass);
             case PreAccepted:
-                return validateCommandClass(status, Preaccepted.class, klass);
+                return validateCommandClass(status, PreAccepted.class, klass);
             case AcceptedInvalidate:
             case Accepted:
             case PreCommitted:
@@ -434,13 +434,13 @@ public abstract class Command implements CommonAttributes
     public final boolean isWitnessed()
     {
         boolean result = status().hasBeen(Status.PreAccepted);
-        Invariants.checkState(result == (this instanceof Preaccepted));
+        Invariants.checkState(result == (this instanceof PreAccepted));
         return result;
     }
 
-    public final Preaccepted asWitnessed()
+    public final PreAccepted asWitnessed()
     {
-        return (Preaccepted) this;
+        return (PreAccepted) this;
     }
 
     public final boolean isAccepted()
@@ -540,13 +540,13 @@ public abstract class Command implements CommonAttributes
         }
     }
 
-    public static class Preaccepted extends AbstractCommand
+    public static class PreAccepted extends AbstractCommand
     {
         private final Timestamp executeAt;
         private final PartialTxn partialTxn;
         private final @Nullable PartialDeps partialDeps;
 
-        private Preaccepted(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised)
+        private PreAccepted(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised)
         {
             super(common, status, promised);
             this.executeAt = executeAt;
@@ -560,7 +560,7 @@ public abstract class Command implements CommonAttributes
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             if (!super.equals(o)) return false;
-            Preaccepted that = (Preaccepted) o;
+            PreAccepted that = (PreAccepted) o;
             return executeAt.equals(that.executeAt)
                     && Objects.equals(partialTxn, that.partialTxn)
                     && Objects.equals(partialDeps, that.partialDeps);
@@ -576,15 +576,15 @@ public abstract class Command implements CommonAttributes
             return hash;
         }
 
-        public static Preaccepted preAccepted(CommonAttributes common, Timestamp executeAt, Ballot promised)
+        public static PreAccepted preAccepted(CommonAttributes common, Timestamp executeAt, Ballot promised)
         {
-            return new Preaccepted(common, SaveStatus.PreAccepted, executeAt, promised);
+            return new PreAccepted(common, SaveStatus.PreAccepted, executeAt, promised);
         }
-        public static Preaccepted preAccepted(Preaccepted command, CommonAttributes common, Ballot promised)
+        public static PreAccepted preAccepted(PreAccepted command, CommonAttributes common, Ballot promised)
         {
             checkPromised(command, promised);
-            checkSameClass(command, Preaccepted.class, "Cannot update");
-            Invariants.checkArgument(command.getClass() == Preaccepted.class);
+            checkSameClass(command, PreAccepted.class, "Cannot update");
+            Invariants.checkArgument(command.getClass() == PreAccepted.class);
             return preAccepted(common, command.executeAt(), promised);
         }
 
@@ -613,7 +613,7 @@ public abstract class Command implements CommonAttributes
         }
     }
 
-    public static class Accepted extends Preaccepted
+    public static class Accepted extends PreAccepted
     {
         private final Ballot accepted;
 
@@ -955,7 +955,7 @@ public abstract class Command implements CommonAttributes
             case NotWitnessed:
                 return NotWitnessed.notWitnessed((NotWitnessed) command, attributes, promised);
             case PreAccepted:
-                return Preaccepted.preAccepted((Preaccepted) command, attributes, promised);
+                return PreAccepted.preAccepted((PreAccepted) command, attributes, promised);
             case AcceptedInvalidate:
             case Accepted:
             case PreCommitted:
