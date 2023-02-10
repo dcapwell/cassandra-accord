@@ -19,10 +19,7 @@
 package accord.utils;
 
 import accord.api.Key;
-import accord.impl.InMemoryLiveCommand;
-import accord.local.Command;
-import accord.impl.CommandsForKey;
-import accord.impl.PreExecuteContext;
+import accord.impl.*;
 import accord.local.LiveCommand;
 import accord.primitives.Keys;
 import accord.primitives.RoutableKey;
@@ -35,21 +32,16 @@ import java.util.Map;
 public class TestContext implements PreExecuteContext
 {
     private final Map<TxnId, LiveCommand> commands = new HashMap<>();
-    private final Map<RoutableKey, CommandsForKey> commandsForKey = new HashMap<>();
+    private final Map<RoutableKey, LiveCommandsForKey> commandsForKey = new HashMap<>();
 
     public void addEmpty(TxnId txnId)
     {
         commands.put(txnId, new InMemoryLiveCommand(txnId));
     }
 
-    public void add(CommandsForKey cfk)
-    {
-        commandsForKey.put(cfk.key(), cfk);
-    }
-
     public void addEmpty(RoutableKey key)
     {
-        commandsForKey.put(key, CommandsForKey.EMPTY);
+        commandsForKey.put(key, new InMemoryLiveCommandsForKey((Key) key));
     }
 
     public void addKeys(Seekables<?, ?> keys)
@@ -64,7 +56,7 @@ public class TestContext implements PreExecuteContext
     }
 
     @Override
-    public Map<RoutableKey, CommandsForKey> commandsForKey()
+    public Map<RoutableKey, LiveCommandsForKey> commandsForKey()
     {
         return commandsForKey;
     }

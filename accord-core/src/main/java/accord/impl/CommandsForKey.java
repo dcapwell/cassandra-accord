@@ -39,32 +39,8 @@ import static accord.local.Status.PreAccepted;
 import static accord.local.Status.PreCommitted;
 import static accord.utils.Utils.*;
 
-public class CommandsForKey extends ImmutableState
+public class CommandsForKey
 {
-    // sentinel value to indicate a cfk requested in a preexecute context was not found
-    // should not escape the safe command store
-    public static final CommandsForKey EMPTY = new CommandsForKey(null, null)
-    {
-        @Override public Key key() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public Timestamp max() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public Timestamp lastExecutedTimestamp() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public long lastExecutedMicros() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public Timestamp lastWriteTimestamp() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public CommandTimeseries<?> byId() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-        @Override public CommandTimeseries<?> byExecuteAt() { throw new IllegalStateException("Attempting to access EMPTY sentinel values"); }
-
-        @Override
-        public String toString()
-        {
-            return "CommandsForKey[EMPTY]";
-        }
-    };
-
-    static
-    {
-        EMPTY.markInvalidated();
-    }
-
     public static class SerializerSupport
     {
         public static CommandsForKey.Listener listener(Key key)
@@ -234,16 +210,18 @@ public class CommandsForKey extends ImmutableState
                 this.commands = timeseries.commands;
             }
 
-            public void add(Timestamp timestamp, Command command)
+            public CommandsForKey.CommandTimeseries.Update<D> add(Timestamp timestamp, Command command)
             {
                 commands = ensureSortedMutable(commands);
                 commands.put(timestamp, loader.saveForCFK(command));
+                return this;
             }
 
-            public void remove(Timestamp timestamp)
+            public CommandsForKey.CommandTimeseries.Update<D> remove(Timestamp timestamp)
             {
                 commands = ensureSortedMutable(commands);
                 commands.remove(timestamp);
+                return this;
             }
 
             CommandTimeseries<D> build()
@@ -291,7 +269,8 @@ public class CommandsForKey extends ImmutableState
         @Override
         public void onChange(SafeCommandStore safeStore, TxnId txnId)
         {
-            CommandsForKeys.listenerUpdate(safeStore, ((AbstractSafeCommandStore) safeStore).commandsForKey(listenerKey), safeStore.command(txnId).current());
+            LiveCommandsForKey cfk = ((AbstractSafeCommandStore) safeStore).commandsForKey(listenerKey);
+            cfk.listenerUpdate(safeStore.command(txnId).current());
         }
 
         @Override
@@ -306,6 +285,11 @@ public class CommandsForKey extends ImmutableState
         return new Listener(key);
     }
 
+    public static CommandListener listener(CommandsForKey cfk)
+    {
+        return listener(cfk.key());
+    }
+
     // TODO (now): add validation that anything inserted into *committedBy* has everything prior in its dependencies
     private final Key key;
     private final Timestamp max;
@@ -315,19 +299,33 @@ public class CommandsForKey extends ImmutableState
     private final CommandTimeseries<?> byId;
     private final CommandTimeseries<?> byExecuteAt;
 
-    private  <D> CommandsForKey(Key key, Timestamp max,
-                              Timestamp lastExecutedTimestamp, long lastExecutedMicros, Timestamp lastWriteTimestamp,
-                              CommandLoader<D> loader,
-                              ImmutableSortedMap<Timestamp, D> committedById,
-                              ImmutableSortedMap<Timestamp, D> committedByExecuteAt)
+    <D> CommandsForKey(Key key, Timestamp max,
+                       Timestamp lastExecutedTimestamp,
+                       long lastExecutedMicros,
+                       Timestamp lastWriteTimestamp,
+                       CommandTimeseries<D> byId,
+                       CommandTimeseries<D> byExecuteAt)
     {
         this.key = key;
         this.max = max;
         this.lastExecutedTimestamp = lastExecutedTimestamp;
         this.lastExecutedMicros = lastExecutedMicros;
         this.lastWriteTimestamp = lastWriteTimestamp;
-        this.byId = new CommandTimeseries<>(key, loader, committedById);
-        this.byExecuteAt = new CommandTimeseries<>(key, loader, committedByExecuteAt);
+        this.byId = byId;
+        this.byExecuteAt = byExecuteAt;
+    }
+
+    <D> CommandsForKey(Key key, Timestamp max,
+                       Timestamp lastExecutedTimestamp,
+                       long lastExecutedMicros,
+                       Timestamp lastWriteTimestamp,
+                       CommandLoader<D> loader,
+                       ImmutableSortedMap<Timestamp, D> committedById,
+                       ImmutableSortedMap<Timestamp, D> committedByExecuteAt)
+    {
+        this(key, max, lastExecutedTimestamp, lastExecutedMicros, lastWriteTimestamp,
+             new CommandTimeseries<>(key, loader, committedById),
+             new CommandTimeseries<>(key, loader, committedByExecuteAt));
     }
 
     public <D> CommandsForKey(Key key, CommandLoader<D> loader)
@@ -339,17 +337,6 @@ public class CommandsForKey extends ImmutableState
         this.lastWriteTimestamp = Timestamp.NONE;
         this.byId = new CommandTimeseries<>(key, loader);
         this.byExecuteAt = new CommandTimeseries<>(key, loader);
-    }
-
-    public CommandsForKey(Update builder)
-    {
-        this.key = builder.key;
-        this.max = builder.max;
-        this.lastExecutedTimestamp = builder.lastExecutedTimestamp;
-        this.lastExecutedMicros = builder.lastExecutedMicros;
-        this.lastWriteTimestamp = builder.lastWriteTimestamp;
-        this.byId = builder.byId.build();
-        this.byExecuteAt = builder.byExecuteAt.build();
     }
 
     @Override
@@ -389,13 +376,11 @@ public class CommandsForKey extends ImmutableState
 
     public Key key()
     {
-        checkCanReadFrom();
         return key;
     }
 
     public Timestamp max()
     {
-        checkCanReadFrom();
         return max;
     }
 
@@ -464,105 +449,5 @@ public class CommandsForKey extends ImmutableState
     {
         validateExecuteAtTime(executeAt, isForWriteTxn);
         return lastExecutedMicros;
-    }
-
-    public static class Update
-    {
-        private final SafeCommandStore safeStore;
-        private boolean completed = false;
-        private final Key key;
-        private final CommandsForKey original;
-        private Timestamp max;
-        private Timestamp lastExecutedTimestamp;
-        private long lastExecutedMicros;
-        private Timestamp lastWriteTimestamp;
-        private final CommandTimeseries.Update<?> byId;
-        private final CommandTimeseries.Update<?> byExecuteAt;
-
-        public Update(SafeCommandStore safeStore, CommandsForKey original)
-        {
-            original.checkCanUpdate();
-            this.safeStore = safeStore;
-            this.original = original;
-            this.key = original.key;
-            this.max = original.max;
-            this.lastExecutedTimestamp = original.lastExecutedTimestamp;
-            this.lastExecutedMicros = original.lastExecutedMicros;
-            this.lastWriteTimestamp = original.lastWriteTimestamp;
-            this.byId = original.byId.beginUpdate();
-            this.byExecuteAt = original.byId.beginUpdate();
-        }
-
-        private void checkNotCompleted()
-        {
-            if (completed)
-                throw new IllegalStateException(this + " has been completed");
-        }
-
-        public Key key()
-        {
-            return key;
-        }
-
-        public void updateMax(Timestamp timestamp)
-        {
-            checkNotCompleted();
-            max = Timestamp.max(max, timestamp);
-        }
-
-        public CommandTimeseries.Update<?> byId()
-        {
-            checkNotCompleted();
-            return byId;
-        }
-
-        public CommandTimeseries.Update<?> byExecuteAt()
-        {
-            checkNotCompleted();
-            return byExecuteAt;
-        }
-
-        void updateLastExecutionTimestamps(Timestamp executeAt, boolean isForWriteTxn)
-        {
-            long micros = getTimestampMicros(executeAt);
-            long lastMicros = lastExecutedMicros;
-
-            lastExecutedTimestamp = executeAt;
-            lastExecutedMicros = Math.max(micros, lastMicros + 1);
-            if (isForWriteTxn)
-                lastWriteTimestamp = executeAt;
-        }
-
-        public CommandsForKey complete()
-        {
-            checkNotCompleted();
-            CommandsForKey updated = new CommandsForKey(this);
-            if (original != null)
-                original.markSuperseded();
-            updated.markActive();
-            safeStore.completeUpdate(this, original, updated);
-            completed = true;
-            return updated;
-        }
-    }
-
-    public static CommandsForKey updateLastExecutionTimestamps(CommandsForKey current, SafeCommandStore safeStore, Timestamp executeAt, boolean isForWriteTxn)
-    {
-        Timestamp lastWrite = current.lastWriteTimestamp;
-
-        if (executeAt.compareTo(lastWrite) < 0)
-            throw new IllegalArgumentException(String.format("%s is less than the most recent write timestamp %s", executeAt, lastWrite));
-
-        Timestamp lastExecuted = current.lastExecutedTimestamp;
-        int cmp = executeAt.compareTo(lastExecuted);
-        // execute can be in the past if it's for a read and after the most recent write
-        if (cmp == 0 || (!isForWriteTxn && cmp < 0))
-            return current;
-        if (cmp < 0)
-            throw new IllegalArgumentException(String.format("%s is less than the most recent executed timestamp %s", executeAt, lastExecuted));
-
-        Update update = safeStore.beginUpdate(current);
-        update.updateLastExecutionTimestamps(executeAt, isForWriteTxn);
-        return update.complete();
     }
 }

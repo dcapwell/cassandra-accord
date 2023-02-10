@@ -114,7 +114,7 @@ public class PreAcceptTest
             preAccept.process(node, ID2, REPLY_CONTEXT);
 
             commandStore.execute(PreLoadContext.contextFor(txnId, txn.keys()), safeStore -> {
-                CommandsForKey cfk = ((AbstractSafeCommandStore) safeStore).commandsForKey(key);
+                CommandsForKey cfk = ((AbstractSafeCommandStore) safeStore).commandsForKey(key).current();
                 TxnId commandId = convert(cfk.byId(), CommandLoader::txnId).findFirst().get();
                 Command command = safeStore.command(commandId).current();
                 Assertions.assertEquals(Status.PreAccepted, command.status());
@@ -247,7 +247,7 @@ public class PreAcceptTest
             preAccept.process(node, ID2, REPLY_CONTEXT);
 
             commandStore.execute(PreLoadContext.contextFor(txnId, txn.keys()), safeStore -> {
-                CommandsForKey cfk = ((AbstractSafeCommandStore) safeStore).commandsForKey(key);
+                CommandsForKey cfk = ((AbstractSafeCommandStore) safeStore).commandsForKey(key).current();
                 TxnId commandId = convert(cfk.byId(), CommandLoader::txnId).findFirst().get();
                 Command command = safeStore.command(commandId).current();
                 Assertions.assertEquals(Status.PreAccepted, command.status());

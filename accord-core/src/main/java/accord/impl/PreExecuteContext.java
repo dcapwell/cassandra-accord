@@ -30,9 +30,9 @@ import java.util.Map;
 public interface PreExecuteContext extends PreLoadContext
 {
     Map<TxnId, LiveCommand> commands();
-    Map<RoutableKey, CommandsForKey> commandsForKey();
+    Map<RoutableKey, LiveCommandsForKey> commandsForKey();
 
-    static PreExecuteContext of(PreLoadContext preLoadContext, Map<TxnId, LiveCommand> commands, Map<RoutableKey, CommandsForKey> commandsForKey)
+    static PreExecuteContext of(PreLoadContext preLoadContext, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKey)
     {
         return new PreExecuteContext()
         {
@@ -43,7 +43,7 @@ public interface PreExecuteContext extends PreLoadContext
             }
 
             @Override
-            public Map<RoutableKey, CommandsForKey> commandsForKey()
+            public Map<RoutableKey, LiveCommandsForKey> commandsForKey()
             {
                 return commandsForKey;
             }
