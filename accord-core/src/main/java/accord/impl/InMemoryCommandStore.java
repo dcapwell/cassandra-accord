@@ -115,10 +115,10 @@ public class InMemoryCommandStore
 
     static class RangeCommand
     {
-        final Command command;
+        final LiveCommand command;
         Ranges ranges;
 
-        RangeCommand(Command command)
+        RangeCommand(LiveCommand command)
         {
             this.command = command;
         }
@@ -142,17 +142,17 @@ public class InMemoryCommandStore
         private Command loadForCFK(TxnId data)
         {
             InMemorySafeStore safeStore = state.current;
-            Command result;
+            LiveCommand result;
             // simplifies tests
             if (safeStore != null)
             {
                 result = safeStore.ifPresent(data);
                 if (result != null)
-                    return result;
+                    return result.current();
             }
             result = state.command(data);
             if (result != null)
-                return result;
+                return result.current();
             throw new IllegalStateException("Could not find command for CFK for " + data);
         }
 
@@ -197,7 +197,7 @@ public class InMemoryCommandStore
 
         private RangesForEpoch rangesForEpoch;
         private final CommandStore commandStore;
-        private final NavigableMap<TxnId, Command> commands = new TreeMap<>();
+        private final NavigableMap<TxnId, InMemoryLiveCommand> commands = new TreeMap<>();
         private final NavigableMap<RoutableKey, CommandsForKey> commandsForKey = new TreeMap<>();
         private final CFKLoader cfkLoader;
         // TODO (find library, efficiency): this is obviously super inefficient, need some range map
@@ -217,9 +217,9 @@ public class InMemoryCommandStore
             this.cfkLoader = new CFKLoader(this);
         }
 
-        public Command command(TxnId txnId)
+        public LiveCommand command(TxnId txnId)
         {
-            return commands.get(txnId);
+            return commands.computeIfAbsent(txnId, InMemoryLiveCommand::new);
         }
 
         public boolean hasCommand(TxnId txnId)
@@ -260,7 +260,7 @@ public class InMemoryCommandStore
 
                 for (CommandsForKey commands : rangeCommands)
                 {
-                    commands.forWitnessed(minTimestamp, maxTimestamp, txnId -> consumer.accept(command(txnId)));
+                    commands.forWitnessed(minTimestamp, maxTimestamp, txnId -> consumer.accept(command(txnId).current()));
                 }
             }
         }
@@ -279,19 +279,19 @@ public class InMemoryCommandStore
                 {
                     commands.byExecuteAt()
                             .between(minTimestamp, maxTimestamp, status -> status.hasBeen(Committed))
-                            .forEach(txnId -> consumer.accept(command(txnId)));
+                            .forEach(txnId -> consumer.accept(command(txnId).current()));
                 }
             }
         }
 
-        public CommonAttributes register(InMemorySafeStore safeStore, Seekables<?, ?> keysOrRanges, Ranges slice, Command command, CommonAttributes attrs)
+        public CommonAttributes register(InMemorySafeStore safeStore, Seekables<?, ?> keysOrRanges, Ranges slice, LiveCommand command, CommonAttributes attrs)
         {
             switch (keysOrRanges.domain())
             {
                 default: throw new AssertionError();
                 case Key:
                     CommonAttributes.Mutable mutable = attrs.mutableAttrs();
-                    forEach(keysOrRanges, slice, key -> mutable.addListener(CommandsForKeys.register(safeStore, command, key, slice)));
+                    forEach(keysOrRanges, slice, key -> mutable.addListener(CommandsForKeys.register(safeStore, command.current(), key, slice)));
                     return mutable;
                 case Range:
                     rangeCommands.computeIfAbsent(command.txnId(), ignore -> new RangeCommand(command))
@@ -300,14 +300,14 @@ public class InMemoryCommandStore
             return attrs;
         }
 
-        public CommonAttributes register(InMemorySafeStore safeStore, Seekable keyOrRange, Ranges slice, Command command, CommonAttributes attrs)
+        public CommonAttributes register(InMemorySafeStore safeStore, Seekable keyOrRange, Ranges slice, LiveCommand command, CommonAttributes attrs)
         {
             switch (keyOrRange.domain())
             {
                 default: throw new AssertionError();
                 case Key:
                     CommonAttributes.Mutable mutable = attrs.mutableAttrs();
-                    forEach(keyOrRange, slice, key -> mutable.addListener(CommandsForKeys.register(safeStore, command, key, slice)));
+                    forEach(keyOrRange, slice, key -> mutable.addListener(CommandsForKeys.register(safeStore, command.current(), key, slice)));
                     return mutable;
                 case Range:
                     rangeCommands.computeIfAbsent(command.txnId(), ignore -> new RangeCommand(command))
@@ -397,7 +397,6 @@ public class InMemoryCommandStore
             if (current != null)
                 throw new IllegalStateException("Another operation is in progress or it's store was not cleared");
             current = createCommandStore(context);
-            current.commands().checkActive();
             current.commandsForKey().checkActive();
             return current;
         }
@@ -407,7 +406,6 @@ public class InMemoryCommandStore
             if (store != current)
                 throw new IllegalStateException("This operation has already been cleared");
             PostExecuteContext result = current.complete();
-            current.commands().markDormant();
             current.commandsForKey().markDormant();
             current = null;
             return result;
@@ -415,13 +413,11 @@ public class InMemoryCommandStore
 
         private PreExecuteContext createPreExecuteCtx(PreLoadContext preLoadContext)
         {
-            Map<TxnId, Command> commands = new HashMap<>();
+            Map<TxnId, LiveCommand> commands = new HashMap<>();
             Map<RoutableKey, CommandsForKey> commandsForKeys = new HashMap<>();
             for (TxnId txnId : preLoadContext.txnIds())
-            {
-                Command command = command(txnId);
-                commands.put(txnId, command != null ? command : Command.EMPTY);
-            }
+                commands.put(txnId, command(txnId));
+
             for (Seekable seekable : preLoadContext.keys())
             {
                 switch (seekable.domain())
@@ -440,27 +436,6 @@ public class InMemoryCommandStore
 
         private void applyPostExecuteCtx(PostExecuteContext context)
         {
-            context.commands.forEach(((txnId, update) -> {
-                Command current = update.current();
-                Invariants.checkState(current != null);
-                switch (txnId.domain())
-                {
-                    case Range:
-                        RangeCommand existing = rangeCommands.get(txnId);
-                        // range commands are only added to the rangeCommands via register
-                        if (existing != null)
-                        {
-                            RangeCommand updated = new RangeCommand(update.current());
-                            updated.update(existing.ranges);
-                            rangeCommands.put(txnId, updated);
-                        }
-                    case Key:
-                        commands.put(txnId, update.current());
-                        return;
-                    default:
-                        throw new IllegalStateException();
-                }
-            }));
             context.commandsForKey.forEach((key, update) -> commandsForKey.put(key, update.current()));
         }
 
@@ -528,7 +503,7 @@ public class InMemoryCommandStore
         }
 
         @Override
-        protected Command getIfLoaded(TxnId txnId)
+        protected LiveCommand getIfLoaded(TxnId txnId)
         {
             return state.command(txnId);
         }
@@ -585,7 +560,7 @@ public class InMemoryCommandStore
             for (RangeCommand command : state.rangeCommands.values())
             {
                 if (command.ranges.intersects(sliced))
-                    timestamp = Timestamp.max(timestamp, ensureActiveState(command.command, () -> command.command.executeAt()));
+                    timestamp = Timestamp.max(timestamp, command.command.current().executeAt());
             }
             return timestamp;
         }
@@ -634,57 +609,53 @@ public class InMemoryCommandStore
             Seekables<?, ?> sliced = keysOrRanges.slice(slice, Minimal);
             Map<Range, List<Command>> collect = new TreeMap<>(Range::compare);
             state.rangeCommands.forEach(((txnId, rangeCommand) -> {
-                Command inMemory = ifPresent(txnId);  // the in memory command may supersede the one in the rangeCommand map
-                Command command = inMemory != null ? inMemory : rangeCommand.command;
-                ensureActiveState(command, () -> {
+                Command command = rangeCommand.command.current();
+                switch (testTimestamp)
+                {
+                    default: throw new AssertionError();
+                    case STARTED_AFTER:
+                        if (command.txnId().compareTo(timestamp) < 0) return;
+                        else break;
+                    case STARTED_BEFORE:
+                        if (command.txnId().compareTo(timestamp) > 0) return;
+                        else break;
+                    case EXECUTES_AFTER:
+                        if (command.executeAt().compareTo(timestamp) < 0) return;
+                        else break;
+                    case MAY_EXECUTE_BEFORE:
+                        Timestamp compareTo = command.known().executeAt.hasDecidedExecuteAt() ? command.executeAt() : command.txnId();
+                        if (compareTo.compareTo(timestamp) > 0) return;
+                        else break;
+                }
 
-                    switch (testTimestamp)
-                    {
-                        default: throw new AssertionError();
-                        case STARTED_AFTER:
-                            if (command.txnId().compareTo(timestamp) < 0) return;
-                            else break;
-                        case STARTED_BEFORE:
-                            if (command.txnId().compareTo(timestamp) > 0) return;
-                            else break;
-                        case EXECUTES_AFTER:
-                            if (command.executeAt().compareTo(timestamp) < 0) return;
-                            else break;
-                        case MAY_EXECUTE_BEFORE:
-                            Timestamp compareTo = command.known().executeAt.hasDecidedExecuteAt() ? command.executeAt() : command.txnId();
-                            if (compareTo.compareTo(timestamp) > 0) return;
-                            else break;
-                    }
+                if (minStatus != null && command.status().compareTo(minStatus) < 0)
+                    return;
 
-                    if (minStatus != null && command.status().compareTo(minStatus) < 0)
+                if (maxStatus != null && command.status().compareTo(maxStatus) > 0)
+                    return;
+
+                if (testKind == Ws && command.txnId().rw().isRead())
+                    return;
+
+                if (testDep != ANY_DEPS)
+                {
+                    if (!command.known().deps.hasProposedOrDecidedDeps())
                         return;
 
-                    if (maxStatus != null && command.status().compareTo(maxStatus) > 0)
+                    if ((testDep == WITH) == !command.partialDeps().contains(depId))
                         return;
+                }
 
-                    if (testKind == Ws && command.txnId().rw().isRead())
-                        return;
+                if (!rangeCommand.ranges.intersects(sliced))
+                    return;
 
-                    if (testDep != ANY_DEPS)
-                    {
-                        if (!command.known().deps.hasProposedOrDecidedDeps())
-                            return;
-
-                        if ((testDep == WITH) == !command.partialDeps().contains(depId))
-                            return;
-                    }
-
-                    if (!rangeCommand.ranges.intersects(sliced))
-                        return;
-
-                    Routables.foldl(rangeCommand.ranges, sliced, (r, in, i) -> {
-                        // TODO (easy, efficiency): pass command as a parameter to Fold
-                        List<Command> list = in.computeIfAbsent(r, ignore -> new ArrayList<>());
-                        if (list.isEmpty() || list.get(list.size() - 1) != command)
-                            list.add(command);
-                        return in;
-                    }, collect);
-                });
+                Routables.foldl(rangeCommand.ranges, sliced, (r, in, i) -> {
+                    // TODO (easy, efficiency): pass command as a parameter to Fold
+                    List<Command> list = in.computeIfAbsent(r, ignore -> new ArrayList<>());
+                    if (list.isEmpty() || list.get(list.size() - 1) != command)
+                        list.add(command);
+                    return in;
+                }, collect);
             }));
             for (Map.Entry<Range, List<Command>> e : collect.entrySet())
             {
@@ -699,20 +670,15 @@ public class InMemoryCommandStore
         }
 
         @Override
-        CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, Command command, CommonAttributes attrs)
+        CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, LiveCommand command, CommonAttributes attrs)
         {
             return state.register(this, keysOrRanges, slice, command, attrs);
         }
 
         @Override
-        CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, Command command, CommonAttributes attrs)
+        CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, LiveCommand command, CommonAttributes attrs)
         {
             return state.register(this, keyOrRange, slice, command, attrs);
-        }
-
-        public void addListener(TxnId command, TxnId listener)
-        {
-            Command.addListener(this, command(command), Command.listener(listener));
         }
 
         @Override
@@ -900,21 +866,21 @@ public class InMemoryCommandStore
             }
 
             @Override
-            public Command ifPresent(TxnId txnId)
+            public LiveCommand ifPresent(TxnId txnId)
             {
                 assertThread();
                 return super.ifPresent(txnId);
             }
 
             @Override
-            public Command ifLoaded(TxnId txnId)
+            public LiveCommand ifLoaded(TxnId txnId)
             {
                 assertThread();
                 return super.ifLoaded(txnId);
             }
 
             @Override
-            public Command command(TxnId txnId)
+            public LiveCommand command(TxnId txnId)
             {
                 assertThread();
                 return super.command(txnId);
@@ -932,13 +898,6 @@ public class InMemoryCommandStore
             {
                 assertThread();
                 super.register(keyOrRange, slice, command);
-            }
-
-            @Override
-            public void addListener(TxnId command, TxnId listener)
-            {
-                assertThread();
-                super.addListener(command, listener);
             }
         }
 

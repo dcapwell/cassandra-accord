@@ -18,7 +18,7 @@
 
 package accord.impl;
 
-import accord.local.Command;
+import accord.local.LiveCommand;
 import accord.local.PreLoadContext;
 import accord.primitives.RoutableKey;
 import accord.primitives.Seekables;
@@ -26,17 +26,18 @@ import accord.primitives.TxnId;
 
 import java.util.Map;
 
+// FIXME: remove
 public interface PreExecuteContext extends PreLoadContext
 {
-    Map<TxnId, Command> commands();
+    Map<TxnId, LiveCommand> commands();
     Map<RoutableKey, CommandsForKey> commandsForKey();
 
-    static PreExecuteContext of(PreLoadContext preLoadContext, Map<TxnId, Command> commands, Map<RoutableKey, CommandsForKey> commandsForKey)
+    static PreExecuteContext of(PreLoadContext preLoadContext, Map<TxnId, LiveCommand> commands, Map<RoutableKey, CommandsForKey> commandsForKey)
     {
         return new PreExecuteContext()
         {
             @Override
-            public Map<TxnId, Command> commands()
+            public Map<TxnId, LiveCommand> commands()
             {
                 return commands;
             }

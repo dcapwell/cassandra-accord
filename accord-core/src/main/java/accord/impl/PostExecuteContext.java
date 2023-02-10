@@ -18,18 +18,19 @@
 
 package accord.impl;
 
-import accord.local.Command;
 import accord.local.ContextValue;
+import accord.local.LiveCommand;
 import accord.primitives.RoutableKey;
 import accord.primitives.TxnId;
 import com.google.common.collect.ImmutableMap;
 
+// FIXME: remove
 public class PostExecuteContext
 {
-    public final ImmutableMap<TxnId, ContextValue<Command>> commands;
+    public final ImmutableMap<TxnId, LiveCommand> commands;
     public final ImmutableMap<RoutableKey, ContextValue<CommandsForKey>> commandsForKey;
 
-    public PostExecuteContext(ImmutableMap<TxnId, ContextValue<Command>> commands, ImmutableMap<RoutableKey, ContextValue<CommandsForKey>> commandsForKey)
+    public PostExecuteContext(ImmutableMap<TxnId, LiveCommand> commands, ImmutableMap<RoutableKey, ContextValue<CommandsForKey>> commandsForKey)
     {
         this.commands = commands;
         this.commandsForKey = commandsForKey;

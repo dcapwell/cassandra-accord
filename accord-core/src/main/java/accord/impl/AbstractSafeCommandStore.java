@@ -43,7 +43,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         }
     }
     protected final PreExecuteContext context;
-    protected final ContextState<TxnId, Command, Command.Update> commands;
+    protected final Map<TxnId, LiveCommand> commands;
     protected final ContextState<RoutableKey, CommandsForKey, CommandsForKey.Update> commandsForKey;
 
     private List<PendingRegistration<Seekable>> pendingSeekableRegistrations = null;
@@ -52,11 +52,11 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
     public AbstractSafeCommandStore(PreExecuteContext context)
     {
         this.context = context;
-        this.commands = new ContextState<>(Command.EMPTY, context.commands());
+        this.commands = new HashMap<>(context.commands());
         this.commandsForKey = new ContextState<>(CommandsForKey.EMPTY, context.commandsForKey());
     }
 
-    public ContextState<TxnId, Command, Command.Update> commands()
+    public Map<TxnId, LiveCommand> commands()
     {
         return commands;
     }
@@ -67,15 +67,15 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
     }
 
     @Override
-    public Command ifPresent(TxnId txnId)
+    public LiveCommand ifPresent(TxnId txnId)
     {
-        Command command = getIfLoaded(txnId, commands, this::getIfLoaded, Command.EMPTY);
-        if (command == Command.EMPTY)
+        LiveCommand command = getIfLoaded(txnId, commands, this::getIfLoaded);
+        if (command == null)
             return null;
         return command;
     }
 
-    protected abstract Command getIfLoaded(TxnId txnId);
+    protected abstract LiveCommand getIfLoaded(TxnId txnId);
 
     private static <K, V extends ImmutableState> V maybeConvertEmpty(K key, V value, ContextState<K, V, ?> context, Function<K, V> factory, V emptySentinel)
     {
@@ -88,6 +88,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         }
         return value;
     }
+
 
     private static <K, V extends ImmutableState> V getIfLoaded(K key, ContextState<K, V, ?> context, Function<K, V> getIfLoaded, V emptySentinel)
     {
@@ -108,25 +109,38 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         return value;
     }
 
-    @Override
-    public Command ifLoaded(TxnId txnId)
+    private static <K, V extends LiveState<?>> V getIfLoaded(K key, Map<K, V> context, Function<K, V> getIfLoaded)
     {
-        Command command = getIfLoaded(txnId, commands, this::getIfLoaded, Command.EMPTY);
+        V value = context.get(key);
+        if (value != null)
+            return value;
+
+        value = getIfLoaded.apply(key);
+        if (value == null)
+            return null;
+        context.put(key, value);
+        return value;
+    }
+
+    @Override
+    public LiveCommand ifLoaded(TxnId txnId)
+    {
+        LiveCommand command = getIfLoaded(txnId, commands, this::getIfLoaded);
         if (command == null)
             return null;
-        command = maybeConvertEmpty(txnId, command, commands, Command.NotWitnessed::create, Command.EMPTY);
-        command.checkIsActive();
+        if (command.current() == null)
+            command.notWitnessed();
         return command;
     }
 
     @Override
-    public Command command(TxnId txnId)
+    public LiveCommand command(TxnId txnId)
     {
-        Command command = commands.get(txnId);
+        LiveCommand command = commands.get(txnId);
         if (command == null)
             throw new IllegalStateException(String.format("%s was not specified in PreLoadContext", txnId));
-        command = maybeConvertEmpty(txnId, command, commands, Command.NotWitnessed::create, Command.EMPTY);
-        command.checkIsActive();
+        if (command.current() == null)
+            command.notWitnessed();
         return command;
     }
 
@@ -196,23 +210,6 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         return time().uniqueNow(max);
     }
 
-    protected Command.Update createCommandUpdate(Command command)
-    {
-        return new Command.Update(this, command);
-    }
-
-    @Override
-    public Command.Update beginUpdate(Command command)
-    {
-        return commands.beginUpdate(command.txnId(), command, this::createCommandUpdate);
-    }
-
-    @Override
-    public void completeUpdate(Command.Update update, Command current, Command updated)
-    {
-        commands.completeUpdate(update.txnId(), update, current, updated);
-    }
-
     protected CommandsForKey.Update createCommandsForKeyUpdate(CommandsForKey cfk)
     {
         return new CommandsForKey.Update(this, cfk);
@@ -230,13 +227,13 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         commandsForKey.completeUpdate(update.key(), update, current, updated);
     }
 
-    abstract CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, Command command, CommonAttributes attrs);
+    abstract CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, LiveCommand command, CommonAttributes attrs);
 
-    abstract CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, Command command, CommonAttributes attrs);
+    abstract CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, LiveCommand command, CommonAttributes attrs);
 
     private interface RegistrationCompleter<T>
     {
-        CommonAttributes complete(T value, Ranges ranges, Command command, CommonAttributes attrs);
+        CommonAttributes complete(T value, Ranges ranges, LiveCommand command, CommonAttributes attrs);
     }
 
     private <T> void completeRegistrations(Map<TxnId, CommonAttributes> updates, List<PendingRegistration<T>> pendingRegistrations, RegistrationCompleter<T> completer)
@@ -247,9 +244,10 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         for (PendingRegistration<T> pendingRegistration : pendingRegistrations)
         {
             TxnId txnId = pendingRegistration.txnId;
-            Command command = command(pendingRegistration.txnId);
+            LiveCommand liveCommand = command(pendingRegistration.txnId);
+            Command command = liveCommand.current();
             CommonAttributes attrs = updates.getOrDefault(txnId, command);
-            attrs = completer.complete(pendingRegistration.value, pendingRegistration.slice, command, attrs);
+            attrs = completer.complete(pendingRegistration.value, pendingRegistration.slice, liveCommand, attrs);
             if (attrs != command)
                 updates.put(txnId, attrs);
         }
@@ -263,9 +261,9 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
             Map<TxnId, CommonAttributes> attributeUpdates = new HashMap<>();
             completeRegistrations(attributeUpdates, pendingSeekablesRegistrations, this::completeRegistration);
             completeRegistrations(attributeUpdates, pendingSeekableRegistrations, this::completeRegistration);
-            attributeUpdates.forEach(((txnId, attributes) -> beginUpdate(command(txnId)).updateAttributes(attributes)));
+            attributeUpdates.forEach(((txnId, attributes) -> command(txnId).updateAttributes(attributes)));
         }
-        return new PostExecuteContext(commands.complete(), commandsForKey.complete());
+        return new PostExecuteContext(ImmutableMap.copyOf(commands), commandsForKey.complete());
     }
 
     public static class ContextState<Key, Value extends ImmutableState, Update>

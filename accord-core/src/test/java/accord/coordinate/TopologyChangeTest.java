@@ -67,7 +67,7 @@ public class TopologyChangeTest
             Txn txn1 = writeTxn(keys);
             awaitUninterruptibly(node1.coordinate(txnId1, txn1));
             awaitUninterruptibly(node1.commandStores().forEach(contextFor(txnId1), keys, 1, 1, commands -> {
-                Command command = commands.command(txnId1);
+                Command command = commands.command(txnId1).current();
                 Assertions.assertTrue(command.partialDeps().isEmpty());
             }));
 
@@ -81,7 +81,7 @@ public class TopologyChangeTest
             // new nodes should have the previous epochs operation as a dependency
             cluster.nodes(4, 5, 6).forEach(node -> {
                 awaitUninterruptibly(node.commandStores().forEach(contextFor(txnId1, txnId2), keys, 2, 2, commands -> {
-                    Command command = commands.command(txnId2);
+                    Command command = commands.command(txnId2).current();
                     Assertions.assertTrue(command.partialDeps().contains(txnId1));
                 }));
             });

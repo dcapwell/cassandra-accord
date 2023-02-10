@@ -88,7 +88,7 @@ public class TopologyUpdates
 
             // first check if already applied locally, and respond immediately
             Status minStatus = ((InMemoryCommandStores.Synchronized)node.commandStores()).mapReduce(contextFor(txnId), route, toEpoch, toEpoch,
-                                                                                                    instance -> instance.command(txnId).status(), (a, b) -> a.compareTo(b) <= 0 ? a : b);
+                                                                                                    instance -> instance.command(txnId).current().status(), (a, b) -> a.compareTo(b) <= 0 ? a : b);
 
             if (minStatus == null || minStatus.phase.compareTo(status.phase) >= 0)
             {

@@ -291,7 +291,7 @@ public class CommandsForKey extends ImmutableState
         @Override
         public void onChange(SafeCommandStore safeStore, TxnId txnId)
         {
-            CommandsForKeys.listenerUpdate(safeStore, ((AbstractSafeCommandStore) safeStore).commandsForKey(listenerKey), safeStore.command(txnId));
+            CommandsForKeys.listenerUpdate(safeStore, ((AbstractSafeCommandStore) safeStore).commandsForKey(listenerKey), safeStore.command(txnId).current());
         }
 
         @Override

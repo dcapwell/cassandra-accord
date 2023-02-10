@@ -85,32 +85,32 @@ public class ImmutableCommandTest
         }
 
         @Override
-        public void preaccepted(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
+        public void preaccepted(Command command, ProgressShard shard)
         {
         }
 
         @Override
-        public void accepted(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
+        public void accepted(Command command, ProgressShard shard)
         {
         }
 
         @Override
-        public void committed(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
+        public void committed(Command command, ProgressShard shard)
         {
         }
 
         @Override
-        public void readyToExecute(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
+        public void readyToExecute(Command command, ProgressShard shard)
         {
         }
 
         @Override
-        public void executed(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
+        public void executed(Command command, ProgressShard shard)
         {
         }
 
         @Override
-        public void invalidated(SafeCommandStore safeStore, TxnId txnId, ProgressShard shard)
+        public void invalidated(Command command, ProgressShard shard)
         {
         }
 
@@ -120,7 +120,7 @@ public class ImmutableCommandTest
         }
 
         @Override
-        public void durable(SafeCommandStore safeStore, TxnId txnId, @Nullable Set<Id> persistedOn)
+        public void durable(Command command, @Nullable Set<Id> persistedOn)
         {
         }
 
@@ -164,7 +164,7 @@ public class ImmutableCommandTest
         context.addKeys(keys);
         SafeCommandStore safeStore = commands.beginOperation(context);
         Commands.preaccept(safeStore, txnId, txn.slice(FULL_RANGES, true), ROUTE, HOME_KEY);
-        Command command = safeStore.command(txnId);
+        Command command = safeStore.command(txnId).current();
         Assertions.assertEquals(Status.PreAccepted, command.status());
         Assertions.assertEquals(txnId, command.executeAt());
     }
@@ -194,7 +194,7 @@ public class ImmutableCommandTest
         Timestamp expectedTimestamp = Timestamp.fromValues(2, 110, ID1);
         getUninterruptibly(commands.execute(context, (Consumer<? super SafeCommandStore>) store -> Commands.preaccept(store, txnId, txn.slice(FULL_RANGES, true), ROUTE, HOME_KEY)));
         commands.execute(PreLoadContext.contextFor(txnId, txn.keys()), safeStore -> {
-            Command command = safeStore.command(txnId);
+            Command command = safeStore.command(txnId).current();
             Assertions.assertEquals(Status.PreAccepted, command.status());
             Assertions.assertEquals(expectedTimestamp, command.executeAt());
         });
