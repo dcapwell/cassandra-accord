@@ -44,7 +44,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
     }
     protected final PreExecuteContext context;
     protected final Map<TxnId, LiveCommand> commands;
-    protected final ContextState<RoutableKey, CommandsForKey, CommandsForKey.Update> commandsForKey;
+    protected final Map<RoutableKey, LiveCommandsForKey> commandsForKey;
 
     private List<PendingRegistration<Seekable>> pendingSeekableRegistrations = null;
     private List<PendingRegistration<Seekables<?, ?>>> pendingSeekablesRegistrations = null;
@@ -53,7 +53,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
     {
         this.context = context;
         this.commands = new HashMap<>(context.commands());
-        this.commandsForKey = new ContextState<>(CommandsForKey.EMPTY, context.commandsForKey());
+        this.commandsForKey = new HashMap<>(context.commandsForKey());
     }
 
     public Map<TxnId, LiveCommand> commands()
@@ -61,7 +61,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         return commands;
     }
 
-    public ContextState<RoutableKey, CommandsForKey, CommandsForKey.Update> commandsForKey()
+    public Map<RoutableKey, LiveCommandsForKey> commandsForKey()
     {
         return commandsForKey;
     }
@@ -144,32 +144,32 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         return command;
     }
 
-    public CommandsForKey ifLoaded(RoutableKey key)
+    public LiveCommandsForKey ifLoaded(RoutableKey key)
     {
-        CommandsForKey cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded, CommandsForKey.EMPTY);
+        LiveCommandsForKey cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded);
         if (cfk == null)
             return null;
-        cfk = maybeConvertEmpty(key, cfk, commandsForKey, k -> new CommandsForKey((Key) k, cfkLoader()), CommandsForKey.EMPTY);
-        cfk.checkIsActive();
+        if (cfk.current() == null)
+            cfk.initialize(cfkLoader());
         return cfk;
     }
 
-    public CommandsForKey commandsForKey(RoutableKey key)
+    public LiveCommandsForKey commandsForKey(RoutableKey key)
     {
-        CommandsForKey cfk = commandsForKey.get(key);
+        LiveCommandsForKey cfk = commandsForKey.get(key);
         if (cfk == null)
             throw new IllegalStateException(String.format("%s was not specified in PreLoadContext", key));
-        cfk = maybeConvertEmpty(key, cfk, commandsForKey, k -> new CommandsForKey((Key) k, cfkLoader()), CommandsForKey.EMPTY);
-        cfk.checkIsActive();
+        if (cfk.current() == null)
+            cfk.initialize(cfkLoader());
         return cfk;
     }
 
-    protected abstract CommandsForKey getIfLoaded(RoutableKey key);
+    protected abstract LiveCommandsForKey getIfLoaded(RoutableKey key);
 
-    public CommandsForKey maybeCommandsForKey(RoutableKey key)
+    public LiveCommandsForKey maybeCommandsForKey(RoutableKey key)
     {
-        CommandsForKey cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded, CommandsForKey.EMPTY);
-        if (cfk == CommandsForKey.EMPTY)
+        LiveCommandsForKey cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded);
+        if (cfk == null)
             return null;
         return cfk;
     }
@@ -210,23 +210,6 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         return time().uniqueNow(max);
     }
 
-    protected CommandsForKey.Update createCommandsForKeyUpdate(CommandsForKey cfk)
-    {
-        return new CommandsForKey.Update(this, cfk);
-    }
-
-    @Override
-    public CommandsForKey.Update beginUpdate(CommandsForKey cfk)
-    {
-        return commandsForKey.beginUpdate(cfk.key(), cfk, this::createCommandsForKeyUpdate);
-    }
-
-    @Override
-    public void completeUpdate(CommandsForKey.Update update, CommandsForKey current, CommandsForKey updated)
-    {
-        commandsForKey.completeUpdate(update.key(), update, current, updated);
-    }
-
     abstract CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, LiveCommand command, CommonAttributes attrs);
 
     abstract CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, LiveCommand command, CommonAttributes attrs);
@@ -263,7 +246,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
             completeRegistrations(attributeUpdates, pendingSeekableRegistrations, this::completeRegistration);
             attributeUpdates.forEach(((txnId, attributes) -> command(txnId).updateAttributes(attributes)));
         }
-        return new PostExecuteContext(ImmutableMap.copyOf(commands), commandsForKey.complete());
+        return new PostExecuteContext(ImmutableMap.copyOf(commands), ImmutableMap.copyOf(commandsForKey));
     }
 
     public static class ContextState<Key, Value extends ImmutableState, Update>

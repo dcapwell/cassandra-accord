@@ -27,7 +27,6 @@ import accord.utils.Invariants;
 
 import static accord.local.Status.Known.DefinitionOnly;
 
-// FIXME: don't implement CommonAttributes
 public abstract class LiveCommand extends LiveState<Command>
 {
     private final TxnId txnId;

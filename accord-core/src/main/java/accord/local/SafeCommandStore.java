@@ -119,10 +119,6 @@ public interface SafeCommandStore
         }
     }
 
-    CommandsForKey.Update beginUpdate(CommandsForKey commandsForKey);
-
-    void completeUpdate(CommandsForKey.Update update, CommandsForKey current, CommandsForKey updated);
-
     PostExecuteContext complete();
 
     CommandsForKey.CommandLoader<?> cfkLoader();

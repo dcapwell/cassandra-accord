@@ -97,22 +97,6 @@ public class InMemoryCommandStore
         }
     }
 
-    public static <State extends ImmutableState, V> void ensureActiveState(State state, Runnable runnable)
-    {
-        ensureActiveState(state, () -> {
-            runnable.run();
-            return null;
-        });
-    }
-
-    public static <State extends ImmutableState> void withActiveState(State state, Runnable runnable)
-    {
-        withActiveState(state, () -> {
-            runnable.run();
-            return null;
-        });
-    }
-
     static class RangeCommand
     {
         final LiveCommand command;
@@ -198,7 +182,7 @@ public class InMemoryCommandStore
         private RangesForEpoch rangesForEpoch;
         private final CommandStore commandStore;
         private final NavigableMap<TxnId, InMemoryLiveCommand> commands = new TreeMap<>();
-        private final NavigableMap<RoutableKey, CommandsForKey> commandsForKey = new TreeMap<>();
+        private final NavigableMap<RoutableKey, InMemoryLiveCommandsForKey> commandsForKey = new TreeMap<>();
         private final CFKLoader cfkLoader;
         // TODO (find library, efficiency): this is obviously super inefficient, need some range map
 
@@ -227,9 +211,9 @@ public class InMemoryCommandStore
             return commands.containsKey(txnId);
         }
 
-        public CommandsForKey commandsForKey(Key key)
+        public LiveCommandsForKey commandsForKey(Key key)
         {
-            return commandsForKey.get(key);
+            return commandsForKey.computeIfAbsent(key, k -> new InMemoryLiveCommandsForKey((Key) k));
         }
 
         public boolean hasCommandsForKey(Key key)
@@ -253,14 +237,14 @@ public class InMemoryCommandStore
             Timestamp maxTimestamp = Timestamp.maxForEpoch(epoch);
             for (Range range : ranges)
             {
-                Iterable<CommandsForKey> rangeCommands = commandsForKey.subMap(
+                Iterable<InMemoryLiveCommandsForKey> rangeCommands = commandsForKey.subMap(
                         range.start(), range.startInclusive(),
                         range.end(), range.endInclusive()
                 ).values();
 
-                for (CommandsForKey commands : rangeCommands)
+                for (InMemoryLiveCommandsForKey commands : rangeCommands)
                 {
-                    commands.forWitnessed(minTimestamp, maxTimestamp, txnId -> consumer.accept(command(txnId).current()));
+                    commands.current().forWitnessed(minTimestamp, maxTimestamp, txnId -> consumer.accept(command(txnId).current()));
                 }
             }
         }
@@ -271,13 +255,13 @@ public class InMemoryCommandStore
             Timestamp maxTimestamp = Timestamp.maxForEpoch(epoch);
             for (Range range : ranges)
             {
-                Iterable<CommandsForKey> rangeCommands = commandsForKey.subMap(range.start(),
+                Iterable<InMemoryLiveCommandsForKey> rangeCommands = commandsForKey.subMap(range.start(),
                                                                                        range.startInclusive(),
                                                                                        range.end(),
                                                                                        range.endInclusive()).values();
-                for (CommandsForKey commands : rangeCommands)
+                for (InMemoryLiveCommandsForKey commands : rangeCommands)
                 {
-                    commands.byExecuteAt()
+                    commands.current().byExecuteAt()
                             .between(minTimestamp, maxTimestamp, status -> status.hasBeen(Committed))
                             .forEach(txnId -> consumer.accept(command(txnId).current()));
                 }
@@ -291,7 +275,11 @@ public class InMemoryCommandStore
                 default: throw new AssertionError();
                 case Key:
                     CommonAttributes.Mutable mutable = attrs.mutableAttrs();
-                    forEach(keysOrRanges, slice, key -> mutable.addListener(CommandsForKeys.register(safeStore, command.current(), key, slice)));
+                    forEach(keysOrRanges, slice, key -> {
+                        LiveCommandsForKey cfk = safeStore.commandsForKey(key);
+                        CommandListener listener = CommandsForKey.listener(cfk.register(command.current()));
+                        mutable.addListener(listener);
+                    });
                     return mutable;
                 case Range:
                     rangeCommands.computeIfAbsent(command.txnId(), ignore -> new RangeCommand(command))
@@ -307,7 +295,11 @@ public class InMemoryCommandStore
                 default: throw new AssertionError();
                 case Key:
                     CommonAttributes.Mutable mutable = attrs.mutableAttrs();
-                    forEach(keyOrRange, slice, key -> mutable.addListener(CommandsForKeys.register(safeStore, command.current(), key, slice)));
+                    forEach(keyOrRange, slice, key -> {
+                        LiveCommandsForKey cfk = safeStore.commandsForKey(key);
+                        CommandListener listener = CommandsForKey.listener(cfk.register(command.current()));
+                        mutable.addListener(listener);
+                    });
                     return mutable;
                 case Range:
                     rangeCommands.computeIfAbsent(command.txnId(), ignore -> new RangeCommand(command))
@@ -316,7 +308,7 @@ public class InMemoryCommandStore
             return attrs;
         }
 
-        private <O> O mapReduceForKey(InMemorySafeStore safeStore, Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<CommandsForKey, O, O> map, O accumulate, O terminalValue)
+        private <O> O mapReduceForKey(InMemorySafeStore safeStore, Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<LiveCommandsForKey, O, O> map, O accumulate, O terminalValue)
         {
             switch (keysOrRanges.domain()) {
                 default:
@@ -326,7 +318,7 @@ public class InMemoryCommandStore
                     for (Key key : keys)
                     {
                         if (!slice.contains(key)) continue;
-                        CommandsForKey forKey = safeStore.ifLoaded(key);
+                        LiveCommandsForKey forKey = safeStore.ifLoaded(key);
                         accumulate = map.apply(forKey, accumulate);
                         if (accumulate.equals(terminalValue))
                             return accumulate;
@@ -337,7 +329,7 @@ public class InMemoryCommandStore
                     Ranges sliced = ranges.slice(slice, Minimal);
                     for (Range range : sliced)
                     {
-                        for (CommandsForKey forKey : commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive()).values())
+                        for (InMemoryLiveCommandsForKey forKey : commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive()).values())
                         {
                             accumulate = map.apply(forKey, accumulate);
                             if (accumulate.equals(terminalValue))
@@ -397,7 +389,6 @@ public class InMemoryCommandStore
             if (current != null)
                 throw new IllegalStateException("Another operation is in progress or it's store was not cleared");
             current = createCommandStore(context);
-            current.commandsForKey().checkActive();
             return current;
         }
 
@@ -406,7 +397,6 @@ public class InMemoryCommandStore
             if (store != current)
                 throw new IllegalStateException("This operation has already been cleared");
             PostExecuteContext result = current.complete();
-            current.commandsForKey().markDormant();
             current = null;
             return result;
         }
@@ -414,7 +404,7 @@ public class InMemoryCommandStore
         private PreExecuteContext createPreExecuteCtx(PreLoadContext preLoadContext)
         {
             Map<TxnId, LiveCommand> commands = new HashMap<>();
-            Map<RoutableKey, CommandsForKey> commandsForKeys = new HashMap<>();
+            Map<RoutableKey, LiveCommandsForKey> commandsForKeys = new HashMap<>();
             for (TxnId txnId : preLoadContext.txnIds())
                 commands.put(txnId, command(txnId));
 
@@ -424,19 +414,13 @@ public class InMemoryCommandStore
                 {
                     case Key:
                         RoutableKey key = (RoutableKey) seekable;
-                        CommandsForKey cfk = commandsForKey((Key) key);
-                        commandsForKeys.put(key, cfk != null ? cfk : CommandsForKey.EMPTY);
+                        commandsForKeys.put(key, commandsForKey((Key) key));
                         break;
                     case Range:
                         // load range cfks here
                 }
             }
             return PreExecuteContext.of(preLoadContext, commands, commandsForKeys);
-        }
-
-        private void applyPostExecuteCtx(PostExecuteContext context)
-        {
-            context.commandsForKey.forEach((key, update) -> commandsForKey.put(key, update.current()));
         }
 
         private <T> T executeInContext(CommandStore commandStore, PreLoadContext preLoadContext, Function<? super SafeCommandStore, T> function, boolean isDirectCall)
@@ -451,10 +435,6 @@ public class InMemoryCommandStore
             {
                 if (isDirectCall) logger.error("Uncaught exception", t);
                 throw t;
-            }
-            finally
-            {
-                applyPostExecuteCtx(commandStore.completeOperation(safeStore));
             }
         }
 
@@ -509,7 +489,7 @@ public class InMemoryCommandStore
         }
 
         @Override
-        protected CommandsForKey getIfLoaded(RoutableKey key)
+        protected LiveCommandsForKey getIfLoaded(RoutableKey key)
         {
             return state.commandsForKey((Key) key);
         }
@@ -555,7 +535,7 @@ public class InMemoryCommandStore
         @Override
         public Timestamp maxConflict(Seekables<?, ?> keysOrRanges, Ranges slice)
         {
-            Timestamp timestamp = state.mapReduceForKey(this, keysOrRanges, slice, (forKey, prev) -> Timestamp.max(forKey.max(), prev), Timestamp.NONE, null);
+            Timestamp timestamp = state.mapReduceForKey(this, keysOrRanges, slice, (forKey, prev) -> Timestamp.max(forKey.current().max(), prev), Timestamp.NONE, null);
             Seekables<?, ?> sliced = keysOrRanges.slice(slice, Minimal);
             for (RangeCommand command : state.rangeCommands.values())
             {
@@ -581,11 +561,11 @@ public class InMemoryCommandStore
                     default: throw new AssertionError();
                     case STARTED_AFTER:
                     case STARTED_BEFORE:
-                        timeseries = forKey.byId();
+                        timeseries = forKey.current().byId();
                         break;
                     case EXECUTES_AFTER:
                     case MAY_EXECUTE_BEFORE:
-                        timeseries = forKey.byExecuteAt();
+                        timeseries = forKey.current().byExecuteAt();
                 }
                 CommandsForKey.CommandTimeseries.TestTimestamp remapTestTimestamp;
                 switch (testTimestamp)

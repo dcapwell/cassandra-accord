@@ -18,20 +18,32 @@
 
 package accord.impl;
 
-import accord.local.LiveCommand;
-import accord.primitives.RoutableKey;
-import accord.primitives.TxnId;
-import com.google.common.collect.ImmutableMap;
+import accord.api.Key;
 
-// FIXME: remove
-public class PostExecuteContext
+public class InMemoryLiveCommandsForKey extends LiveCommandsForKey
 {
-    public final ImmutableMap<TxnId, LiveCommand> commands;
-    public final ImmutableMap<RoutableKey, LiveCommandsForKey> commandsForKey;
+    private volatile CommandsForKey current = null;
 
-    public PostExecuteContext(ImmutableMap<TxnId, LiveCommand> commands, ImmutableMap<RoutableKey, LiveCommandsForKey> commandsForKey)
+    public InMemoryLiveCommandsForKey(Key key, CommandsForKey current)
     {
-        this.commands = commands;
-        this.commandsForKey = commandsForKey;
+        super(key);
+        this.current = current;
+    }
+
+    public InMemoryLiveCommandsForKey(Key key)
+    {
+        this(key, null);
+    }
+
+    @Override
+    public CommandsForKey current()
+    {
+        return current;
+    }
+
+    @Override
+    protected void set(CommandsForKey update)
+    {
+        this.current = update;
     }
 }
