@@ -35,6 +35,7 @@ import java.util.*;
 
 import static accord.local.Status.Durability.Local;
 import static accord.local.Status.Durability.NotDurable;
+import static accord.local.Status.Known.DefinitionOnly;
 import static accord.utils.Utils.*;
 import static java.lang.String.format;
 
@@ -953,22 +954,125 @@ public abstract class Command implements CommonAttributes
         switch (command.status())
         {
             case NotWitnessed:
-                return NotWitnessed.notWitnessed((NotWitnessed) command, attributes, promised);
+                return Command.NotWitnessed.notWitnessed((Command.NotWitnessed) command, attributes, promised);
             case PreAccepted:
-                return PreAccepted.preAccepted((PreAccepted) command, attributes, promised);
+                return Command.PreAccepted.preAccepted((Command.PreAccepted) command, attributes, promised);
             case AcceptedInvalidate:
             case Accepted:
             case PreCommitted:
-                return Accepted.accepted((Accepted) command, attributes, promised);
+                return Command.Accepted.accepted((Command.Accepted) command, attributes, promised);
             case Committed:
             case ReadyToExecute:
-                return Committed.committed((Committed) command, attributes, promised);
+                return Command.Committed.committed((Command.Committed) command, attributes, promised);
             case PreApplied:
             case Applied:
             case Invalidated:
-                return Executed.executed((Executed) command, attributes, promised);
+                return Command.Executed.executed((Command.Executed) command, attributes, promised);
             default:
                 throw new IllegalStateException("Unhandled status " + command.status());
         }
+    }
+
+    static Command updateAttributes(Command command, CommonAttributes attributes)
+    {
+        return updateAttributes(command, attributes, command.promised());
+    }
+
+    static Command addListener(Command command, CommandListener listener)
+    {
+        CommonAttributes attrs = command.mutableAttrs().addListener(listener);
+        return updateAttributes(command, attrs);
+    }
+
+    static Command removeListener(Command command, CommandListener listener)
+    {
+        CommonAttributes attrs = command.mutableAttrs().removeListener(listener);
+        return updateAttributes(command, attrs);
+    }
+
+    static Command.Committed updateWaitingOn(Committed command, WaitingOn.Update waitingOn)
+    {
+        if (!waitingOn.hasChanges())
+            return command;
+
+        return command instanceof Command.Executed ?
+                Command.Executed.executed(command.asExecuted(), command, waitingOn.build()) :
+                Command.Committed.committed(command, command, waitingOn.build());
+    }
+
+    static Command.PreAccepted preaccept(Command command, CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
+    {
+        if (command.status() == Status.NotWitnessed)
+        {
+            return Command.PreAccepted.preAccepted(attrs, executeAt, ballot);
+        }
+        else if (command.status() == Status.AcceptedInvalidate && command.executeAt() == null)
+        {
+            Command.Accepted accepted = command.asAccepted();
+            return Command.Accepted.accepted(attrs, accepted.saveStatus(), executeAt, ballot, accepted.accepted());
+        }
+        else
+        {
+            Invariants.checkState(command.status() == Status.Accepted);
+            return (Command.PreAccepted) updateAttributes(command, attrs, ballot);
+        }
+    }
+
+    static Command.Accepted markDefined(Command command, CommonAttributes attributes, Ballot promised)
+    {
+        if (Command.isSameClass(command, Command.Accepted.class))
+            return Command.Accepted.accepted(command.asAccepted(), attributes, SaveStatus.enrich(command.saveStatus(), DefinitionOnly), promised);
+        return (Command.Accepted) updateAttributes(command, attributes, promised);
+    }
+
+    static Command updatePromised(Command command, Ballot promised)
+    {
+        return updateAttributes(command, command, promised);
+    }
+
+    static Command.Accepted accept(Command command, CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
+    {
+        return new Command.Accepted(attrs, SaveStatus.get(Status.Accepted, command.known()), executeAt, ballot, ballot);
+    }
+
+    static Command.Accepted acceptInvalidated(Command command, Ballot ballot)
+    {
+        Timestamp executeAt = command.isWitnessed() ? command.asWitnessed().executeAt() : null;
+        return new Command.Accepted(command, SaveStatus.AcceptedInvalidate, executeAt, ballot, ballot);
+    }
+
+    static Command.Committed commit(Command command, CommonAttributes attrs, Timestamp executeAt, Command.WaitingOn waitingOn)
+    {
+        return Command.Committed.committed(attrs, SaveStatus.Committed, executeAt, command.promised(), command.accepted(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply);
+    }
+
+    static Command precommit(Command command, Timestamp executeAt)
+    {
+        return new Command.Accepted(command, SaveStatus.PreCommitted, executeAt, command.promised(), command.accepted());
+    }
+
+    static Command.Committed commitInvalidated(Command command, CommonAttributes attrs, Timestamp executeAt)
+    {
+        return Command.Executed.executed(attrs, SaveStatus.Invalidated, executeAt, command.promised(), command.accepted(), Command.WaitingOn.EMPTY, null, null);
+    }
+
+    static Command.Committed readyToExecute(Command.Committed command)
+    {
+        return Command.Committed.committed(command, command, SaveStatus.ReadyToExecute);
+    }
+
+    static Command.Executed preapplied(Command command, CommonAttributes attrs, Timestamp executeAt, Command.WaitingOn waitingOn, Writes writes, Result result)
+    {
+        return Command.Executed.executed(attrs, SaveStatus.PreApplied, executeAt, command.promised(), command.accepted(), waitingOn, writes, result);
+    }
+
+    static Command.Committed noopApplied(Command.Executed command)
+    {
+        return Command.Executed.executed(command, command, SaveStatus.Applied);
+    }
+
+    static Command.Executed applied(Command.Executed command)
+    {
+        return Command.Executed.executed(command, command, SaveStatus.Applied);
     }
 }
