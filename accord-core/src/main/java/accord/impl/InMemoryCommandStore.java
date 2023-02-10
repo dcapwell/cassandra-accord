@@ -340,12 +340,34 @@ public class InMemoryCommandStore
         }
 
 
-        protected InMemorySafeStore createCommandStore(PreExecuteContext context)
+        protected InMemorySafeStore createCommandStore(PreLoadContext context, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKeys)
         {
-            return new InMemorySafeStore(this, cfkLoader, context);
+            return new InMemorySafeStore(this, cfkLoader, context, commands, commandsForKeys);
         }
 
-        public SafeCommandStore beginOperation(PreExecuteContext context)
+        protected final InMemorySafeStore createCommandStore(PreLoadContext context)
+        {
+            Map<TxnId, LiveCommand> commands = new HashMap<>();
+            Map<RoutableKey, LiveCommandsForKey> commandsForKeys = new HashMap<>();
+            for (TxnId txnId : context.txnIds())
+                commands.put(txnId, command(txnId));
+
+            for (Seekable seekable : context.keys())
+            {
+                switch (seekable.domain())
+                {
+                    case Key:
+                        RoutableKey key = (RoutableKey) seekable;
+                        commandsForKeys.put(key, commandsForKey((Key) key));
+                        break;
+                    case Range:
+                        // load range cfks here
+                }
+            }
+            return createCommandStore(context, commands, commandsForKeys);
+        }
+
+        public SafeCommandStore beginOperation(PreLoadContext context)
         {
             refreshRanges();
             if (current != null)
@@ -373,32 +395,10 @@ public class InMemoryCommandStore
             }
         }
 
-        private PreExecuteContext createPreExecuteCtx(PreLoadContext preLoadContext)
-        {
-            Map<TxnId, LiveCommand> commands = new HashMap<>();
-            Map<RoutableKey, LiveCommandsForKey> commandsForKeys = new HashMap<>();
-            for (TxnId txnId : preLoadContext.txnIds())
-                commands.put(txnId, command(txnId));
-
-            for (Seekable seekable : preLoadContext.keys())
-            {
-                switch (seekable.domain())
-                {
-                    case Key:
-                        RoutableKey key = (RoutableKey) seekable;
-                        commandsForKeys.put(key, commandsForKey((Key) key));
-                        break;
-                    case Range:
-                        // load range cfks here
-                }
-            }
-            return PreExecuteContext.of(preLoadContext, commands, commandsForKeys);
-        }
-
         private <T> T executeInContext(CommandStore commandStore, PreLoadContext preLoadContext, Function<? super SafeCommandStore, T> function, boolean isDirectCall)
         {
 
-            SafeCommandStore safeStore = commandStore.beginOperation(createPreExecuteCtx(preLoadContext));
+            SafeCommandStore safeStore = commandStore.beginOperation(preLoadContext);
             try
             {
                 return function.apply(safeStore);
@@ -451,9 +451,9 @@ public class InMemoryCommandStore
         private final State state;
         private final CFKLoader cfkLoader;
 
-        public InMemorySafeStore(State state, CFKLoader cfkLoader, PreExecuteContext context)
+        public InMemorySafeStore(State state, CFKLoader cfkLoader, PreLoadContext context, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKey)
         {
-            super(context);
+            super(context, commands, commandsForKey);
             this.cfkLoader = cfkLoader;
             this.state = state;
         }
@@ -744,7 +744,7 @@ public class InMemoryCommandStore
         }
 
         @Override
-        public SafeCommandStore beginOperation(PreExecuteContext context)
+        public SafeCommandStore beginOperation(PreLoadContext context)
         {
             return state.beginOperation(context);
         }
@@ -773,7 +773,12 @@ public class InMemoryCommandStore
                 thread.setName(CommandStore.class.getSimpleName() + '[' + time.id() + ']');
                 return thread;
             });
-            state = new State(time, agent, store, progressLogFactory.create(this), rangesForEpoch, this);
+            state = createState(time, agent, store, progressLogFactory.create(this), rangesForEpoch, this);
+        }
+
+        protected State createState(NodeTimeService time, Agent agent, DataStore store, ProgressLog progressLog, RangesForEpochHolder rangesForEpoch, CommandStore commandStore)
+        {
+            return new State(time, agent, store, progressLog, rangesForEpoch, this);
         }
 
         void assertThread()
@@ -816,7 +821,7 @@ public class InMemoryCommandStore
         }
 
         @Override
-        public SafeCommandStore beginOperation(PreExecuteContext context)
+        public SafeCommandStore beginOperation(PreLoadContext context)
         {
             return state.beginOperation(context);
         }
@@ -838,9 +843,9 @@ public class InMemoryCommandStore
     {
         class DebugSafeStore extends InMemorySafeStore
         {
-            public DebugSafeStore(State state, CFKLoader cfkLoader, PreExecuteContext context)
+            public DebugSafeStore(State state, CFKLoader cfkLoader, PreLoadContext context, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKey)
             {
-                super(state, cfkLoader, context);
+                super(state, cfkLoader, context, commands, commandsForKey);
             }
 
             @Override
@@ -887,9 +892,9 @@ public class InMemoryCommandStore
             }
 
             @Override
-            protected InMemorySafeStore createCommandStore(PreExecuteContext context)
+            protected InMemorySafeStore createCommandStore(PreLoadContext context, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKeys)
             {
-                return new DebugSafeStore(this, cfkLoader(), context);
+                return new DebugSafeStore(this, cfkLoader(), context, commands, commandsForKeys);
             }
         }
 
@@ -899,6 +904,12 @@ public class InMemoryCommandStore
         public Debug(int id, NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, RangesForEpochHolder rangesForEpoch)
         {
             super(id, time, agent, store, progressLogFactory, rangesForEpoch);
+        }
+
+        @Override
+        protected State createState(NodeTimeService time, Agent agent, DataStore store, ProgressLog progressLog, RangesForEpochHolder rangesForEpoch, CommandStore commandStore)
+        {
+            return new DebugState(time, agent, store, progressLog, rangesForEpoch, commandStore);
         }
     }
 
