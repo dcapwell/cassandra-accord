@@ -29,7 +29,6 @@ import accord.local.Node.Id;
 import accord.local.Status.Known;
 import accord.primitives.*;
 import accord.topology.Topology;
-import accord.utils.TestContext;
 import com.google.common.collect.Lists;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -79,60 +78,17 @@ public class ImmutableCommandTest
 
     private static class NoOpProgressLog implements ProgressLog
     {
-        @Override
-        public void unwitnessed(TxnId txnId, RoutingKey homeKey, ProgressShard shard)
-        {
-        }
-
-        @Override
-        public void preaccepted(Command command, ProgressShard shard)
-        {
-        }
-
-        @Override
-        public void accepted(Command command, ProgressShard shard)
-        {
-        }
-
-        @Override
-        public void committed(Command command, ProgressShard shard)
-        {
-        }
-
-        @Override
-        public void readyToExecute(Command command, ProgressShard shard)
-        {
-        }
-
-        @Override
-        public void executed(Command command, ProgressShard shard)
-        {
-        }
-
-        @Override
-        public void invalidated(Command command, ProgressShard shard)
-        {
-        }
-
-        @Override
-        public void durableLocal(TxnId txnId)
-        {
-        }
-
-        @Override
-        public void durable(Command command, @Nullable Set<Id> persistedOn)
-        {
-        }
-
-        @Override
-        public void durable(TxnId txnId, @Nullable Unseekables<?, ?> unseekables, ProgressShard shard)
-        {
-        }
-
-        @Override
-        public void waiting(TxnId blockedBy, Known blockedUntil, Unseekables<?, ?> blockedOn)
-        {
-        }
+        @Override public void unwitnessed(TxnId txnId, RoutingKey homeKey, ProgressShard shard) {}
+        @Override public void preaccepted(Command command, ProgressShard shard) {}
+        @Override public void accepted(Command command, ProgressShard shard) {}
+        @Override public void committed(Command command, ProgressShard shard) {}
+        @Override public void readyToExecute(Command command, ProgressShard shard) {}
+        @Override public void executed(Command command, ProgressShard shard) {}
+        @Override public void invalidated(Command command, ProgressShard shard) {}
+        @Override public void durableLocal(TxnId txnId) {}
+        @Override public void durable(Command command, @Nullable Set<Id> persistedOn) {}
+        @Override public void durable(TxnId txnId, @Nullable Unseekables<?, ?> unseekables, ProgressShard shard) {}
+        @Override public void waiting(TxnId blockedBy, Known blockedUntil, Unseekables<?, ?> blockedOn) {}
     }
 
     private static Node createNode(Id id, CommandStoreSupport storeSupport)
@@ -158,10 +114,7 @@ public class ImmutableCommandTest
             Assertions.assertEquals(Status.NotWitnessed, command.status());
             Assertions.assertNull(command.executeAt());
         }
-        TestContext context = new TestContext();
-        context.addEmpty(txnId);
-        context.addKeys(keys);
-        SafeCommandStore safeStore = commands.beginOperation(context);
+        SafeCommandStore safeStore = commands.beginOperation(PreLoadContext.contextFor(txnId, keys));
         Commands.preaccept(safeStore, txnId, txn.slice(FULL_RANGES, true), ROUTE, HOME_KEY);
         Command command = safeStore.command(txnId).current();
         Assertions.assertEquals(Status.PreAccepted, command.status());

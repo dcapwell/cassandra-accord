@@ -41,18 +41,18 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
             this.txnId = txnId;
         }
     }
-    protected final PreExecuteContext context;
+    protected final PreLoadContext context;
     protected final Map<TxnId, LiveCommand> commands;
     protected final Map<RoutableKey, LiveCommandsForKey> commandsForKey;
 
     private List<PendingRegistration<Seekable>> pendingSeekableRegistrations = null;
     private List<PendingRegistration<Seekables<?, ?>>> pendingSeekablesRegistrations = null;
 
-    public AbstractSafeCommandStore(PreExecuteContext context)
+    public AbstractSafeCommandStore(PreLoadContext context, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKey)
     {
         this.context = context;
-        this.commands = new HashMap<>(context.commands());
-        this.commandsForKey = new HashMap<>(context.commandsForKey());
+        this.commands = commands;
+        this.commandsForKey = commandsForKey;
     }
 
     public Map<TxnId, LiveCommand> commands()
