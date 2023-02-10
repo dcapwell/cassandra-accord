@@ -110,20 +110,20 @@ public abstract class LiveCommand extends LiveState<Command>
         switch (command.status())
         {
             case NotWitnessed:
-                return Command.NotWitnessed.Factory.update((Command.NotWitnessed) command, attributes, promised);
+                return Command.NotWitnessed.notWitnessed((Command.NotWitnessed) command, attributes, promised);
             case PreAccepted:
-                return Command.Preaccepted.Factory.update((Command.Preaccepted) command, attributes, promised);
+                return Command.Preaccepted.preAccepted((Command.Preaccepted) command, attributes, promised);
             case AcceptedInvalidate:
             case Accepted:
             case PreCommitted:
-                return Command.Accepted.Factory.update((Command.Accepted) command, attributes, promised);
+                return Command.Accepted.accepted((Command.Accepted) command, attributes, promised);
             case Committed:
             case ReadyToExecute:
-                return Command.Committed.Factory.update((Command.Committed) command, attributes, promised);
+                return Command.Committed.committed((Command.Committed) command, attributes, promised);
             case PreApplied:
             case Applied:
             case Invalidated:
-                return Command.Executed.Factory.update((Command.Executed) command, attributes, promised);
+                return Command.Executed.executed((Command.Executed) command, attributes, promised);
             default:
                 throw new IllegalStateException("Unhandled status " + command.status());
         }
@@ -152,8 +152,8 @@ public abstract class LiveCommand extends LiveState<Command>
             return command;
 
         Command.Committed updated =  command instanceof Command.Executed ?
-                Command.Executed.Factory.update(command.asExecuted(), command, waitingOn.build()) :
-                Command.Committed.Factory.update(command, command, waitingOn.build());
+                Command.Executed.executed(command.asExecuted(), command, waitingOn.build()) :
+                Command.Committed.committed(command, command, waitingOn.build());
         return complete(updated);
     }
 
@@ -166,12 +166,12 @@ public abstract class LiveCommand extends LiveState<Command>
     {
         if (current().status() == Status.NotWitnessed)
         {
-            return complete(Command.Preaccepted.Factory.create(attrs, executeAt, ballot));
+            return complete(Command.Preaccepted.preAccepted(attrs, executeAt, ballot));
         }
         else if (current().status() == Status.AcceptedInvalidate && current().executeAt() == null)
         {
             Command.Accepted accepted = asAccepted();
-            return complete(Command.Accepted.Factory.create(attrs, accepted.saveStatus(), executeAt, ballot, accepted.accepted()));
+            return complete(Command.Accepted.accepted(attrs, accepted.saveStatus(), executeAt, ballot, accepted.accepted()));
         }
         else
         {
@@ -183,7 +183,7 @@ public abstract class LiveCommand extends LiveState<Command>
     public Command.Accepted markDefined(CommonAttributes attributes, Ballot promised)
     {
         if (Command.isSameClass(current(), Command.Accepted.class))
-            return complete(Command.Accepted.Factory.update(asAccepted(), attributes, SaveStatus.enrich(current().saveStatus(), DefinitionOnly), promised));
+            return complete(Command.Accepted.accepted(asAccepted(), attributes, SaveStatus.enrich(current().saveStatus(), DefinitionOnly), promised));
         return (Command.Accepted) complete(updateAttributes(current(), attributes, promised));
     }
 
@@ -205,7 +205,7 @@ public abstract class LiveCommand extends LiveState<Command>
 
     public Command.Committed commit(CommonAttributes attrs, Timestamp executeAt, Command.WaitingOn waitingOn)
     {
-        return complete(Command.Committed.Factory.create(attrs, SaveStatus.Committed, executeAt, current().promised(), current().accepted(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply));
+        return complete(Command.Committed.committed(attrs, SaveStatus.Committed, executeAt, current().promised(), current().accepted(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply));
     }
 
     public Command precommit(Timestamp executeAt)
@@ -215,32 +215,32 @@ public abstract class LiveCommand extends LiveState<Command>
 
     public Command.Committed commitInvalidated(CommonAttributes attrs, Timestamp executeAt)
     {
-        return complete(Command.Executed.Factory.create(attrs, SaveStatus.Invalidated, executeAt, current().promised(), current().accepted(), Command.WaitingOn.EMPTY, null, null));
+        return complete(Command.Executed.executed(attrs, SaveStatus.Invalidated, executeAt, current().promised(), current().accepted(), Command.WaitingOn.EMPTY, null, null));
     }
 
     public Command.Committed readyToExecute()
     {
-        return complete(Command.Committed.Factory.update(current().asCommitted(), current(), SaveStatus.ReadyToExecute));
+        return complete(Command.Committed.committed(current().asCommitted(), current(), SaveStatus.ReadyToExecute));
     }
 
     public Command.Executed preapplied(CommonAttributes attrs, Timestamp executeAt, Command.WaitingOn waitingOn, Writes writes, Result result)
     {
-        return complete(Command.Executed.Factory.create(attrs, SaveStatus.PreApplied, executeAt, current().promised(), current().accepted(), waitingOn, writes, result));
+        return complete(Command.Executed.executed(attrs, SaveStatus.PreApplied, executeAt, current().promised(), current().accepted(), waitingOn, writes, result));
     }
 
     public Command.Committed noopApplied()
     {
-        return complete(Command.Executed.Factory.update(asExecuted(), current(), SaveStatus.Applied));
+        return complete(Command.Executed.executed(asExecuted(), current(), SaveStatus.Applied));
     }
 
     public Command.Executed applied()
     {
-        return complete(Command.Executed.Factory.update(asExecuted(), current(), SaveStatus.Applied));
+        return complete(Command.Executed.executed(asExecuted(), current(), SaveStatus.Applied));
     }
 
     public Command.NotWitnessed notWitnessed()
     {
         Invariants.checkArgument(current() == null);
-        return complete(Command.NotWitnessed.create(txnId));
+        return complete(Command.NotWitnessed.notWitnessed(txnId));
     }
 }

@@ -58,27 +58,27 @@ public abstract class Command implements CommonAttributes
     {
         public static NotWitnessed notWitnessed(CommonAttributes attributes, Ballot promised)
         {
-            return NotWitnessed.Factory.create(attributes, promised);
+            return NotWitnessed.notWitnessed(attributes, promised);
         }
 
         public static Preaccepted preaccepted(CommonAttributes common, Timestamp executeAt, Ballot promised)
         {
-            return Preaccepted.Factory.create(common, executeAt, promised);
+            return Preaccepted.preAccepted(common, executeAt, promised);
         }
 
         public static Accepted accepted(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted)
         {
-            return Accepted.Factory.create(common, status, executeAt, promised, accepted);
+            return Accepted.accepted(common, status, executeAt, promised, accepted);
         }
 
         public static Committed committed(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
         {
-            return Committed.Factory.create(common, status, executeAt, promised, accepted, waitingOnCommit, waitingOnApply);
+            return Committed.committed(common, status, executeAt, promised, accepted, waitingOnCommit, waitingOnApply);
         }
 
         public static Executed executed(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply, Writes writes, Result result)
         {
-            return Executed.Factory.create(common, status, executeAt, promised, accepted, waitingOnCommit, waitingOnApply, writes, result);
+            return Executed.executed(common, status, executeAt, promised, accepted, waitingOnCommit, waitingOnApply, writes, result);
         }
     }
 
@@ -491,24 +491,22 @@ public abstract class Command implements CommonAttributes
             super(common, status, promised);
         }
 
-        public static NotWitnessed create(TxnId txnId)
+
+        public static NotWitnessed notWitnessed(CommonAttributes common, Ballot promised)
+        {
+            return new NotWitnessed(common, SaveStatus.NotWitnessed, promised);
+        }
+
+        public static NotWitnessed notWitnessed(TxnId txnId)
         {
             return new NotWitnessed(txnId, SaveStatus.NotWitnessed, NotDurable, null, null, null, Ballot.ZERO, null);
         }
 
-        static class Factory
+        public static NotWitnessed notWitnessed(NotWitnessed command, CommonAttributes common, Ballot promised)
         {
-            public static NotWitnessed create(CommonAttributes common, Ballot promised)
-            {
-                return new NotWitnessed(common, SaveStatus.NotWitnessed, promised);
-            }
-
-            public static NotWitnessed update(NotWitnessed command, CommonAttributes common, Ballot promised)
-            {
-                checkSameClass(command, NotWitnessed.class, "Cannot update");
-                Invariants.checkArgument(command.txnId().equals(common.txnId()));
-                return new NotWitnessed(common, command.saveStatus(), promised);
-            }
+            checkSameClass(command, NotWitnessed.class, "Cannot update");
+            Invariants.checkArgument(command.txnId().equals(common.txnId()));
+            return new NotWitnessed(common, command.saveStatus(), promised);
         }
 
         @Override
@@ -578,20 +576,16 @@ public abstract class Command implements CommonAttributes
             return hash;
         }
 
-        static class Factory
+        public static Preaccepted preAccepted(CommonAttributes common, Timestamp executeAt, Ballot promised)
         {
-            public static Preaccepted create(CommonAttributes common, Timestamp executeAt, Ballot promised)
-            {
-                return new Preaccepted(common, SaveStatus.PreAccepted, executeAt, promised);
-            }
-
-            public static Preaccepted update(Preaccepted command, CommonAttributes common, Ballot promised)
-            {
-                checkPromised(command, promised);
-                checkSameClass(command, Preaccepted.class, "Cannot update");
-                Invariants.checkArgument(command.getClass() == Preaccepted.class);
-                return create(common, command.executeAt(), promised);
-            }
+            return new Preaccepted(common, SaveStatus.PreAccepted, executeAt, promised);
+        }
+        public static Preaccepted preAccepted(Preaccepted command, CommonAttributes common, Ballot promised)
+        {
+            checkPromised(command, promised);
+            checkSameClass(command, Preaccepted.class, "Cannot update");
+            Invariants.checkArgument(command.getClass() == Preaccepted.class);
+            return preAccepted(common, command.executeAt(), promised);
         }
 
         @Override
@@ -647,24 +641,19 @@ public abstract class Command implements CommonAttributes
             return hash;
         }
 
-        static class Factory
+        static Accepted accepted(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted)
         {
-            static Accepted create(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted)
-            {
-                return new Accepted(common, status, executeAt, promised, accepted);
-            }
-
-            static Accepted update(Accepted command, CommonAttributes common, SaveStatus status, Ballot promised)
-            {
-                checkPromised(command, promised);
-                checkSameClass(command, Accepted.class, "Cannot update");
-                return new Accepted(common, status, command.executeAt(), promised, command.accepted());
-            }
-
-            static Accepted update(Accepted command, CommonAttributes common, Ballot promised)
-            {
-                return update(command, common, command.saveStatus(), promised);
-            }
+            return new Accepted(common, status, executeAt, promised, accepted);
+        }
+        static Accepted accepted(Accepted command, CommonAttributes common, SaveStatus status, Ballot promised)
+        {
+            checkPromised(command, promised);
+            checkSameClass(command, Accepted.class, "Cannot update");
+            return new Accepted(common, status, command.executeAt(), promised, command.accepted());
+        }
+        static Accepted accepted(Accepted command, CommonAttributes common, Ballot promised)
+        {
+            return accepted(command, common, command.saveStatus(), promised);
         }
 
         @Override
@@ -711,39 +700,31 @@ public abstract class Command implements CommonAttributes
             return hash;
         }
 
-        static class Factory
+        private static Committed committed(Committed command, CommonAttributes common, Ballot promised, SaveStatus status, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
         {
-            private static Committed update(Committed command, CommonAttributes common, Ballot promised, SaveStatus status, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
-            {
-                checkPromised(command, promised);
-                checkSameClass(command, Committed.class, "Cannot update");
-                return new Committed(common, status, command.executeAt(), promised, command.accepted(), waitingOnCommit, waitingOnApply);
-            }
+            checkPromised(command, promised);
+            checkSameClass(command, Committed.class, "Cannot update");
+            return new Committed(common, status, command.executeAt(), promised, command.accepted(), waitingOnCommit, waitingOnApply);
+        }
 
-            static Committed update(Committed command, CommonAttributes common, Ballot promised)
-            {
-                return update(command, common, promised, command.saveStatus(), command.waitingOnCommit(), command.waitingOnApply());
-            }
+        static Committed committed(Committed command, CommonAttributes common, Ballot promised)
+        {
+            return committed(command, common, promised, command.saveStatus(), command.waitingOnCommit(), command.waitingOnApply());
+        }
 
-            static Committed update(Committed command, CommonAttributes common, SaveStatus status)
-            {
-                return update(command, common, command.promised(), status, command.waitingOnCommit(), command.waitingOnApply());
-            }
+        static Committed committed(Committed command, CommonAttributes common, SaveStatus status)
+        {
+            return committed(command, common, command.promised(), status, command.waitingOnCommit(), command.waitingOnApply());
+        }
 
-            static Committed update(Committed command, CommonAttributes common, WaitingOn waitingOn)
-            {
-                return update(command, common, command.promised(), command.saveStatus(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply);
-            }
+        static Committed committed(Committed command, CommonAttributes common, WaitingOn waitingOn)
+        {
+            return committed(command, common, command.promised(), command.saveStatus(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply);
+        }
 
-            static Committed create(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
-            {
-                return new Committed(common, status, executeAt, promised, accepted, waitingOnCommit, waitingOnApply);
-            }
-
-            static Committed create(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, WaitingOn waitingOn)
-            {
-                return new Committed(common, status, executeAt, promised, accepted, waitingOn.waitingOnCommit, waitingOn.waitingOnApply);
-            }
+        static Committed committed(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
+        {
+            return new Committed(common, status, executeAt, promised, accepted, waitingOnCommit, waitingOnApply);
         }
 
         public AsyncChain<Data> read(SafeCommandStore safeStore)
@@ -837,38 +818,35 @@ public abstract class Command implements CommonAttributes
             return hash;
         }
 
-        static class Factory
+        public static Executed executed(Executed command, CommonAttributes common, SaveStatus status, Ballot promised, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
         {
-            public static Executed update(Executed command, CommonAttributes common, SaveStatus status, Ballot promised, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply)
-            {
-                checkSameClass(command, Executed.class, "Cannot update");
-                return new Executed(common, status, command.executeAt(), promised, command.accepted(), waitingOnCommit, waitingOnApply, command.writes(), command.result());
-            }
+            checkSameClass(command, Executed.class, "Cannot update");
+            return new Executed(common, status, command.executeAt(), promised, command.accepted(), waitingOnCommit, waitingOnApply, command.writes(), command.result());
+        }
 
-            public static Executed update(Executed command, CommonAttributes common, SaveStatus status)
-            {
-                return update(command, common, status, command.promised(), command.waitingOnCommit(), command.waitingOnApply());
-            }
+        public static Executed executed(Executed command, CommonAttributes common, SaveStatus status)
+        {
+            return executed(command, common, status, command.promised(), command.waitingOnCommit(), command.waitingOnApply());
+        }
 
-            public static Executed update(Executed command, CommonAttributes common, WaitingOn waitingOn)
-            {
-                return update(command, common, command.saveStatus(), command.promised(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply);
-            }
+        public static Executed executed(Executed command, CommonAttributes common, WaitingOn waitingOn)
+        {
+            return executed(command, common, command.saveStatus(), command.promised(), waitingOn.waitingOnCommit, waitingOn.waitingOnApply);
+        }
 
-            public static Executed update(Executed command, CommonAttributes common, Ballot promised)
-            {
-                return update(command, common, command.saveStatus(), promised, command.waitingOnCommit(), command.waitingOnApply());
-            }
+        public static Executed executed(Executed command, CommonAttributes common, Ballot promised)
+        {
+            return executed(command, common, command.saveStatus(), promised, command.waitingOnCommit(), command.waitingOnApply());
+        }
 
-            public static Executed create(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply, Writes writes, Result result)
-            {
-                return new Executed(common, status, executeAt, promised, accepted, waitingOnCommit, waitingOnApply, writes, result);
-            }
+        public static Executed executed(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, ImmutableSortedSet<TxnId> waitingOnCommit, ImmutableSortedMap<Timestamp, TxnId> waitingOnApply, Writes writes, Result result)
+        {
+            return new Executed(common, status, executeAt, promised, accepted, waitingOnCommit, waitingOnApply, writes, result);
+        }
 
-            public static Executed create(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, WaitingOn waitingOn, Writes writes, Result result)
-            {
-                return new Executed(common, status, executeAt, promised, accepted, waitingOn.waitingOnCommit, waitingOn.waitingOnApply, writes, result);
-            }
+        public static Executed executed(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, WaitingOn waitingOn, Writes writes, Result result)
+        {
+            return new Executed(common, status, executeAt, promised, accepted, waitingOn.waitingOnCommit, waitingOn.waitingOnApply, writes, result);
         }
 
         public Writes writes()
@@ -975,27 +953,22 @@ public abstract class Command implements CommonAttributes
         switch (command.status())
         {
             case NotWitnessed:
-                return NotWitnessed.Factory.update((NotWitnessed) command, attributes, promised);
+                return NotWitnessed.notWitnessed((NotWitnessed) command, attributes, promised);
             case PreAccepted:
-                return Preaccepted.Factory.update((Preaccepted) command, attributes, promised);
+                return Preaccepted.preAccepted((Preaccepted) command, attributes, promised);
             case AcceptedInvalidate:
             case Accepted:
             case PreCommitted:
-                return Accepted.Factory.update((Accepted) command, attributes, promised);
+                return Accepted.accepted((Accepted) command, attributes, promised);
             case Committed:
             case ReadyToExecute:
-                return Committed.Factory.update((Committed) command, attributes, promised);
+                return Committed.committed((Committed) command, attributes, promised);
             case PreApplied:
             case Applied:
             case Invalidated:
-                return Executed.Factory.update((Executed) command, attributes, promised);
+                return Executed.executed((Executed) command, attributes, promised);
             default:
                 throw new IllegalStateException("Unhandled status " + command.status());
         }
-    }
-
-    private static Command updateAttributes(Command command, CommonAttributes attributes)
-    {
-        return updateAttributes(command, attributes, command.promised());
     }
 }
