@@ -387,7 +387,7 @@ public class Commands
             Invariants.checkState(expectedRanges.containsAll(executeRanges));
         }
 
-        CommonAttributes attrs = updateHomeAndProgressKeys(safeStore, command.txnId(), command, route, command.progressKey(), coordinateRanges);
+        CommonAttributes attrs = updateHomeAndProgressKeys(safeStore, command.txnId(), command, route, coordinateRanges);
         ProgressShard shard = progressShard(attrs, coordinateRanges);
 
         if (!validate(command.status(), attrs, coordinateRanges, executeRanges, shard, route, Check, null, Check, partialDeps, command.hasBeen(Committed) ? Add : TrySet))
@@ -662,9 +662,9 @@ public class Commands
         public void accept(SafeCommandStore safeStore)
         {
             LiveCommand prevLive = get(safeStore, depth - 1);
-            Command prev = prevLive != null ? prevLive.current() : null;
             while (depth >= 0)
             {
+                Command prev = prevLive != null ? prevLive.current() : null;
                 LiveCommand curLive = safeStore.ifLoaded(txnIds[depth]);
                 Command cur = curLive != null ? curLive.current() : null;
                 Known until = blockedUntil[depth];
@@ -719,7 +719,7 @@ public class Commands
                     safeStore.progressLog().waiting(cur.txnId(), until, someKeys);
                     return;
                 }
-                prev = cur;
+                prevLive = curLive;
             }
         }
 
@@ -788,11 +788,24 @@ public class Commands
     private static CommonAttributes updateHomeAndProgressKeys(SafeCommandStore safeStore, TxnId txnId, CommonAttributes attrs, Route<?> route, @Nullable RoutingKey progressKey, Ranges coordinateRanges)
     {
         attrs = updateHomeKey(safeStore, txnId, attrs, route.homeKey());
-        if (attrs.progressKey() == null)
-            attrs = attrs.mutableAttrs().progressKey(progressKey != null ? progressKey : NO_PROGRESS_KEY);
+        if (progressKey == null || progressKey == NO_PROGRESS_KEY)
+        {
+            if (attrs.progressKey() == null)
+                attrs = attrs.mutableAttrs().progressKey(NO_PROGRESS_KEY);
+            return attrs;
+        }
+        if (attrs.progressKey() == null) attrs = attrs.mutableAttrs().progressKey(progressKey);
         else if (!attrs.progressKey().equals(progressKey))
             throw new AssertionError();
         return attrs;
+    }
+
+    private static CommonAttributes updateHomeAndProgressKeys(SafeCommandStore safeStore, TxnId txnId, CommonAttributes attrs, Route<?> route, Ranges coordinateRanges)
+    {
+        if (attrs.progressKey() == null)
+            return attrs;
+
+        return updateHomeAndProgressKeys(safeStore, txnId, attrs, route, attrs.progressKey(), coordinateRanges);
     }
 
     private static ProgressShard progressShard(CommonAttributes attrs, @Nullable RoutingKey progressKey, Ranges coordinateRanges)

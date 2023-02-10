@@ -32,15 +32,14 @@ import accord.primitives.*;
 import accord.utils.Invariants;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
+import accord.utils.async.AsyncResult;
+import accord.utils.async.AsyncResults;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -203,6 +202,8 @@ public class InMemoryCommandStore
 
                 for (InMemoryLiveCommandsForKey commands : rangeCommands)
                 {
+                    if (commands.isEmpty())
+                        continue;
                     commands.current().forWitnessed(minTimestamp, maxTimestamp, txnId -> consumer.accept(command(txnId).current()));
                 }
             }
@@ -220,6 +221,8 @@ public class InMemoryCommandStore
                                                                                        range.endInclusive()).values();
                 for (InMemoryLiveCommandsForKey commands : rangeCommands)
                 {
+                    if (commands.isEmpty())
+                        continue;
                     commands.current().byExecuteAt()
                             .between(minTimestamp, maxTimestamp, status -> status.hasBeen(Committed))
                             .forEach(txnId -> consumer.accept(command(txnId).current()));
@@ -355,9 +358,16 @@ public class InMemoryCommandStore
         {
             if (store != current)
                 throw new IllegalStateException("This operation has already been cleared");
-            PostExecuteContext result = current.complete();
-            current = null;
-            return result;
+            try
+            {
+                PostExecuteContext result = current.complete();
+                current = null;
+                return result;
+            }
+            catch (Throwable t)
+            {
+                throw t;
+            }
         }
 
         private PreExecuteContext createPreExecuteCtx(PreLoadContext preLoadContext)
@@ -699,13 +709,37 @@ public class InMemoryCommandStore
 
         private synchronized <T> void executeSync(PreLoadContext context, Function<? super SafeCommandStore, T> function, BiConsumer<? super T, Throwable> callback)
         {
-            state.executeInContext(this, context, function, callback);
+            enqueueAndRun(() -> state.executeInContext(this, context, function, callback));
         }
 
         @Override
         protected <T> T executeSync(PreLoadContext context, Function<? super SafeCommandStore, T> function)
         {
-            return state.executeInContext(this, context, function);
+            AsyncResult.Settable<T> result = AsyncResults.settable();
+
+            enqueueAndRun(() -> {
+                try
+                {
+                    result.trySuccess(state.executeInContext(this, context, function));
+                }
+                catch (Throwable t)
+                {
+                    result.tryFailure(t);
+                }
+            });
+
+            try
+            {
+                return AsyncResults.getBlocking(result);
+            }
+            catch (InterruptedException e)
+            {
+                throw new RuntimeException(e);
+            }
+            catch (ExecutionException e)
+            {
+                throw new RuntimeException(e.getCause());
+            }
         }
 
         @Override

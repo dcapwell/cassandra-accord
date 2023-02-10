@@ -18,10 +18,8 @@
 
 package accord.impl;
 
-import accord.api.Key;
 import accord.local.*;
 import accord.primitives.*;
-import accord.utils.Invariants;
 import com.google.common.collect.ImmutableMap;
 
 import java.util.*;
@@ -96,7 +94,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         LiveCommand command = getIfLoaded(txnId, commands, this::getIfLoaded);
         if (command == null)
             return null;
-        if (command.current() == null)
+        if (command.isEmpty())
             command.notWitnessed();
         return command;
     }
@@ -107,7 +105,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         LiveCommand command = commands.get(txnId);
         if (command == null)
             throw new IllegalStateException(String.format("%s was not specified in PreLoadContext", txnId));
-        if (command.current() == null)
+        if (command.isEmpty())
             command.notWitnessed();
         return command;
     }
@@ -117,7 +115,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         LiveCommandsForKey cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded);
         if (cfk == null)
             return null;
-        if (cfk.current() == null)
+        if (cfk.isEmpty())
             cfk.initialize(cfkLoader());
         return cfk;
     }
@@ -127,7 +125,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         LiveCommandsForKey cfk = commandsForKey.get(key);
         if (cfk == null)
             throw new IllegalStateException(String.format("%s was not specified in PreLoadContext", key));
-        if (cfk.current() == null)
+        if (cfk.isEmpty())
             cfk.initialize(cfkLoader());
         return cfk;
     }
