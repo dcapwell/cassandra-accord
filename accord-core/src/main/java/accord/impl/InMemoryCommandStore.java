@@ -634,13 +634,11 @@ public class InMemoryCommandStore
             return state.register(this, keyOrRange, slice, command, attrs);
         }
 
-        @Override
         public CommandsForKey.CommandLoader<?> cfkLoader()
         {
             return cfkLoader;
         }
     }
-
 
     public static class Synchronized extends SyncCommandStore
     {
