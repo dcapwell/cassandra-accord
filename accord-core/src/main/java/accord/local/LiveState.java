@@ -22,4 +22,8 @@ public abstract class LiveState<T>
 {
     public abstract T current();
     protected abstract void set(T update);
+    public boolean isEmpty()
+    {
+        return current() == null;
+    }
 }
