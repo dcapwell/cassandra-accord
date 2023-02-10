@@ -395,6 +395,10 @@ public class InMemoryCommandStore
                 if (isDirectCall) logger.error("Uncaught exception", t);
                 throw t;
             }
+            finally
+            {
+                commandStore.completeOperation(safeStore);
+            }
         }
 
         protected <T> T executeInContext(CommandStore commandStore, PreLoadContext context, Function<? super SafeCommandStore, T> function)

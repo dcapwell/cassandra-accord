@@ -662,11 +662,11 @@ public class Commands
         public void accept(SafeCommandStore safeStore)
         {
             LiveCommand prevLive = get(safeStore, depth - 1);
-            Command prev = prevLive.current();
+            Command prev = prevLive != null ? prevLive.current() : null;
             while (depth >= 0)
             {
                 LiveCommand curLive = safeStore.ifLoaded(txnIds[depth]);
-                Command cur = curLive.current();
+                Command cur = curLive != null ? curLive.current() : null;
                 Known until = blockedUntil[depth];
                 if (cur == null)
                 {
