@@ -71,9 +71,9 @@ public class ImmutableCommandTest
         topology.set(topology.get().withEpoch(epoch));
     }
 
-    private static CommandStore createStore(CommandStoreSupport storeSupport)
+    private static InMemoryCommandStore createStore(CommandStoreSupport storeSupport)
     {
-        return createNode(ID1, storeSupport).unsafeByIndex(0);
+        return (InMemoryCommandStore) createNode(ID1, storeSupport).unsafeByIndex(0);
     }
 
     private static class NoOpProgressLog implements ProgressLog
@@ -102,7 +102,7 @@ public class ImmutableCommandTest
     void noConflictWitnessTest()
     {
         CommandStoreSupport support = new CommandStoreSupport();
-        CommandStore commands = createStore(support);
+        InMemoryCommandStore commands = createStore(support);
         MockCluster.Clock clock = new MockCluster.Clock(100);
         TxnId txnId = clock.idForNode(1, 1);
         Keys keys = Keys.of(KEY);

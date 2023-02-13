@@ -51,9 +51,12 @@ import static accord.local.SafeCommandStore.TestKind.Ws;
 import static accord.local.Status.Committed;
 import static accord.primitives.Routables.Slice.Minimal;
 
-public class InMemoryCommandStore
+public interface InMemoryCommandStore extends CommandStore
 {
-    private static final Logger logger = LoggerFactory.getLogger(InMemoryCommandStore.class);
+    Logger logger = LoggerFactory.getLogger(InMemoryCommandStore.class);
+
+    SafeCommandStore beginOperation(PreLoadContext context);
+    void completeOperation(SafeCommandStore store);
 
     static class RangeCommand
     {
@@ -72,7 +75,7 @@ public class InMemoryCommandStore
         }
     }
 
-    private static class CFKLoader implements CommandsForKey.CommandLoader<TxnId>
+    class CFKLoader implements CommandsForKey.CommandLoader<TxnId>
     {
         private final State state;
 
@@ -129,7 +132,7 @@ public class InMemoryCommandStore
         }
     }
 
-    public static class State
+    class State
     {
         private final NodeTimeService time;
         private final Agent agent;
@@ -395,7 +398,7 @@ public class InMemoryCommandStore
             }
         }
 
-        private <T> T executeInContext(CommandStore commandStore, PreLoadContext preLoadContext, Function<? super SafeCommandStore, T> function, boolean isDirectCall)
+        private <T> T executeInContext(InMemoryCommandStore commandStore, PreLoadContext preLoadContext, Function<? super SafeCommandStore, T> function, boolean isDirectCall)
         {
 
             SafeCommandStore safeStore = commandStore.beginOperation(preLoadContext);
@@ -414,13 +417,13 @@ public class InMemoryCommandStore
             }
         }
 
-        protected <T> T executeInContext(CommandStore commandStore, PreLoadContext context, Function<? super SafeCommandStore, T> function)
+        protected <T> T executeInContext(InMemoryCommandStore commandStore, PreLoadContext context, Function<? super SafeCommandStore, T> function)
         {
             return executeInContext(commandStore, context, function, true);
 
         }
 
-        protected <T> void executeInContext(CommandStore commandStore, PreLoadContext context, Function<? super SafeCommandStore, T> function, BiConsumer<? super T, Throwable> callback)
+        protected <T> void executeInContext(InMemoryCommandStore commandStore, PreLoadContext context, Function<? super SafeCommandStore, T> function, BiConsumer<? super T, Throwable> callback)
         {
             try
             {
@@ -436,7 +439,7 @@ public class InMemoryCommandStore
 
     }
 
-    private static <K, V> Function<K, V> getOrCreate(Function<K, V> get, Function<K, V> init)
+    static <K, V> Function<K, V> getOrCreate(Function<K, V> get, Function<K, V> init)
     {
         return key -> {
             V value = get.apply(key);
@@ -446,7 +449,7 @@ public class InMemoryCommandStore
         };
     }
 
-    private static class InMemorySafeStore extends AbstractSafeCommandStore<LiveCommand, LiveCommandsForKey>
+    class InMemorySafeStore extends AbstractSafeCommandStore<LiveCommand, LiveCommandsForKey>
     {
         private final State state;
         private final CFKLoader cfkLoader;
@@ -643,7 +646,7 @@ public class InMemoryCommandStore
         }
     }
 
-    public static class Synchronized extends SyncCommandStore
+    class Synchronized extends SyncCommandStore implements InMemoryCommandStore
     {
         Runnable active = null;
         final Queue<Runnable> queue = new ConcurrentLinkedQueue<>();
@@ -759,21 +762,28 @@ public class InMemoryCommandStore
         public void shutdown() {}
     }
 
-    public static class SingleThread extends CommandStore
+    public static class SingleThread implements InMemoryCommandStore
     {
+        private final int id;
         private final AtomicReference<Thread> expectedThread = new AtomicReference<>();
         private final ExecutorService executor;
         private final State state;
 
         public SingleThread(int id, NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, RangesForEpochHolder rangesForEpoch)
         {
-            super(id);
+            this.id = id;
             executor = Executors.newSingleThreadExecutor(r -> {
                 Thread thread = new Thread(r);
                 thread.setName(CommandStore.class.getSimpleName() + '[' + time.id() + ']');
                 return thread;
             });
             state = createState(time, agent, store, progressLogFactory.create(this), rangesForEpoch, this);
+        }
+
+        @Override
+        public int id()
+        {
+            return 0;
         }
 
         protected State createState(NodeTimeService time, Agent agent, DataStore store, ProgressLog progressLog, RangesForEpochHolder rangesForEpoch, CommandStore commandStore)
@@ -820,11 +830,13 @@ public class InMemoryCommandStore
             return AsyncChains.ofCallable(executor, () -> state.executeInContext(this, context, function));
         }
 
+        @Override
         public SafeCommandStore beginOperation(PreLoadContext context)
         {
             return state.beginOperation(context);
         }
 
+        @Override
         public void completeOperation(SafeCommandStore store)
         {
             state.completeOperation(store);

@@ -35,12 +35,20 @@ public class SyncCommandStores extends CommandStores<SyncCommandStores.SyncComma
     {
     }
 
-    public static abstract class SyncCommandStore extends CommandStore
+    public static abstract class SyncCommandStore implements CommandStore
     {
+        private final int id; // unique id
         public SyncCommandStore(int id)
         {
-            super(id);
+            this.id = id;
         }
+
+        @Override
+        public int id()
+        {
+            return id;
+        }
+
         protected abstract <T> T executeSync(PreLoadContext context, Function<? super SafeCommandStore, T> function);
     }
 
