@@ -222,24 +222,15 @@ public abstract class Command implements CommonAttributes
         }
 
         @Override
-        public String toString()
+        public int hashCode()
         {
-            return "Command@" + System.identityHashCode(this) + '{' + txnId + ':' + status + '}';
+            throw new UnsupportedOperationException();
         }
 
         @Override
-        public int hashCode()
+        public String toString()
         {
-            int hash = 1;
-            hash = 31 * hash + txnId.hashCode();
-            hash = 31 * hash + status.hashCode();
-            hash = 31 * hash + Objects.hashCode(durability);
-            hash = 31 * hash + Objects.hashCode(homeKey);
-            hash = 31 * hash + Objects.hashCode(progressKey);
-            hash = 31 * hash + Objects.hashCode(route);
-            hash = 31 * hash + Objects.hashCode(promised);
-            hash = 31 * hash + Objects.hashCode(listeners);
-            return hash;
+            return "Command@" + System.identityHashCode(this) + '{' + txnId + ':' + status + '}';
         }
 
         @Override
@@ -480,6 +471,18 @@ public abstract class Command implements CommonAttributes
         return (Executed) this;
     }
 
+    public abstract Command updateAttributes(CommonAttributes attrs, Ballot promised);
+
+    public final Command updateAttributes(CommonAttributes attrs)
+    {
+        return updateAttributes(attrs, promised());
+    }
+
+    public final Command updatePromised(Ballot promised)
+    {
+        return updateAttributes(this, promised);
+    }
+
     public static final class NotWitnessed extends AbstractCommand
     {
         NotWitnessed(TxnId txnId, SaveStatus status, Status.Durability durability, RoutingKey homeKey, RoutingKey progressKey, Route<?> route, Ballot promised, ImmutableSet<CommandListener> listeners)
@@ -492,6 +495,11 @@ public abstract class Command implements CommonAttributes
             super(common, status, promised);
         }
 
+        @Override
+        public Command updateAttributes(CommonAttributes attrs, Ballot promised)
+        {
+            return new NotWitnessed(attrs, saveStatus(), promised);
+        }
 
         public static NotWitnessed notWitnessed(CommonAttributes common, Ballot promised)
         {
@@ -553,6 +561,12 @@ public abstract class Command implements CommonAttributes
             this.executeAt = executeAt;
             this.partialTxn = common.partialTxn();
             this.partialDeps = common.partialDeps();
+        }
+
+        @Override
+        public Command updateAttributes(CommonAttributes attrs, Ballot promised)
+        {
+            return new PreAccepted(attrs, saveStatus(), executeAt(), promised);
         }
 
         @Override
@@ -625,6 +639,12 @@ public abstract class Command implements CommonAttributes
         }
 
         @Override
+        public Command updateAttributes(CommonAttributes attrs, Ballot promised)
+        {
+            return new Accepted(attrs, saveStatus(), executeAt(), promised, accepted());
+        }
+
+        @Override
         public boolean equals(Object o)
         {
             if (this == o) return true;
@@ -679,6 +699,12 @@ public abstract class Command implements CommonAttributes
         private Committed(CommonAttributes common, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, WaitingOn waitingOn)
         {
             this(common, status, executeAt, promised, accepted, waitingOn.waitingOnCommit, waitingOn.waitingOnApply);
+        }
+
+        @Override
+        public Command updateAttributes(CommonAttributes attrs, Ballot promised)
+        {
+            return new Committed(attrs, saveStatus(), executeAt(), promised, accepted(), waitingOnCommit(), waitingOnApply());
         }
 
         @Override
@@ -796,6 +822,12 @@ public abstract class Command implements CommonAttributes
             super(common, status, executeAt, promised, accepted, waitingOn);
             this.writes = writes;
             this.result = result;
+        }
+
+        @Override
+        public Command updateAttributes(CommonAttributes attrs, Ballot promised)
+        {
+            return new Executed(attrs, saveStatus(), executeAt(), promised, accepted(), waitingOnCommit(), waitingOnApply(), writes, result);
         }
 
         @Override
@@ -949,45 +981,16 @@ public abstract class Command implements CommonAttributes
         }
     }
 
-    private static Command updateAttributes(Command command, CommonAttributes attributes, Ballot promised)
-    {
-        switch (command.status())
-        {
-            case NotWitnessed:
-                return Command.NotWitnessed.notWitnessed((Command.NotWitnessed) command, attributes, promised);
-            case PreAccepted:
-                return Command.PreAccepted.preAccepted((Command.PreAccepted) command, attributes, promised);
-            case AcceptedInvalidate:
-            case Accepted:
-            case PreCommitted:
-                return Command.Accepted.accepted((Command.Accepted) command, attributes, promised);
-            case Committed:
-            case ReadyToExecute:
-                return Command.Committed.committed((Command.Committed) command, attributes, promised);
-            case PreApplied:
-            case Applied:
-            case Invalidated:
-                return Command.Executed.executed((Command.Executed) command, attributes, promised);
-            default:
-                throw new IllegalStateException("Unhandled status " + command.status());
-        }
-    }
-
-    static Command updateAttributes(Command command, CommonAttributes attributes)
-    {
-        return updateAttributes(command, attributes, command.promised());
-    }
-
     static Command addListener(Command command, CommandListener listener)
     {
         CommonAttributes attrs = command.mutableAttrs().addListener(listener);
-        return updateAttributes(command, attrs);
+        return command.updateAttributes(attrs);
     }
 
     static Command removeListener(Command command, CommandListener listener)
     {
         CommonAttributes attrs = command.mutableAttrs().removeListener(listener);
-        return updateAttributes(command, attrs);
+        return command.updateAttributes(attrs);
     }
 
     static Command.Committed updateWaitingOn(Committed command, WaitingOn.Update waitingOn)
@@ -1014,7 +1017,7 @@ public abstract class Command implements CommonAttributes
         else
         {
             Invariants.checkState(command.status() == Status.Accepted);
-            return (Command.PreAccepted) updateAttributes(command, attrs, ballot);
+            return (Command.PreAccepted) command.updateAttributes(attrs, ballot);
         }
     }
 
@@ -1022,12 +1025,7 @@ public abstract class Command implements CommonAttributes
     {
         if (Command.isSameClass(command, Command.Accepted.class))
             return Command.Accepted.accepted(command.asAccepted(), attributes, SaveStatus.enrich(command.saveStatus(), DefinitionOnly), promised);
-        return (Command.Accepted) updateAttributes(command, attributes, promised);
-    }
-
-    static Command updatePromised(Command command, Ballot promised)
-    {
-        return updateAttributes(command, command, promised);
+        return (Command.Accepted) command.updateAttributes(attributes, promised);
     }
 
     static Command.Accepted accept(Command command, CommonAttributes attrs, Timestamp executeAt, Ballot ballot)

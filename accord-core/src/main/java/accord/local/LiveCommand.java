@@ -64,7 +64,7 @@ public abstract class LiveCommand implements LiveState<Command>
 
     public Command updateAttributes(CommonAttributes attrs)
     {
-        return update(Command.updateAttributes(current(), attrs));
+        return update(current().updateAttributes(attrs));
     }
 
     public Command.PreAccepted preaccept(CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
@@ -79,7 +79,7 @@ public abstract class LiveCommand implements LiveState<Command>
 
     public Command updatePromised(Ballot promised)
     {
-        return update(Command.updatePromised(current(), promised));
+        return update(current().updatePromised(promised));
     }
 
     public Command.Accepted accept(CommonAttributes attrs, Timestamp executeAt, Ballot ballot)
