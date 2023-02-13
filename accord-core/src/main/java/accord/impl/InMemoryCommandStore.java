@@ -446,7 +446,7 @@ public class InMemoryCommandStore
         };
     }
 
-    private static class InMemorySafeStore extends AbstractSafeCommandStore
+    private static class InMemorySafeStore extends AbstractSafeCommandStore<LiveCommand, LiveCommandsForKey>
     {
         private final State state;
         private final CFKLoader cfkLoader;
@@ -626,13 +626,13 @@ public class InMemoryCommandStore
         }
 
         @Override
-        CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, LiveCommand command, CommonAttributes attrs)
+        public CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, LiveCommand command, CommonAttributes attrs)
         {
             return state.register(this, keysOrRanges, slice, command, attrs);
         }
 
         @Override
-        CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, LiveCommand command, CommonAttributes attrs)
+        public CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, LiveCommand command, CommonAttributes attrs)
         {
             return state.register(this, keyOrRange, slice, command, attrs);
         }
@@ -820,13 +820,11 @@ public class InMemoryCommandStore
             return AsyncChains.ofCallable(executor, () -> state.executeInContext(this, context, function));
         }
 
-        @Override
         public SafeCommandStore beginOperation(PreLoadContext context)
         {
             return state.beginOperation(context);
         }
 
-        @Override
         public void completeOperation(SafeCommandStore store)
         {
             state.completeOperation(store);

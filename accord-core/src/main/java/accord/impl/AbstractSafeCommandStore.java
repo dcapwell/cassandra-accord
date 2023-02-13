@@ -21,12 +21,11 @@ package accord.impl;
 import accord.impl.CommandsForKey.CommandLoader;
 import accord.local.*;
 import accord.primitives.*;
-import com.google.common.collect.ImmutableMap;
 
 import java.util.*;
 import java.util.function.Function;
 
-public abstract class AbstractSafeCommandStore implements SafeCommandStore
+public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, CommandsForKeyType extends LiveCommandsForKey> implements SafeCommandStore
 {
     private static class PendingRegistration<T>
     {
@@ -42,39 +41,39 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         }
     }
     protected final PreLoadContext context;
-    protected final Map<TxnId, LiveCommand> commands;
-    protected final Map<RoutableKey, LiveCommandsForKey> commandsForKey;
+    protected final Map<TxnId, CommandType> commands;
+    protected final Map<RoutableKey, CommandsForKeyType> commandsForKey;
 
     private List<PendingRegistration<Seekable>> pendingSeekableRegistrations = null;
     private List<PendingRegistration<Seekables<?, ?>>> pendingSeekablesRegistrations = null;
 
-    public AbstractSafeCommandStore(PreLoadContext context, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKey)
+    public AbstractSafeCommandStore(PreLoadContext context, Map<TxnId, CommandType> commands, Map<RoutableKey, CommandsForKeyType> commandsForKey)
     {
         this.context = context;
         this.commands = commands;
         this.commandsForKey = commandsForKey;
     }
 
-    public Map<TxnId, LiveCommand> commands()
+    public Map<TxnId, CommandType> commands()
     {
         return commands;
     }
 
-    public Map<RoutableKey, LiveCommandsForKey> commandsForKey()
+    public Map<RoutableKey, CommandsForKeyType> commandsForKey()
     {
         return commandsForKey;
     }
 
     @Override
-    public LiveCommand ifPresent(TxnId txnId)
+    public CommandType ifPresent(TxnId txnId)
     {
-        LiveCommand command = getIfLoaded(txnId, commands, this::getIfLoaded);
+        CommandType command = getIfLoaded(txnId, commands, this::getIfLoaded);
         if (command == null)
             return null;
         return command;
     }
 
-    protected abstract LiveCommand getIfLoaded(TxnId txnId);
+    protected abstract CommandType getIfLoaded(TxnId txnId);
 
     private static <K, V> V getIfLoaded(K key, Map<K, V> context, Function<K, V> getIfLoaded)
     {
@@ -90,9 +89,9 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
     }
 
     @Override
-    public LiveCommand ifLoaded(TxnId txnId)
+    public CommandType ifLoaded(TxnId txnId)
     {
-        LiveCommand command = getIfLoaded(txnId, commands, this::getIfLoaded);
+        CommandType command = getIfLoaded(txnId, commands, this::getIfLoaded);
         if (command == null)
             return null;
         if (command.isEmpty())
@@ -101,9 +100,9 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
     }
 
     @Override
-    public LiveCommand command(TxnId txnId)
+    public CommandType command(TxnId txnId)
     {
-        LiveCommand command = commands.get(txnId);
+        CommandType command = commands.get(txnId);
         if (command == null)
             throw new IllegalStateException(String.format("%s was not specified in PreLoadContext", txnId));
         if (command.isEmpty())
@@ -113,9 +112,9 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
 
     protected abstract CommandLoader<?> cfkLoader();
 
-    public LiveCommandsForKey ifLoaded(RoutableKey key)
+    public CommandsForKeyType ifLoaded(RoutableKey key)
     {
-        LiveCommandsForKey cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded);
+        CommandsForKeyType cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded);
         if (cfk == null)
             return null;
         if (cfk.isEmpty())
@@ -123,9 +122,9 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         return cfk;
     }
 
-    public LiveCommandsForKey commandsForKey(RoutableKey key)
+    public CommandsForKeyType commandsForKey(RoutableKey key)
     {
-        LiveCommandsForKey cfk = commandsForKey.get(key);
+        CommandsForKeyType cfk = commandsForKey.get(key);
         if (cfk == null)
             throw new IllegalStateException(String.format("%s was not specified in PreLoadContext", key));
         if (cfk.isEmpty())
@@ -133,11 +132,11 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         return cfk;
     }
 
-    protected abstract LiveCommandsForKey getIfLoaded(RoutableKey key);
+    protected abstract CommandsForKeyType getIfLoaded(RoutableKey key);
 
-    public LiveCommandsForKey maybeCommandsForKey(RoutableKey key)
+    public CommandsForKeyType maybeCommandsForKey(RoutableKey key)
     {
-        LiveCommandsForKey cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded);
+        CommandsForKeyType cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded);
         if (cfk == null)
             return null;
         return cfk;
@@ -179,16 +178,16 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         return time().uniqueNow(max);
     }
 
-    abstract CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, LiveCommand command, CommonAttributes attrs);
+    public abstract CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, CommandType command, CommonAttributes attrs);
 
-    abstract CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, LiveCommand command, CommonAttributes attrs);
+    public abstract CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, CommandType command, CommonAttributes attrs);
 
-    private interface RegistrationCompleter<T>
+    private interface RegistrationCompleter<T, CommandType extends LiveCommand>
     {
-        CommonAttributes complete(T value, Ranges ranges, LiveCommand command, CommonAttributes attrs);
+        CommonAttributes complete(T value, Ranges ranges, CommandType command, CommonAttributes attrs);
     }
 
-    private <T> void completeRegistrations(Map<TxnId, CommonAttributes> updates, List<PendingRegistration<T>> pendingRegistrations, RegistrationCompleter<T> completer)
+    private <T> void completeRegistrations(Map<TxnId, CommonAttributes> updates, List<PendingRegistration<T>> pendingRegistrations, RegistrationCompleter<T, CommandType> completer)
     {
         if (pendingRegistrations == null)
             return;
@@ -196,7 +195,7 @@ public abstract class AbstractSafeCommandStore implements SafeCommandStore
         for (PendingRegistration<T> pendingRegistration : pendingRegistrations)
         {
             TxnId txnId = pendingRegistration.txnId;
-            LiveCommand liveCommand = command(pendingRegistration.txnId);
+            CommandType liveCommand = command(pendingRegistration.txnId);
             Command command = liveCommand.current();
             CommonAttributes attrs = updates.getOrDefault(txnId, command);
             attrs = completer.complete(pendingRegistration.value, pendingRegistration.slice, liveCommand, attrs);
