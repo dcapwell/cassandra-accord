@@ -144,10 +144,9 @@ public class ReadData extends AbstractEpochRequest<ReadData.ReadNack> implements
     public synchronized ReadNack apply(SafeCommandStore safeStore)
     {
         LiveCommand liveCommand = safeStore.command(txnId);
-        Command command = liveCommand.current();
-        Status status = command.status();
+        Status status = liveCommand.current().status();
         logger.trace("{}: setting up read with status {} on {}", txnId, status, safeStore);
-        switch (command.status()) {
+        switch (status) {
             default:
                 throw new AssertionError();
             case Committed:
@@ -159,7 +158,7 @@ public class ReadData extends AbstractEpochRequest<ReadData.ReadNack> implements
                 waitingOn.set(safeStore.commandStore().id());
                 ++waitingOnCount;
 
-                command = liveCommand.addListener(this);
+                liveCommand.addListener(this);
 
                 if (status == Committed)
                     return null;
@@ -171,7 +170,7 @@ public class ReadData extends AbstractEpochRequest<ReadData.ReadNack> implements
                 waitingOn.set(safeStore.commandStore().id());
                 ++waitingOnCount;
                 if (!isObsolete)
-                    read(safeStore, command.asCommitted());
+                    read(safeStore, liveCommand.current().asCommitted());
                 return null;
 
             case PreApplied:
