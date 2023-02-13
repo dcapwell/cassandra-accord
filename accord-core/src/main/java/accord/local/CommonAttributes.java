@@ -19,6 +19,7 @@
 package accord.local;
 
 import accord.api.RoutingKey;
+import accord.api.VisibleForImplementation;
 import accord.primitives.PartialDeps;
 import accord.primitives.PartialTxn;
 import accord.primitives.Route;
@@ -186,6 +187,13 @@ public interface CommonAttributes
                 return this;
             listeners = ensureMutable(listeners);
             listeners.remove(listener);
+            return this;
+        }
+
+        @VisibleForImplementation
+        public Mutable setListeners(ImmutableSet<CommandListener> listeners)
+        {
+            this.listeners = listeners;
             return this;
         }
     }

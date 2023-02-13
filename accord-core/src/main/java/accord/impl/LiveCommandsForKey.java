@@ -28,7 +28,7 @@ import accord.primitives.Timestamp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public abstract class LiveCommandsForKey extends LiveState<CommandsForKey>
+public abstract class LiveCommandsForKey implements LiveState<CommandsForKey>
 {
     private static final Logger logger = LoggerFactory.getLogger(LiveCommandsForKey.class);
 
@@ -38,6 +38,8 @@ public abstract class LiveCommandsForKey extends LiveState<CommandsForKey>
     {
         this.key = key;
     }
+
+    protected abstract void set(CommandsForKey update);
 
     public Key key()
     {

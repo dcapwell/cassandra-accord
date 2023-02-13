@@ -25,7 +25,7 @@ import accord.primitives.TxnId;
 import accord.primitives.Writes;
 import accord.utils.Invariants;
 
-public abstract class LiveCommand extends LiveState<Command>
+public abstract class LiveCommand implements LiveState<Command>
 {
     private final TxnId txnId;
 
@@ -33,6 +33,8 @@ public abstract class LiveCommand extends LiveState<Command>
     {
         this.txnId = txnId;
     }
+
+    protected abstract void set(Command command);
 
     public TxnId txnId()
     {

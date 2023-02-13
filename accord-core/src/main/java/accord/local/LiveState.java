@@ -18,11 +18,10 @@
 
 package accord.local;
 
-public abstract class LiveState<T>
+public interface LiveState<T>
 {
-    public abstract T current();
-    protected abstract void set(T update);
-    public boolean isEmpty()
+    T current();
+    default boolean isEmpty()
     {
         return current() == null;
     }
