@@ -408,12 +408,13 @@ public class Commands
         return ApplyOutcome.Success;
     }
 
-    public static void listenerUpdate(SafeCommandStore safeStore, LiveCommand liveListener, Command command)
+    public static void listenerUpdate(SafeCommandStore safeStore, LiveCommand liveListener, LiveCommand liveUpdated)
     {
         Command listener = liveListener.current();
+        Command updated = liveUpdated.current();
         logger.trace("{}: updating as listener in response to change on {} with status {} ({})",
-                     listener.txnId(), command.txnId(), command.status(), command);
-        switch (command.status())
+                     listener.txnId(), updated.txnId(), updated.status(), updated);
+        switch (updated.status())
         {
             default:
                 throw new IllegalStateException();
@@ -429,7 +430,7 @@ public class Commands
             case PreApplied:
             case Applied:
             case Invalidated:
-                updatePredecessorAndMaybeExecute(safeStore, liveListener, command, false);
+                updatePredecessorAndMaybeExecute(safeStore, liveListener, liveUpdated, false);
                 break;
         }
     }
@@ -529,14 +530,15 @@ public class Commands
      * @param dependency is either committed or invalidated
      * @return true iff {@code maybeExecute} might now have a different outcome
      */
-    private static boolean updatePredecessor(LiveCommand liveCommand, WaitingOn.Update waitingOn, Command dependency)
+    private static boolean updatePredecessor(LiveCommand liveCommand, WaitingOn.Update waitingOn, LiveCommand liveDependency)
     {
         Command.Committed command = liveCommand.current().asCommitted();
+        Command dependency = liveDependency.current();
         Invariants.checkState(dependency.hasBeen(PreCommitted));
         if (dependency.hasBeen(Invalidated))
         {
             logger.trace("{}: {} is invalidated. Stop listening and removing from waiting on commit set.", command.txnId(), dependency.txnId());
-            liveCommand.removeListener(command.asListener()).asCommitted();
+            liveDependency.removeListener(command.asListener());
             waitingOn.removeWaitingOnCommit(dependency.txnId());
             return true;
         }
@@ -545,14 +547,14 @@ public class Commands
             // dependency cannot be a predecessor if it executes later
             logger.trace("{}: {} executes after us. Stop listening and removing from waiting on apply set.", command.txnId(), dependency.txnId());
             waitingOn.removeWaitingOn(dependency.txnId(), dependency.executeAt());
-            liveCommand.removeListener(command.asListener());
+            liveDependency.removeListener(command.asListener());
             return true;
         }
         else if (dependency.hasBeen(Applied))
         {
             logger.trace("{}: {} has been applied. Stop listening and removing from waiting on apply set.", command.txnId(), dependency.txnId());
             waitingOn.removeWaitingOn(dependency.txnId(), dependency.executeAt());
-            liveCommand.removeListener(command.asListener());
+            liveDependency.removeListener(command.asListener());
             return true;
         }
         else if (command.isWaitingOnDependency())
@@ -591,14 +593,14 @@ public class Commands
         }
     }
 
-    static void updatePredecessorAndMaybeExecute(SafeCommandStore safeStore, LiveCommand liveCommand, Command predecessor, boolean notifyWaitingOn)
+    static void updatePredecessorAndMaybeExecute(SafeCommandStore safeStore, LiveCommand liveCommand, LiveCommand livePredecessor, boolean notifyWaitingOn)
     {
         Command.Committed command = liveCommand.current().asCommitted();
         if (command.hasBeen(Applied))
             return;
 
         WaitingOn.Update waitingOn = new WaitingOn.Update(command);
-        boolean attemptExecution = updatePredecessor(liveCommand, waitingOn, predecessor);
+        boolean attemptExecution = updatePredecessor(liveCommand, waitingOn, livePredecessor);
         command = liveCommand.updateWaitingOn(waitingOn);
 
         if (attemptExecution)
@@ -679,7 +681,7 @@ public class Commands
                 {
                     if (cur.has(until) || (cur.hasBeen(PreCommitted) && cur.executeAt().compareTo(prev.executeAt()) > 0))
                     {
-                        updatePredecessorAndMaybeExecute(safeStore, prevLive, cur, false);
+                        updatePredecessorAndMaybeExecute(safeStore, prevLive, curLive, false);
                         --depth;
                         prevLive = get(safeStore, depth - 1);
                         continue;

@@ -155,7 +155,7 @@ public abstract class Command implements CommonAttributes
         @Override
         public void onChange(SafeCommandStore safeStore, TxnId txnId)
         {
-            Commands.listenerUpdate(safeStore, safeStore.command(listenerId), safeStore.command(txnId).current());
+            Commands.listenerUpdate(safeStore, safeStore.command(listenerId), safeStore.command(txnId));
         }
 
         @Override
