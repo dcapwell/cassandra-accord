@@ -517,7 +517,7 @@ public class Commands
                     // TODO (desirable, performance): This could be performed immediately upon Committed
                     //      but: if we later support transitive dependency elision this could be dangerous
                     logger.trace("{}: applying no-op", command.txnId());
-                    command = liveCommand.noopApplied();
+                    command = liveCommand.applied();
                     safeStore.notifyListeners(command);
                     return true;
                 }

@@ -117,11 +117,6 @@ public abstract class LiveCommand implements LiveState<Command>
         return update(Command.preapplied(current(), attrs, executeAt, waitingOn, writes, result));
     }
 
-    public Command.Committed noopApplied()
-    {
-        return update(Command.noopApplied(current().asExecuted()));
-    }
-
     public Command.Executed applied()
     {
         return update(Command.applied(current().asExecuted()));

@@ -1064,11 +1064,6 @@ public abstract class Command implements CommonAttributes
         return Command.Executed.executed(attrs, SaveStatus.PreApplied, executeAt, command.promised(), command.accepted(), waitingOn, writes, result);
     }
 
-    static Command.Committed noopApplied(Command.Executed command)
-    {
-        return Command.Executed.executed(command, command, SaveStatus.Applied);
-    }
-
     static Command.Executed applied(Command.Executed command)
     {
         return Command.Executed.executed(command, command, SaveStatus.Applied);
