@@ -165,7 +165,7 @@ public abstract class Command implements CommonAttributes
         }
     }
 
-    public static CommandListener listener(TxnId txnId)
+    public static Listener listener(TxnId txnId)
     {
         return new Listener(txnId);
     }

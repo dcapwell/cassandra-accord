@@ -25,6 +25,7 @@ import accord.impl.CommandsForKey.CommandTimeseries;
 import accord.local.Command;
 import accord.local.LiveState;
 import accord.primitives.Timestamp;
+import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,7 +58,9 @@ public abstract class LiveCommandsForKey implements LiveState<CommandsForKey>
         return update(new CommandsForKey(key, loader));
     }
 
-    private Timestamp updateMax(Timestamp timestamp)
+    @VisibleForTesting
+    @VisibleForImplementation
+    public Timestamp updateMax(Timestamp timestamp)
     {
         return Timestamp.max(current().max(), timestamp);
     }
