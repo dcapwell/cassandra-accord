@@ -33,7 +33,7 @@ import java.util.stream.IntStream;
 
 public class AsyncCommandStores extends CommandStores<CommandStore>
 {
-    static class AsyncMapReduceAdapter<O> implements MapReduceAdapter<CommandStore, AsyncChain<O>, List<AsyncChain<O>>, O>
+    public static class AsyncMapReduceAdapter<O> implements MapReduceAdapter<CommandStore, AsyncChain<O>, List<AsyncChain<O>>, O>
     {
         private static final AsyncMapReduceAdapter INSTANCE = new AsyncMapReduceAdapter<>();
         public static <O> AsyncMapReduceAdapter<O> instance() { return INSTANCE; }

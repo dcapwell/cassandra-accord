@@ -280,12 +280,12 @@ public class CommandsForKey
         }
     }
 
-    public static CommandListener listener(Key key)
+    public static Listener listener(Key key)
     {
         return new Listener(key);
     }
 
-    public static CommandListener listener(CommandsForKey cfk)
+    public static Listener listener(CommandsForKey cfk)
     {
         return listener(cfk.key());
     }
