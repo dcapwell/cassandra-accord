@@ -18,6 +18,7 @@
 
 package accord.impl;
 
+import accord.api.VisibleForImplementation;
 import accord.impl.CommandsForKey.CommandLoader;
 import accord.local.*;
 import accord.primitives.*;
@@ -64,15 +65,6 @@ public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, 
         return commandsForKey;
     }
 
-    @Override
-    public CommandType ifPresent(TxnId txnId)
-    {
-        CommandType command = getIfLoaded(txnId, commands, this::getIfLoaded);
-        if (command == null)
-            return null;
-        return command;
-    }
-
     protected abstract CommandType getIfLoaded(TxnId txnId);
 
     private static <K, V> V getIfLoaded(K key, Map<K, V> context, Function<K, V> getIfLoaded)
@@ -86,6 +78,17 @@ public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, 
             return null;
         context.put(key, value);
         return value;
+    }
+
+    @Override
+    public CommandType ifPresent(TxnId txnId)
+    {
+        CommandType command = commands.get(txnId);
+        if (command == null)
+            throw new IllegalStateException(String.format("%s was not specified in PreLoadContext", txnId));
+        if (command.isEmpty())
+            return null;
+        return command;
     }
 
     @Override
@@ -115,10 +118,8 @@ public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, 
     public CommandsForKeyType ifLoaded(RoutableKey key)
     {
         CommandsForKeyType cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded);
-        if (cfk == null)
+        if (cfk == null || cfk.isEmpty())
             return null;
-        if (cfk.isEmpty())
-            cfk.initialize(cfkLoader());
         return cfk;
     }
 
@@ -134,10 +135,11 @@ public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, 
 
     protected abstract CommandsForKeyType getIfLoaded(RoutableKey key);
 
+    @VisibleForImplementation
     public CommandsForKeyType maybeCommandsForKey(RoutableKey key)
     {
         CommandsForKeyType cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded);
-        if (cfk == null)
+        if (cfk == null || cfk.isEmpty())
             return null;
         return cfk;
     }
