@@ -60,9 +60,23 @@ public abstract class LiveCommandsForKey implements LiveState<CommandsForKey>
 
     @VisibleForTesting
     @VisibleForImplementation
-    public Timestamp updateMax(Timestamp timestamp)
+    public static Timestamp updateMax(CommandsForKey cfk, Timestamp timestamp)
     {
-        return Timestamp.max(current().max(), timestamp);
+        return Timestamp.max(cfk.max(), timestamp);
+    }
+
+    @VisibleForTesting
+    @VisibleForImplementation
+    public <D> CommandsForKey updateMax(Timestamp timestamp)
+    {
+        CommandsForKey current = current();
+        return update(new CommandsForKey(current.key(),
+                                         updateMax(current, timestamp),
+                                         current.lastExecutedTimestamp(),
+                                         current.lastExecutedMicros(),
+                                         current.lastWriteTimestamp(),
+                                         (CommandTimeseries<D>) current().byId(),
+                                         (CommandTimeseries<D>) current().byExecuteAt()));
     }
 
     public <D> CommandsForKey register(Command command)
@@ -71,7 +85,7 @@ public abstract class LiveCommandsForKey implements LiveState<CommandsForKey>
         CommandTimeseries.Update<D> byId = (CommandTimeseries.Update<D>) current().byId().beginUpdate();
         CommandTimeseries.Update<D> byExecuteAt = (CommandTimeseries.Update<D>) current().byExecuteAt().beginUpdate();
         return update(new CommandsForKey(current.key(),
-                                         updateMax(command.executeAt()),
+                                         updateMax(current, command.executeAt()),
                                          current.lastExecutedTimestamp(),
                                          current.lastExecutedMicros(),
                                          current.lastWriteTimestamp(),
@@ -117,7 +131,7 @@ public abstract class LiveCommandsForKey implements LiveState<CommandsForKey>
         }
 
         return update(new CommandsForKey(current.key(),
-                                         updateMax(command.executeAt()),
+                                         updateMax(current, command.executeAt()),
                                          current.lastExecutedTimestamp(),
                                          current.lastExecutedMicros(),
                                          current.lastWriteTimestamp(),
@@ -158,5 +172,4 @@ public abstract class LiveCommandsForKey implements LiveState<CommandsForKey>
                                          (CommandTimeseries<D>) current.byId(),
                                          (CommandTimeseries<D>) current.byExecuteAt()));
     }
-
 }

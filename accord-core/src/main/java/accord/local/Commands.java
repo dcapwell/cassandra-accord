@@ -297,14 +297,14 @@ public class Commands
         WaitingOn.Update update = new WaitingOn.Update();
         partialDeps.forEach(ranges, depId -> {
             LiveCommand liveCommand = safeStore.ifLoaded(depId);
-            Command command = liveCommand.current();
-            if (command == null)
+            if (liveCommand == null)
             {
                 update.addWaitingOnCommit(depId);
                 safeStore.addAndInvokeListener(depId, txnId);
             }
             else
             {
+                Command command = liveCommand.current();
                 switch (command.status())
                 {
                     default:
