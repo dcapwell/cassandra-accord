@@ -18,11 +18,23 @@
 
 package accord.local;
 
+/**
+ * State scoped to a single request that references global state
+ */
 public interface SafeState<T>
 {
     T current();
+    void invalidate();
+    boolean invalidated();
+
     default boolean isEmpty()
     {
         return current() == null;
+    }
+
+    default void checkNotInvalidated()
+    {
+        if (invalidated())
+            throw new IllegalStateException("Cannot access invalidated " + this);
     }
 }

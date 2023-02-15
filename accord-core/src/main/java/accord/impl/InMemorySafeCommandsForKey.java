@@ -19,31 +19,40 @@
 package accord.impl;
 
 import accord.api.Key;
+import accord.impl.InMemoryCommandStore.GlobalCommandsForKey;
 
 public class InMemorySafeCommandsForKey extends SafeCommandsForKey
 {
-    private volatile CommandsForKey current = null;
+    private boolean invalidated = false;
+    private final GlobalCommandsForKey global;
 
-    public InMemorySafeCommandsForKey(Key key, CommandsForKey current)
+    public InMemorySafeCommandsForKey(Key key, GlobalCommandsForKey global)
     {
         super(key);
-        this.current = current;
-    }
-
-    public InMemorySafeCommandsForKey(Key key)
-    {
-        this(key, null);
+        this.global = global;
     }
 
     @Override
     public CommandsForKey current()
     {
-        return current;
+        return global.value();
     }
 
     @Override
     protected void set(CommandsForKey update)
     {
-        this.current = update;
+        global.value(update);
+    }
+
+    @Override
+    public void invalidate()
+    {
+        invalidated = true;
+    }
+
+    @Override
+    public boolean invalidated()
+    {
+        return invalidated;
     }
 }
