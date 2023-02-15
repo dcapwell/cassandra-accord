@@ -110,7 +110,7 @@ public class ImmutableCommandTest
 
         {
             Command command = Command.NotWitnessed.notWitnessed(txnId);
-            Assertions.assertNull(inMemory(commands).command(txnId).current());
+            Assertions.assertNull(inMemory(commands).command(txnId).value());
             Assertions.assertEquals(Status.NotWitnessed, command.status());
             Assertions.assertNull(command.executeAt());
         }
@@ -134,7 +134,7 @@ public class ImmutableCommandTest
 
         {
             Command command = Command.NotWitnessed.notWitnessed(txnId);
-            Assertions.assertNull(inMemory(commands).command(txnId).current());
+            Assertions.assertNull(inMemory(commands).command(txnId).value());
             Assertions.assertEquals(Status.NotWitnessed, command.status());
             Assertions.assertNull(command.executeAt());
         }

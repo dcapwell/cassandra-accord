@@ -18,34 +18,45 @@
 
 package accord.impl;
 
+import accord.impl.InMemoryCommandStore.GlobalCommand;
 import accord.local.Command;
 import accord.local.SafeCommand;
 import accord.primitives.TxnId;
 
 public class InMemorySafeCommand extends SafeCommand
 {
-    private volatile Command current = null;
+    private boolean invalidated;
+    private final GlobalCommand global;
 
-    public InMemorySafeCommand(TxnId txnId, Command current)
+    public InMemorySafeCommand(TxnId txnId, GlobalCommand global)
     {
         super(txnId);
-        this.current = current;
-    }
-
-    public InMemorySafeCommand(TxnId txnId)
-    {
-        this(txnId, null);
+        this.global = global;
     }
 
     @Override
     public Command current()
     {
-        return current;
+        checkNotInvalidated();
+        return global.value();
     }
 
     @Override
     protected void set(Command update)
     {
-        this.current = update;
+        checkNotInvalidated();
+        global.value(update);
+    }
+
+    @Override
+    public void invalidate()
+    {
+        invalidated = true;
+    }
+
+    @Override
+    public boolean invalidated()
+    {
+        return invalidated;
     }
 }

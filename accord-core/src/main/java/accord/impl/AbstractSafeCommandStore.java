@@ -199,6 +199,8 @@ public abstract class AbstractSafeCommandStore<CommandType extends SafeCommand, 
         }
     }
 
+    protected abstract void invalidateSafeState();
+
     public void complete()
     {
         if (pendingSeekableRegistrations != null || pendingSeekablesRegistrations != null)
@@ -208,5 +210,6 @@ public abstract class AbstractSafeCommandStore<CommandType extends SafeCommand, 
             completeRegistrations(attributeUpdates, pendingSeekableRegistrations, this::completeRegistration);
             attributeUpdates.forEach(((txnId, attributes) -> command(txnId).updateAttributes(attributes)));
         }
+        invalidateSafeState();
     }
 }
