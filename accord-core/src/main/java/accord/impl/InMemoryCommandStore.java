@@ -58,7 +58,7 @@ public interface InMemoryCommandStore extends CommandStore
     SafeCommandStore beginOperation(PreLoadContext context);
     void completeOperation(SafeCommandStore store);
 
-    static class RangeCommand
+    class RangeCommand
     {
         final LiveCommand command;
         Ranges ranges;
@@ -452,13 +452,41 @@ public interface InMemoryCommandStore extends CommandStore
     class InMemorySafeStore extends AbstractSafeCommandStore<LiveCommand, LiveCommandsForKey>
     {
         private final State state;
+        private final Map<TxnId, LiveCommand> commands;
+        private final Map<RoutableKey, LiveCommandsForKey> commandsForKey;
         private final CFKLoader cfkLoader;
 
         public InMemorySafeStore(State state, CFKLoader cfkLoader, PreLoadContext context, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKey)
         {
-            super(context, commands, commandsForKey);
-            this.cfkLoader = cfkLoader;
+            super(context);
             this.state = state;
+            this.commands = commands;
+            this.commandsForKey = commandsForKey;
+            this.cfkLoader = cfkLoader;
+        }
+
+        @Override
+        protected LiveCommand getCommandInternal(TxnId txnId)
+        {
+            return commands.get(txnId);
+        }
+
+        @Override
+        protected void addCommandInternal(LiveCommand command)
+        {
+            commands.put(command.txnId(), command);
+        }
+
+        @Override
+        protected LiveCommandsForKey getCommandsForKeyInternal(RoutableKey key)
+        {
+            return commandsForKey.get(key);
+        }
+
+        @Override
+        protected void addCommandsForKeyInternal(LiveCommandsForKey cfk)
+        {
+            commandsForKey.put(cfk.key(), cfk);
         }
 
         @Override
@@ -762,7 +790,7 @@ public interface InMemoryCommandStore extends CommandStore
         public void shutdown() {}
     }
 
-    public static class SingleThread implements InMemoryCommandStore
+    class SingleThread implements InMemoryCommandStore
     {
         private final int id;
         private final AtomicReference<Thread> expectedThread = new AtomicReference<>();
@@ -783,7 +811,7 @@ public interface InMemoryCommandStore extends CommandStore
         @Override
         public int id()
         {
-            return 0;
+            return id;
         }
 
         protected State createState(NodeTimeService time, Agent agent, DataStore store, ProgressLog progressLog, RangesForEpochHolder rangesForEpoch, CommandStore commandStore)

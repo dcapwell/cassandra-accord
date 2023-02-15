@@ -24,6 +24,7 @@ import accord.local.*;
 import accord.primitives.*;
 
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, CommandsForKeyType extends LiveCommandsForKey> implements SafeCommandStore
@@ -42,48 +43,40 @@ public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, 
         }
     }
     protected final PreLoadContext context;
-    protected final Map<TxnId, CommandType> commands;
-    protected final Map<RoutableKey, CommandsForKeyType> commandsForKey;
 
     private List<PendingRegistration<Seekable>> pendingSeekableRegistrations = null;
     private List<PendingRegistration<Seekables<?, ?>>> pendingSeekablesRegistrations = null;
 
-    public AbstractSafeCommandStore(PreLoadContext context, Map<TxnId, CommandType> commands, Map<RoutableKey, CommandsForKeyType> commandsForKey)
+    public AbstractSafeCommandStore(PreLoadContext context)
     {
         this.context = context;
-        this.commands = commands;
-        this.commandsForKey = commandsForKey;
     }
 
-    public Map<TxnId, CommandType> commands()
-    {
-        return commands;
-    }
+    protected abstract CommandType getCommandInternal(TxnId txnId);
+    protected abstract void addCommandInternal(CommandType command);
 
-    public Map<RoutableKey, CommandsForKeyType> commandsForKey()
-    {
-        return commandsForKey;
-    }
+    protected abstract CommandsForKeyType getCommandsForKeyInternal(RoutableKey key);
+    protected abstract void addCommandsForKeyInternal(CommandsForKeyType cfk);
 
     protected abstract CommandType getIfLoaded(TxnId txnId);
 
-    private static <K, V> V getIfLoaded(K key, Map<K, V> context, Function<K, V> getIfLoaded)
+    private static <K, V> V getIfLoaded(K key, Function<K, V> get, Consumer<V> add, Function<K, V> getIfLoaded)
     {
-        V value = context.get(key);
+        V value = get.apply(key);
         if (value != null)
             return value;
 
         value = getIfLoaded.apply(key);
         if (value == null)
             return null;
-        context.put(key, value);
+        add.accept(value);
         return value;
     }
 
     @Override
     public CommandType ifPresent(TxnId txnId)
     {
-        CommandType command = commands.get(txnId);
+        CommandType command = getCommandInternal(txnId);
         if (command == null)
             throw new IllegalStateException(String.format("%s was not specified in PreLoadContext", txnId));
         if (command.isEmpty())
@@ -94,7 +87,7 @@ public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, 
     @Override
     public CommandType ifLoaded(TxnId txnId)
     {
-        CommandType command = getIfLoaded(txnId, commands, this::getIfLoaded);
+        CommandType command = getIfLoaded(txnId, this::getCommandInternal, this::addCommandInternal, this::getIfLoaded);
         if (command == null)
             return null;
         if (command.isEmpty())
@@ -105,7 +98,7 @@ public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, 
     @Override
     public CommandType command(TxnId txnId)
     {
-        CommandType command = commands.get(txnId);
+        CommandType command = getCommandInternal(txnId);
         if (command == null)
             throw new IllegalStateException(String.format("%s was not specified in PreLoadContext", txnId));
         if (command.isEmpty())
@@ -117,7 +110,7 @@ public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, 
 
     public CommandsForKeyType ifLoaded(RoutableKey key)
     {
-        CommandsForKeyType cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded);
+        CommandsForKeyType cfk = getIfLoaded(key, this::getCommandsForKeyInternal, this::addCommandsForKeyInternal, this::getIfLoaded);
         if (cfk == null || cfk.isEmpty())
             return null;
         return cfk;
@@ -125,7 +118,7 @@ public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, 
 
     public CommandsForKeyType commandsForKey(RoutableKey key)
     {
-        CommandsForKeyType cfk = commandsForKey.get(key);
+        CommandsForKeyType cfk = getCommandsForKeyInternal(key);
         if (cfk == null)
             throw new IllegalStateException(String.format("%s was not specified in PreLoadContext", key));
         if (cfk.isEmpty())
@@ -138,7 +131,7 @@ public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, 
     @VisibleForImplementation
     public CommandsForKeyType maybeCommandsForKey(RoutableKey key)
     {
-        CommandsForKeyType cfk = getIfLoaded(key, commandsForKey, this::getIfLoaded);
+        CommandsForKeyType cfk = getIfLoaded(key, this::getCommandsForKeyInternal, this::addCommandsForKeyInternal, this::getIfLoaded);
         if (cfk == null || cfk.isEmpty())
             return null;
         return cfk;
