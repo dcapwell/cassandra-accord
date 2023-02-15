@@ -174,7 +174,7 @@ public class CheckOn extends CheckShards
         @Override
         public Void apply(SafeCommandStore safeStore)
         {
-            LiveCommand liveCommand = safeStore.command(txnId);
+            SafeCommand liveCommand = safeStore.command(txnId);
             switch (sufficientFor.propagate())
             {
                 default: throw new IllegalStateException();

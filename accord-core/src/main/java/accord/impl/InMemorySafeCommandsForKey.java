@@ -18,33 +18,31 @@
 
 package accord.impl;
 
-import accord.local.Command;
-import accord.local.LiveCommand;
-import accord.primitives.TxnId;
+import accord.api.Key;
 
-public class InMemoryLiveCommand extends LiveCommand
+public class InMemorySafeCommandsForKey extends SafeCommandsForKey
 {
-    private volatile Command current = null;
+    private volatile CommandsForKey current = null;
 
-    public InMemoryLiveCommand(TxnId txnId, Command current)
+    public InMemorySafeCommandsForKey(Key key, CommandsForKey current)
     {
-        super(txnId);
+        super(key);
         this.current = current;
     }
 
-    public InMemoryLiveCommand(TxnId txnId)
+    public InMemorySafeCommandsForKey(Key key)
     {
-        this(txnId, null);
+        this(key, null);
     }
 
     @Override
-    public Command current()
+    public CommandsForKey current()
     {
         return current;
     }
 
     @Override
-    protected void set(Command update)
+    protected void set(CommandsForKey update)
     {
         this.current = update;
     }

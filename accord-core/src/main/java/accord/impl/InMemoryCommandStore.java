@@ -60,10 +60,10 @@ public interface InMemoryCommandStore extends CommandStore
 
     class RangeCommand
     {
-        final LiveCommand command;
+        final SafeCommand command;
         Ranges ranges;
 
-        RangeCommand(LiveCommand command)
+        RangeCommand(SafeCommand command)
         {
             this.command = command;
         }
@@ -87,7 +87,7 @@ public interface InMemoryCommandStore extends CommandStore
         private Command loadForCFK(TxnId data)
         {
             InMemorySafeStore safeStore = state.current;
-            LiveCommand result;
+            SafeCommand result;
             // simplifies tests
             if (safeStore != null)
             {
@@ -142,8 +142,8 @@ public interface InMemoryCommandStore extends CommandStore
 
         private RangesForEpoch rangesForEpoch;
         private final CommandStore commandStore;
-        private final NavigableMap<TxnId, InMemoryLiveCommand> commands = new TreeMap<>();
-        private final NavigableMap<RoutableKey, InMemoryLiveCommandsForKey> commandsForKey = new TreeMap<>();
+        private final NavigableMap<TxnId, InMemorySafeCommand> commands = new TreeMap<>();
+        private final NavigableMap<RoutableKey, InMemorySafeCommandsForKey> commandsForKey = new TreeMap<>();
         private final CFKLoader cfkLoader;
         // TODO (find library, efficiency): this is obviously super inefficient, need some range map
 
@@ -162,9 +162,9 @@ public interface InMemoryCommandStore extends CommandStore
             this.cfkLoader = new CFKLoader(this);
         }
 
-        public LiveCommand command(TxnId txnId)
+        public SafeCommand command(TxnId txnId)
         {
-            return commands.computeIfAbsent(txnId, InMemoryLiveCommand::new);
+            return commands.computeIfAbsent(txnId, InMemorySafeCommand::new);
         }
 
         public boolean hasCommand(TxnId txnId)
@@ -172,9 +172,9 @@ public interface InMemoryCommandStore extends CommandStore
             return commands.containsKey(txnId);
         }
 
-        public LiveCommandsForKey commandsForKey(Key key)
+        public SafeCommandsForKey commandsForKey(Key key)
         {
-            return commandsForKey.computeIfAbsent(key, k -> new InMemoryLiveCommandsForKey((Key) k));
+            return commandsForKey.computeIfAbsent(key, k -> new InMemorySafeCommandsForKey((Key) k));
         }
 
         public boolean hasCommandsForKey(Key key)
@@ -198,12 +198,12 @@ public interface InMemoryCommandStore extends CommandStore
             Timestamp maxTimestamp = Timestamp.maxForEpoch(epoch);
             for (Range range : ranges)
             {
-                Iterable<InMemoryLiveCommandsForKey> rangeCommands = commandsForKey.subMap(
+                Iterable<InMemorySafeCommandsForKey> rangeCommands = commandsForKey.subMap(
                         range.start(), range.startInclusive(),
                         range.end(), range.endInclusive()
                 ).values();
 
-                for (InMemoryLiveCommandsForKey commands : rangeCommands)
+                for (InMemorySafeCommandsForKey commands : rangeCommands)
                 {
                     if (commands.isEmpty())
                         continue;
@@ -218,11 +218,11 @@ public interface InMemoryCommandStore extends CommandStore
             Timestamp maxTimestamp = Timestamp.maxForEpoch(epoch);
             for (Range range : ranges)
             {
-                Iterable<InMemoryLiveCommandsForKey> rangeCommands = commandsForKey.subMap(range.start(),
-                                                                                       range.startInclusive(),
-                                                                                       range.end(),
-                                                                                       range.endInclusive()).values();
-                for (InMemoryLiveCommandsForKey commands : rangeCommands)
+                Iterable<InMemorySafeCommandsForKey> rangeCommands = commandsForKey.subMap(range.start(),
+                                                                                           range.startInclusive(),
+                                                                                           range.end(),
+                                                                                           range.endInclusive()).values();
+                for (InMemorySafeCommandsForKey commands : rangeCommands)
                 {
                     if (commands.isEmpty())
                         continue;
@@ -233,7 +233,7 @@ public interface InMemoryCommandStore extends CommandStore
             }
         }
 
-        public CommonAttributes register(InMemorySafeStore safeStore, Seekables<?, ?> keysOrRanges, Ranges slice, LiveCommand command, CommonAttributes attrs)
+        public CommonAttributes register(InMemorySafeStore safeStore, Seekables<?, ?> keysOrRanges, Ranges slice, SafeCommand command, CommonAttributes attrs)
         {
             switch (keysOrRanges.domain())
             {
@@ -241,7 +241,7 @@ public interface InMemoryCommandStore extends CommandStore
                 case Key:
                     CommonAttributes.Mutable mutable = attrs.mutableAttrs();
                     forEach(keysOrRanges, slice, key -> {
-                        LiveCommandsForKey cfk = safeStore.commandsForKey(key);
+                        SafeCommandsForKey cfk = safeStore.commandsForKey(key);
                         CommandListener listener = CommandsForKey.listener(cfk.register(command.current()));
                         mutable.addListener(listener);
                     });
@@ -253,7 +253,7 @@ public interface InMemoryCommandStore extends CommandStore
             return attrs;
         }
 
-        public CommonAttributes register(InMemorySafeStore safeStore, Seekable keyOrRange, Ranges slice, LiveCommand command, CommonAttributes attrs)
+        public CommonAttributes register(InMemorySafeStore safeStore, Seekable keyOrRange, Ranges slice, SafeCommand command, CommonAttributes attrs)
         {
             switch (keyOrRange.domain())
             {
@@ -261,7 +261,7 @@ public interface InMemoryCommandStore extends CommandStore
                 case Key:
                     CommonAttributes.Mutable mutable = attrs.mutableAttrs();
                     forEach(keyOrRange, slice, key -> {
-                        LiveCommandsForKey cfk = safeStore.commandsForKey(key);
+                        SafeCommandsForKey cfk = safeStore.commandsForKey(key);
                         CommandListener listener = CommandsForKey.listener(cfk.register(command.current()));
                         mutable.addListener(listener);
                     });
@@ -273,7 +273,7 @@ public interface InMemoryCommandStore extends CommandStore
             return attrs;
         }
 
-        private <O> O mapReduceForKey(InMemorySafeStore safeStore, Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<LiveCommandsForKey, O, O> map, O accumulate, O terminalValue)
+        private <O> O mapReduceForKey(InMemorySafeStore safeStore, Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<SafeCommandsForKey, O, O> map, O accumulate, O terminalValue)
         {
             switch (keysOrRanges.domain()) {
                 default:
@@ -283,7 +283,7 @@ public interface InMemoryCommandStore extends CommandStore
                     for (Key key : keys)
                     {
                         if (!slice.contains(key)) continue;
-                        LiveCommandsForKey forKey = safeStore.ifLoaded(key);
+                        SafeCommandsForKey forKey = safeStore.ifLoaded(key);
                         accumulate = map.apply(forKey, accumulate);
                         if (accumulate.equals(terminalValue))
                             return accumulate;
@@ -294,7 +294,7 @@ public interface InMemoryCommandStore extends CommandStore
                     Ranges sliced = ranges.slice(slice, Minimal);
                     for (Range range : sliced)
                     {
-                        for (InMemoryLiveCommandsForKey forKey : commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive()).values())
+                        for (InMemorySafeCommandsForKey forKey : commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive()).values())
                         {
                             accumulate = map.apply(forKey, accumulate);
                             if (accumulate.equals(terminalValue))
@@ -343,15 +343,15 @@ public interface InMemoryCommandStore extends CommandStore
         }
 
 
-        protected InMemorySafeStore createCommandStore(PreLoadContext context, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKeys)
+        protected InMemorySafeStore createCommandStore(PreLoadContext context, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKeys)
         {
             return new InMemorySafeStore(this, cfkLoader, context, commands, commandsForKeys);
         }
 
         protected final InMemorySafeStore createCommandStore(PreLoadContext context)
         {
-            Map<TxnId, LiveCommand> commands = new HashMap<>();
-            Map<RoutableKey, LiveCommandsForKey> commandsForKeys = new HashMap<>();
+            Map<TxnId, SafeCommand> commands = new HashMap<>();
+            Map<RoutableKey, SafeCommandsForKey> commandsForKeys = new HashMap<>();
             for (TxnId txnId : context.txnIds())
                 commands.put(txnId, command(txnId));
 
@@ -449,14 +449,14 @@ public interface InMemoryCommandStore extends CommandStore
         };
     }
 
-    class InMemorySafeStore extends AbstractSafeCommandStore<LiveCommand, LiveCommandsForKey>
+    class InMemorySafeStore extends AbstractSafeCommandStore<SafeCommand, SafeCommandsForKey>
     {
         private final State state;
-        private final Map<TxnId, LiveCommand> commands;
-        private final Map<RoutableKey, LiveCommandsForKey> commandsForKey;
+        private final Map<TxnId, SafeCommand> commands;
+        private final Map<RoutableKey, SafeCommandsForKey> commandsForKey;
         private final CFKLoader cfkLoader;
 
-        public InMemorySafeStore(State state, CFKLoader cfkLoader, PreLoadContext context, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKey)
+        public InMemorySafeStore(State state, CFKLoader cfkLoader, PreLoadContext context, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKey)
         {
             super(context);
             this.state = state;
@@ -466,37 +466,37 @@ public interface InMemoryCommandStore extends CommandStore
         }
 
         @Override
-        protected LiveCommand getCommandInternal(TxnId txnId)
+        protected SafeCommand getCommandInternal(TxnId txnId)
         {
             return commands.get(txnId);
         }
 
         @Override
-        protected void addCommandInternal(LiveCommand command)
+        protected void addCommandInternal(SafeCommand command)
         {
             commands.put(command.txnId(), command);
         }
 
         @Override
-        protected LiveCommandsForKey getCommandsForKeyInternal(RoutableKey key)
+        protected SafeCommandsForKey getCommandsForKeyInternal(RoutableKey key)
         {
             return commandsForKey.get(key);
         }
 
         @Override
-        protected void addCommandsForKeyInternal(LiveCommandsForKey cfk)
+        protected void addCommandsForKeyInternal(SafeCommandsForKey cfk)
         {
             commandsForKey.put(cfk.key(), cfk);
         }
 
         @Override
-        protected LiveCommand getIfLoaded(TxnId txnId)
+        protected SafeCommand getIfLoaded(TxnId txnId)
         {
             return state.command(txnId);
         }
 
         @Override
-        protected LiveCommandsForKey getIfLoaded(RoutableKey key)
+        protected SafeCommandsForKey getIfLoaded(RoutableKey key)
         {
             return state.commandsForKey((Key) key);
         }
@@ -657,13 +657,13 @@ public interface InMemoryCommandStore extends CommandStore
         }
 
         @Override
-        public CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, LiveCommand command, CommonAttributes attrs)
+        public CommonAttributes completeRegistration(Seekables<?, ?> keysOrRanges, Ranges slice, SafeCommand command, CommonAttributes attrs)
         {
             return state.register(this, keysOrRanges, slice, command, attrs);
         }
 
         @Override
-        public CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, LiveCommand command, CommonAttributes attrs)
+        public CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, SafeCommand command, CommonAttributes attrs)
         {
             return state.register(this, keyOrRange, slice, command, attrs);
         }
@@ -881,27 +881,27 @@ public interface InMemoryCommandStore extends CommandStore
     {
         class DebugSafeStore extends InMemorySafeStore
         {
-            public DebugSafeStore(State state, CFKLoader cfkLoader, PreLoadContext context, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKey)
+            public DebugSafeStore(State state, CFKLoader cfkLoader, PreLoadContext context, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKey)
             {
                 super(state, cfkLoader, context, commands, commandsForKey);
             }
 
             @Override
-            public LiveCommand ifPresent(TxnId txnId)
+            public SafeCommand ifPresent(TxnId txnId)
             {
                 assertThread();
                 return super.ifPresent(txnId);
             }
 
             @Override
-            public LiveCommand ifLoaded(TxnId txnId)
+            public SafeCommand ifLoaded(TxnId txnId)
             {
                 assertThread();
                 return super.ifLoaded(txnId);
             }
 
             @Override
-            public LiveCommand command(TxnId txnId)
+            public SafeCommand command(TxnId txnId)
             {
                 assertThread();
                 return super.command(txnId);
@@ -930,7 +930,7 @@ public interface InMemoryCommandStore extends CommandStore
             }
 
             @Override
-            protected InMemorySafeStore createCommandStore(PreLoadContext context, Map<TxnId, LiveCommand> commands, Map<RoutableKey, LiveCommandsForKey> commandsForKeys)
+            protected InMemorySafeStore createCommandStore(PreLoadContext context, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKeys)
             {
                 return new DebugSafeStore(this, cfkLoader(), context, commands, commandsForKeys);
             }

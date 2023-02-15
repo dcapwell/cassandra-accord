@@ -25,11 +25,11 @@ import accord.primitives.TxnId;
 import accord.primitives.Writes;
 import accord.utils.Invariants;
 
-public abstract class LiveCommand implements LiveState<Command>
+public abstract class SafeCommand implements SafeState<Command>
 {
     private final TxnId txnId;
 
-    public LiveCommand(TxnId txnId)
+    public SafeCommand(TxnId txnId)
     {
         this.txnId = txnId;
     }

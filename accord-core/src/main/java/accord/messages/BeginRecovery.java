@@ -21,7 +21,6 @@ package accord.messages;
 import accord.api.Result;
 import accord.local.SafeCommandStore;
 import accord.local.*;
-import accord.local.Commands.AcceptOutcome;
 import accord.local.Status.Phase;
 import accord.primitives.*;
 import accord.topology.Topologies;
@@ -84,7 +83,7 @@ public class BeginRecovery extends TxnRequest<BeginRecovery.RecoverReply>
 
     public RecoverReply apply(SafeCommandStore safeStore)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         switch (Commands.recover(safeStore, txnId, partialTxn, route != null ? route : scope, progressKey, ballot))
         {
             default:

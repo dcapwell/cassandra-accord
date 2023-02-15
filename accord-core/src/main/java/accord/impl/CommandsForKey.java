@@ -269,7 +269,7 @@ public class CommandsForKey
         @Override
         public void onChange(SafeCommandStore safeStore, TxnId txnId)
         {
-            LiveCommandsForKey cfk = ((AbstractSafeCommandStore) safeStore).commandsForKey(listenerKey);
+            SafeCommandsForKey cfk = ((AbstractSafeCommandStore) safeStore).commandsForKey(listenerKey);
             cfk.listenerUpdate(safeStore.command(txnId).current());
         }
 

@@ -32,8 +32,6 @@ import static accord.local.Status.Committed;
 import static accord.utils.Utils.listOf;
 import accord.topology.Topology;
 
-import javax.swing.*;
-
 public class WaitOnCommit implements Request, MapReduceConsume<SafeCommandStore, Void>, PreLoadContext, CommandListener
 {
     private static final Logger logger = LoggerFactory.getLogger(WaitOnCommit.class);
@@ -79,7 +77,7 @@ public class WaitOnCommit implements Request, MapReduceConsume<SafeCommandStore,
     @Override
     public Void apply(SafeCommandStore safeStore)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
         switch (command.status())
         {
@@ -106,7 +104,7 @@ public class WaitOnCommit implements Request, MapReduceConsume<SafeCommandStore,
     @Override
     public void onChange(SafeCommandStore safeStore, TxnId txnId)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
         logger.trace("{}: updating as listener in response to change on {} with status {} ({})",
                 this, command.txnId(), command.status(), command);

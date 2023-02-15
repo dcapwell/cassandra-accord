@@ -27,7 +27,7 @@ import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, CommandsForKeyType extends LiveCommandsForKey> implements SafeCommandStore
+public abstract class AbstractSafeCommandStore<CommandType extends SafeCommand, CommandsForKeyType extends SafeCommandsForKey> implements SafeCommandStore
 {
     private static class PendingRegistration<T>
     {
@@ -177,7 +177,7 @@ public abstract class AbstractSafeCommandStore<CommandType extends LiveCommand, 
 
     public abstract CommonAttributes completeRegistration(Seekable keyOrRange, Ranges slice, CommandType command, CommonAttributes attrs);
 
-    private interface RegistrationCompleter<T, CommandType extends LiveCommand>
+    private interface RegistrationCompleter<T, CommandType extends SafeCommand>
     {
         CommonAttributes complete(T value, Ranges ranges, CommandType command, CommonAttributes attrs);
     }

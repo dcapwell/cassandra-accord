@@ -48,7 +48,7 @@ public class InformOfTxnId extends AbstractEpochRequest<Reply> implements Reques
     @Override
     public Reply apply(SafeCommandStore safeStore)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         if (!liveCommand.current().hasBeen(Status.PreAccepted))
         {
             Commands.updateHomeKey(safeStore, liveCommand, homeKey);

@@ -109,7 +109,7 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusOk>
     @Override
     public CheckStatusOk apply(SafeCommandStore safeStore)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
         switch (includeInfo)
         {
