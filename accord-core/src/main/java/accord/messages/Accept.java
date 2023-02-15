@@ -18,10 +18,9 @@
 
 package accord.messages;
 
-import accord.local.Command;
 import accord.local.Commands;
 import accord.local.Commands.AcceptOutcome;
-import accord.local.LiveCommand;
+import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
 import accord.primitives.*;
 import accord.local.Node.Id;
@@ -242,7 +241,7 @@ public class Accept extends TxnRequest.WithUnsynced<Accept.AcceptReply>
         @Override
         public AcceptReply apply(SafeCommandStore safeStore)
         {
-            LiveCommand liveCommand = safeStore.command(txnId);
+            SafeCommand liveCommand = safeStore.command(txnId);
             switch (Commands.acceptInvalidate(safeStore, liveCommand, ballot))
             {
                 default:

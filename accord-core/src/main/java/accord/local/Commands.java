@@ -93,7 +93,7 @@ public class Commands
 
     private static AcceptOutcome preacceptOrRecover(SafeCommandStore safeStore, TxnId txnId, PartialTxn partialTxn, Route<?> route, @Nullable RoutingKey progressKey, Ballot ballot)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
 
         int compareBallots = command.promised().compareTo(ballot);
@@ -147,7 +147,7 @@ public class Commands
 
     public static boolean preacceptInvalidate(SafeCommandStore safeStore, TxnId txnId, Ballot ballot)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
         if (command.promised().compareTo(ballot) > 0)
         {
@@ -160,7 +160,7 @@ public class Commands
 
     public static AcceptOutcome accept(SafeCommandStore safeStore, TxnId txnId, Ballot ballot, PartialRoute<?> route, Seekables<?, ?> keys, @Nullable RoutingKey progressKey, Timestamp executeAt, PartialDeps partialDeps)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
         if (command.promised().compareTo(ballot) > 0)
         {
@@ -201,7 +201,7 @@ public class Commands
         return AcceptOutcome.Success;
     }
 
-    public static AcceptOutcome acceptInvalidate(SafeCommandStore safeStore, LiveCommand liveCommand, Ballot ballot)
+    public static AcceptOutcome acceptInvalidate(SafeCommandStore safeStore, SafeCommand liveCommand, Ballot ballot)
     {
         Command command = liveCommand.current();
         if (command.promised().compareTo(ballot) > 0)
@@ -229,7 +229,7 @@ public class Commands
     // relies on mutual exclusion for each key
     public static CommitOutcome commit(SafeCommandStore safeStore, TxnId txnId, Route<?> route, @Nullable RoutingKey progressKey, @Nullable PartialTxn partialTxn, Timestamp executeAt, PartialDeps partialDeps)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
 
         if (command.hasBeen(PreCommitted))
@@ -272,7 +272,7 @@ public class Commands
     // relies on mutual exclusion for each key
     public static void precommit(SafeCommandStore safeStore, TxnId txnId, Timestamp executeAt)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
         if (command.hasBeen(PreCommitted))
         {
@@ -296,7 +296,7 @@ public class Commands
 
         WaitingOn.Update update = new WaitingOn.Update();
         partialDeps.forEach(ranges, depId -> {
-            LiveCommand liveCommand = safeStore.ifLoaded(depId);
+            SafeCommand liveCommand = safeStore.ifLoaded(depId);
             if (liveCommand == null)
             {
                 update.addWaitingOnCommit(depId);
@@ -339,7 +339,7 @@ public class Commands
     // TODO (expected, ?): commitInvalidate may need to update cfks _if_ possible
     public static void commitInvalidate(SafeCommandStore safeStore, TxnId txnId)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
         if (command.hasBeen(PreCommitted))
         {
@@ -367,7 +367,7 @@ public class Commands
 
     public static ApplyOutcome apply(SafeCommandStore safeStore, TxnId txnId, long untilEpoch, Route<?> route, Timestamp executeAt, @Nullable PartialDeps partialDeps, Writes writes, Result result)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
         if (command.hasBeen(PreApplied) && executeAt.equals(command.executeAt()))
         {
@@ -408,7 +408,7 @@ public class Commands
         return ApplyOutcome.Success;
     }
 
-    public static void listenerUpdate(SafeCommandStore safeStore, LiveCommand liveListener, LiveCommand liveUpdated)
+    public static void listenerUpdate(SafeCommandStore safeStore, SafeCommand liveListener, SafeCommand liveUpdated)
     {
         Command listener = liveListener.current();
         Command updated = liveUpdated.current();
@@ -466,7 +466,7 @@ public class Commands
     }
 
     // TODO (expected, API consistency): maybe split into maybeExecute and maybeApply?
-    private static boolean maybeExecute(SafeCommandStore safeStore, LiveCommand liveCommand, ProgressShard shard, boolean alwaysNotifyListeners, boolean notifyWaitingOn)
+    private static boolean maybeExecute(SafeCommandStore safeStore, SafeCommand liveCommand, ProgressShard shard, boolean alwaysNotifyListeners, boolean notifyWaitingOn)
     {
         Command command = liveCommand.current();
         if (logger.isTraceEnabled())
@@ -530,7 +530,7 @@ public class Commands
      * @param dependency is either committed or invalidated
      * @return true iff {@code maybeExecute} might now have a different outcome
      */
-    private static boolean updatePredecessor(LiveCommand liveCommand, WaitingOn.Update waitingOn, LiveCommand liveDependency)
+    private static boolean updatePredecessor(SafeCommand liveCommand, WaitingOn.Update waitingOn, SafeCommand liveDependency)
     {
         Command.Committed command = liveCommand.current().asCommitted();
         Command dependency = liveDependency.current();
@@ -593,7 +593,7 @@ public class Commands
         }
     }
 
-    static void updatePredecessorAndMaybeExecute(SafeCommandStore safeStore, LiveCommand liveCommand, LiveCommand livePredecessor, boolean notifyWaitingOn)
+    static void updatePredecessorAndMaybeExecute(SafeCommandStore safeStore, SafeCommand liveCommand, SafeCommand livePredecessor, boolean notifyWaitingOn)
     {
         Command.Committed command = liveCommand.current().asCommitted();
         if (command.hasBeen(Applied))
@@ -608,7 +608,7 @@ public class Commands
     }
 
     // TODO (now): check/move methods below
-    private static Command setDurability(SafeCommandStore safeStore, LiveCommand liveCommand, Durability durability, RoutingKey homeKey, @Nullable Timestamp executeAt)
+    private static Command setDurability(SafeCommandStore safeStore, SafeCommand liveCommand, Durability durability, RoutingKey homeKey, @Nullable Timestamp executeAt)
     {
         Command command = liveCommand.current();
         CommonAttributes attrs = updateHomeKey(safeStore, command.txnId(), command, homeKey);
@@ -663,11 +663,11 @@ public class Commands
         @Override
         public void accept(SafeCommandStore safeStore)
         {
-            LiveCommand prevLive = get(safeStore, depth - 1);
+            SafeCommand prevLive = get(safeStore, depth - 1);
             while (depth >= 0)
             {
                 Command prev = prevLive != null ? prevLive.current() : null;
-                LiveCommand curLive = safeStore.ifLoaded(txnIds[depth]);
+                SafeCommand curLive = safeStore.ifLoaded(txnIds[depth]);
                 Command cur = curLive != null ? curLive.current() : null;
                 Known until = blockedUntil[depth];
                 if (cur == null)
@@ -725,7 +725,7 @@ public class Commands
             }
         }
 
-        private LiveCommand get(SafeCommandStore safeStore, int i)
+        private SafeCommand get(SafeCommandStore safeStore, int i)
         {
             return i >= 0 ? safeStore.command(txnIds[i]) : null;
         }
@@ -754,7 +754,7 @@ public class Commands
         }
     }
 
-    public static Command updateHomeKey(SafeCommandStore safeStore, LiveCommand liveCommand, RoutingKey homeKey)
+    public static Command updateHomeKey(SafeCommandStore safeStore, SafeCommand liveCommand, RoutingKey homeKey)
     {
         Command command = liveCommand.current();
         CommonAttributes attrs = updateHomeKey(safeStore, command.txnId(), command, homeKey);

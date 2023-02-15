@@ -18,7 +18,7 @@
 
 package accord.local;
 
-public interface LiveState<T>
+public interface SafeState<T>
 {
     T current();
     default boolean isEmpty()

@@ -23,19 +23,19 @@ import accord.api.VisibleForImplementation;
 import accord.impl.CommandsForKey.CommandLoader;
 import accord.impl.CommandsForKey.CommandTimeseries;
 import accord.local.Command;
-import accord.local.LiveState;
+import accord.local.SafeState;
 import accord.primitives.Timestamp;
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public abstract class LiveCommandsForKey implements LiveState<CommandsForKey>
+public abstract class SafeCommandsForKey implements SafeState<CommandsForKey>
 {
-    private static final Logger logger = LoggerFactory.getLogger(LiveCommandsForKey.class);
+    private static final Logger logger = LoggerFactory.getLogger(SafeCommandsForKey.class);
 
     private final Key key;
 
-    public LiveCommandsForKey(Key key)
+    public SafeCommandsForKey(Key key)
     {
         this.key = key;
     }

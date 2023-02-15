@@ -112,7 +112,7 @@ public class ReadData extends AbstractEpochRequest<ReadData.ReadNack> implements
     @Override
     public synchronized void onChange(SafeCommandStore safeStore, TxnId txnId)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Command command = liveCommand.current();
         logger.trace("{}: updating as listener in response to change on {} with status {} ({})",
                 this, command.txnId(), command.status(), command);
@@ -143,7 +143,7 @@ public class ReadData extends AbstractEpochRequest<ReadData.ReadNack> implements
     @Override
     public synchronized ReadNack apply(SafeCommandStore safeStore)
     {
-        LiveCommand liveCommand = safeStore.command(txnId);
+        SafeCommand liveCommand = safeStore.command(txnId);
         Status status = liveCommand.current().status();
         logger.trace("{}: setting up read with status {} on {}", txnId, status, safeStore);
         switch (status) {
