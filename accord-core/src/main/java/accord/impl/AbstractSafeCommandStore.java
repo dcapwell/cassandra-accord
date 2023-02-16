@@ -111,8 +111,10 @@ public abstract class AbstractSafeCommandStore<CommandType extends SafeCommand, 
     public CommandsForKeyType ifLoaded(RoutableKey key)
     {
         CommandsForKeyType cfk = getIfLoaded(key, this::getCommandsForKeyInternal, this::addCommandsForKeyInternal, this::getIfLoaded);
-        if (cfk == null || cfk.isEmpty())
+        if (cfk == null)
             return null;
+        if (cfk.isEmpty())
+            cfk.initialize(cfkLoader());
         return cfk;
     }
 
