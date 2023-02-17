@@ -30,37 +30,31 @@ public interface AsyncResult<V> extends AsyncChain<V>
     @Override
     AsyncResult<V> addCallback(BiConsumer<? super V, Throwable> callback);
 
+    @Override
     default AsyncResult<V> addCallback(Runnable runnable)
     {
-        return addCallback((unused, failure) -> {
-            if (failure == null) runnable.run();
-        });
+        return addCallback(AsyncCallbacks.toCallback(runnable));
     }
 
+    @Override
+    default AsyncResult<V> addCallback(BiConsumer<? super V, Throwable> callback, Executor executor)
+    {
+        return addCallback(AsyncCallbacks.inExecutor(callback, executor));
+    }
+
+    @Override
     default AsyncResult<V> addCallback(Runnable runnable, Executor executor)
     {
-        addCallback(AsyncCallbacks.inExecutor(runnable, executor));
-        return this;
+        return addCallback(AsyncCallbacks.inExecutor(runnable, executor));
     }
 
     boolean isDone();
     boolean isSuccess();
 
-    default AsyncResult<V> addCallback(BiConsumer<? super V, Throwable> callback, Executor executor)
-    {
-        addCallback(AsyncCallbacks.inExecutor(callback, executor));
-        return this;
-    }
-
-    default AsyncResult<V> addListener(Runnable runnable)
-    {
-        addCallback(runnable);
-        return this;
-    }
-
     @Override
     default void begin(BiConsumer<? super V, Throwable> callback)
     {
+        //TODO chain shouldn't allow double calling, but should result allow?
         addCallback(callback);
     }
 

@@ -36,6 +36,7 @@ import accord.local.*;
 import accord.local.Status.Known;
 import accord.primitives.*;
 import accord.utils.Invariants;
+import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncResult;
 
 import accord.api.ProgressLog;
@@ -553,8 +554,8 @@ public class SimpleProgressLog implements ProgressLog.Factory
                 void run(Command command)
                 {
                     // make sure a quorum of the home shard is aware of the transaction, so we can rely on it to ensure progress
-                    AsyncResult<Void> inform = inform(node, txnId, command.homeKey());
-                    inform.addCallback((success, fail) -> {
+                    AsyncChain<Void> inform = inform(node, txnId, command.homeKey());
+                    inform.begin((success, fail) -> {
                         commandStore.execute(PreLoadContext.empty(), ignore -> {
                             if (progress() == Done)
                                 return;

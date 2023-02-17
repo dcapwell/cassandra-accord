@@ -765,7 +765,7 @@ public abstract class InMemoryCommandStore implements CommandStore
             return new AsyncChains.Head<T>()
             {
                 @Override
-                public void begin(BiConsumer<? super T, Throwable> callback)
+                protected void start(BiConsumer<? super T, Throwable> callback)
                 {
                     enqueueAndRun(() -> executeInContext(InMemoryCommandStore.Synchronized.this, context, function, callback));
                 }

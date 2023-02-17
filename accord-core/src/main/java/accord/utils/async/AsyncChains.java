@@ -96,12 +96,22 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
             next = this;
         }
 
+        protected abstract void start(BiConsumer<? super V, Throwable> callback);
+
+        @Override
+        public void begin(BiConsumer<? super V, Throwable> callback)
+        {
+            Invariants.checkArgument(next != null);
+            next = null;
+            start(callback);
+        }
+
         void begin()
         {
             Invariants.checkArgument(next != null);
             BiConsumer<? super V, Throwable> next = this.next;
             this.next = null;
-            begin(next);
+            start(next);
         }
 
         @Override
@@ -123,7 +133,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         public void begin(BiConsumer<? super O, Throwable> callback)
         {
             Invariants.checkArgument(!(callback instanceof AsyncChains.Head));
-            Invariants.checkState(next instanceof AsyncChains.Head);
+            checkNextIsHead();
             Head<?> head = (Head<?>) next;
             next = callback;
             head.begin();
@@ -256,7 +266,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
     // (or perhaps some additional helper implementations that permit us to simply implement apply for Map and FlatMap)
     <O, T extends AsyncChain<O> & BiConsumer<? super V, Throwable>> AsyncChain<O> add(Function<Head<?>, T> factory)
     {
-        Invariants.checkState(next instanceof Head<?>);
+        checkNextIsHead();
         Head<?> head = (Head<?>) next;
         T result = factory.apply(head);
         next = result;
@@ -265,11 +275,17 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
 
     <P, O, T extends AsyncChain<O> & BiConsumer<? super V, Throwable>> AsyncChain<O> add(BiFunction<Head<?>, P, T> factory, P param)
     {
-        Invariants.checkState(next instanceof Head<?>);
+        checkNextIsHead();
         Head<?> head = (Head<?>) next;
         T result = factory.apply(head, param);
         next = result;
         return result;
+    }
+
+    protected void checkNextIsHead()
+    {
+        Invariants.checkState(next != null, "Begin was called multiple times");
+        Invariants.checkState(next instanceof Head<?>, "Next is not an instance of AsyncChains.Head (it is %s); was map/flatMap called on the same object multiple times?", next.getClass());
     }
 
     private static <V> Runnable encapsulate(Callable<V> callable, BiConsumer<? super V, Throwable> receiver)
@@ -319,9 +335,16 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         return new Head<V>()
         {
             @Override
-            public void begin(BiConsumer<? super V, Throwable> next)
+            protected void start(BiConsumer<? super V, Throwable> callback)
             {
-                executor.execute(encapsulate(callable, next));
+                try
+                {
+                    executor.execute(encapsulate(callable, callback));
+                }
+                catch (Throwable t)
+                {
+                    callback.accept(null, t);
+                }
             }
         };
     }
@@ -331,9 +354,16 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         return new Head<Void>()
         {
             @Override
-            public void begin(BiConsumer<? super Void, Throwable> callback)
+            protected void start(BiConsumer<? super Void, Throwable> callback)
             {
-                executor.execute(AsyncChains.encapsulate(runnable, callback));
+                try
+                {
+                    executor.execute(AsyncChains.encapsulate(runnable, callback));
+                }
+                catch (Throwable t)
+                {
+                    callback.accept(null, t);
+                }
             }
         };
     }
@@ -450,24 +480,27 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         else throw new ExecutionException(result.failure);
     }
 
-    public static <V> V getUninterruptibly(AsyncChain<V> chain)
+    public static <V> V getUninterruptibly(AsyncChain<V> chain) throws ExecutionException
     {
+        boolean interrupted = false;
         try
         {
-            return getBlocking(chain);
+            while (true)
+            {
+                try
+                {
+                    return getBlocking(chain);
+                }
+                catch (InterruptedException e)
+                {
+                    interrupted = true;
+                }
+            }
         }
-        catch (ExecutionException e)
+        finally
         {
-            throw new RuntimeException(e.getCause());
+            if (interrupted)
+                Thread.currentThread().interrupt();
         }
-        catch (InterruptedException e)
-        {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public static <V> void awaitUninterruptibly(AsyncChain<V> chain)
-    {
-        getUninterruptibly(chain);
     }
 }

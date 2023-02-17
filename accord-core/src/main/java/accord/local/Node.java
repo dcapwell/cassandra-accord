@@ -204,7 +204,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
     }
 
     @Inline
-    public <T> AsyncResult<T> withEpoch(long epoch, Supplier<AsyncResult<T>> supplier)
+    public <T> AsyncChain<T> withEpoch(long epoch, Supplier<? extends AsyncChain<T>> supplier)
     {
         if (topology.hasEpoch(epoch))
         {
@@ -213,7 +213,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         else
         {
             configService.fetchTopologyForEpoch(epoch);
-            return topology.awaitEpoch(epoch).flatMap(ignore -> supplier.get()).beginAsResult();
+            return topology.awaitEpoch(epoch).flatMap(ignore -> supplier.get());
         }
     }
 
@@ -372,7 +372,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         // TODO (desirable, consider): The combination of updating the epoch of the next timestamp with epochs we don't have topologies for,
         //  and requiring preaccept to talk to its topology epoch means that learning of a new epoch via timestamp
         //  (ie not via config service) will halt any new txns from a node until it receives this topology
-        AsyncResult<Result> result = withEpoch(txnId.epoch(), () -> initiateCoordination(txnId, txn));
+        AsyncResult<Result> result = withEpoch(txnId.epoch(), () -> initiateCoordination(txnId, txn)).beginAsResult();
         coordinating.putIfAbsent(txnId, result);
         result.addCallback((success, fail) -> coordinating.remove(txnId, result));
         return result;
@@ -467,7 +467,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
             RecoverFuture<Outcome> future = new RecoverFuture<>();
             RecoverWithRoute.recover(this, txnId, route, null, future);
             return future;
-        });
+        }).beginAsResult();
         coordinating.putIfAbsent(txnId, result);
         result.addCallback((success, fail) -> coordinating.remove(txnId, result));
         return result;

@@ -35,21 +35,21 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
 
     protected AsyncChainCombiner(List<? extends AsyncChain<? extends I>> inputs)
     {
-        Invariants.checkArgument(!inputs.isEmpty());
+        Invariants.checkArgument(!inputs.isEmpty(), "No inputs defined");
         this.state = inputs;
     }
 
     private List<AsyncChain<? extends I>> inputs()
     {
         Object current = state;
-        Invariants.checkState(current instanceof List);
+        Invariants.checkState(current instanceof List, "Expected state to be List but was %s", (current == null ? null : current.getClass()));
         return (List<AsyncChain<? extends I>>) current;
     }
 
     private I[] results()
     {
         Object current = state;
-        Invariants.checkState(current instanceof Object[]);
+        Invariants.checkState(current instanceof Object[], "Expected state to be Object[] but was %s", (current == null ? null : current.getClass()));
         return (I[]) current;
     }
 
@@ -70,7 +70,7 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
             return ((List) current).size();
         if (current instanceof Object[])
             return ((Object[]) current).length;
-        throw new IllegalStateException();
+        throw new IllegalStateException("Unexpected type: " + (current == null ? "null" : current.getClass()));
     }
 
     abstract void complete(I[] results, BiConsumer<? super O, Throwable> callback);
@@ -81,7 +81,7 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
         if (current == 0)
             return;
 
-        if (throwable != null && REMAINING.compareAndSet(this, current, 0))
+        if (throwable != null && REMAINING.getAndSet(this, 0) != 0)
         {
             callback.accept(null, throwable);
             return;
@@ -107,7 +107,7 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
     }
 
     @Override
-    public void begin(BiConsumer<? super O, Throwable> callback)
+    protected void start(BiConsumer<? super O, Throwable> callback)
     {
         List<? extends AsyncChain<? extends I>> chains = inputs();
         state = new Object[chains.size()];

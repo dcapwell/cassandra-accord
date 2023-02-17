@@ -37,6 +37,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -122,8 +123,7 @@ public class ImmutableCommandTest
     }
 
     @Test
-    void supersedingEpochWitnessTest()
-    {
+    void supersedingEpochWitnessTest() throws ExecutionException {
         CommandStoreSupport support = new CommandStoreSupport();
         Node node = createNode(ID1, support);
         CommandStore commands = node.unsafeByIndex(0);
