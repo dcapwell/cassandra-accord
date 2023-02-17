@@ -110,7 +110,8 @@ public interface InMemoryCommandStore extends CommandStore
         @Override
         public List<TxnId> depsIds(TxnId data)
         {
-            return loadForCFK(data).partialDeps().txnIds();
+            PartialDeps deps = loadForCFK(data).partialDeps();
+            return deps != null ? deps.txnIds() : Collections.emptyList();
         }
 
         @Override
