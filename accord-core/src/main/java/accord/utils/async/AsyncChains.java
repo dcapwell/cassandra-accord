@@ -339,7 +339,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
     }
 
     @VisibleForImplementation
-    public static AsyncChain<Void> ofRunnables(Executor executor, Iterable<Runnable> runnables)
+    public static AsyncChain<Void> ofRunnables(Executor executor, Iterable<? extends Runnable> runnables)
     {
         return ofRunnable(executor, () -> {
             Throwable failure = null;
@@ -456,7 +456,11 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         {
             return getBlocking(chain);
         }
-        catch (ExecutionException | InterruptedException e)
+        catch (ExecutionException e)
+        {
+            throw new RuntimeException(e.getCause());
+        }
+        catch (InterruptedException e)
         {
             throw new RuntimeException(e);
         }
