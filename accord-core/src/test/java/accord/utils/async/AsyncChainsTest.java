@@ -193,10 +193,10 @@ public class AsyncChainsTest
                         throw new IllegalStateException("Should see failure");
                 });
 
-        AsyncChains.ofCallable(ignore -> {
+        AsyncChains.ofRunnable(ignore -> {
                     throw new RejectedExecutionException();
-                }, () -> 42)
-                .map(i -> i + 1)
+                }, () -> {})
+                .map(ignore -> 1)
                 .beginAsResult()
                 .addCallback((success, failure) -> {
                     if (failure == null)
@@ -285,24 +285,19 @@ public class AsyncChainsTest
     }
 
     @Test
-    void test4() throws ExecutionException, InterruptedException {
+    void simpleHeadChain() throws ExecutionException, InterruptedException {
         AsyncChain<Integer> chain = new AsyncChains.Head<>() {
             @Override
             protected void start(BiConsumer<? super Integer, Throwable> callback) {
                 callback.accept(0, null);
             }
-
-            @Override
-            public String toString() {
-                return "HEAD";
-            }
         };
-        chain = chain.map(i -> i + 1);
-        chain = chain.map(i -> i + 1);
-        chain = chain.map(i -> i + 1);
-        chain = chain.map(i -> i + 1);
-        chain = chain.map(i -> i + 1);
+        chain = chain.map(i -> i + 1)
+                     .map(i -> i + 2)
+                     .map(i -> i + 3)
+                     .map(i -> i + 4)
+                     .map(i -> i + 5);
 
-        Assertions.assertEquals(5, AsyncChains.getBlocking(chain));
+        Assertions.assertEquals(15, AsyncChains.getBlocking(chain));
     }
 }
