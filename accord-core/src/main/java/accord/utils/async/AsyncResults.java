@@ -19,7 +19,6 @@
 package accord.utils.async;
 
 import accord.utils.Invariants;
-import com.google.common.base.Preconditions;
 
 import java.util.List;
 import java.util.concurrent.*;
@@ -330,13 +329,13 @@ public class AsyncResults
 
     public static <V> AsyncChain<List<V>> all(List<? extends AsyncChain<? extends V>> results)
     {
-        Preconditions.checkArgument(!results.isEmpty());
+        Invariants.checkArgument(!results.isEmpty());
         return new AsyncChainCombiner.All<>(results);
     }
 
     public static <V> AsyncChain<V> reduce(List<? extends AsyncChain<? extends V>> results, BiFunction<V, V, V> reducer)
     {
-        Preconditions.checkArgument(!results.isEmpty());
+        Invariants.checkArgument(!results.isEmpty());
         if (results.size() == 1)
             return (AsyncChain<V>) results.get(0);
         return new AsyncChainCombiner.Reduce<>(results, reducer);
