@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -284,8 +285,7 @@ public class AsyncChainsTest
     }
 
     @Test
-    void test4()
-    {
+    void test4() throws ExecutionException, InterruptedException {
         AsyncChain<Integer> chain = new AsyncChains.Head<>() {
             @Override
             protected void start(BiConsumer<? super Integer, Throwable> callback) {
@@ -302,8 +302,7 @@ public class AsyncChainsTest
         chain = chain.map(i -> i + 1);
         chain = chain.map(i -> i + 1);
         chain = chain.map(i -> i + 1);
-        chain.begin((success, failure) -> {
-            System.out.println(success);
-        });
+
+        Assertions.assertEquals(5, AsyncChains.getBlocking(chain));
     }
 }
