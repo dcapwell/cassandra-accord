@@ -24,9 +24,7 @@ import accord.primitives.*;
 import com.google.common.collect.ImmutableSortedMap;
 
 import javax.annotation.Nullable;
-import java.util.NavigableMap;
-import java.util.Objects;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -65,7 +63,7 @@ public class CommandsForKey
         TxnId txnId(D data);
         Timestamp executeAt(D data);
         SaveStatus saveStatus(D data);
-        PartialDeps partialDeps(D data);
+        List<TxnId> depsIds(D data);
 
         default Status status(D data)
         {
@@ -153,7 +151,7 @@ public class CommandsForKey
                 TxnId txnId = loader.txnId(data);
                 Timestamp executeAt = loader.executeAt(data);
                 SaveStatus status = loader.saveStatus(data);
-                PartialDeps deps = loader.partialDeps(data);
+                List<TxnId> deps = loader.depsIds(data);
                 if (testKind == Ws && txnId.isRead()) continue;
                 // If we don't have any dependencies, we treat a dependency filter as a mismatch
                 if (testDep != ANY_DEPS && (!status.known.deps.hasProposedOrDecidedDeps() || (deps.contains(depId) != (testDep == WITH))))
