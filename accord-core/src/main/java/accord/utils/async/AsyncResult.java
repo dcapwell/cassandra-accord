@@ -27,13 +27,13 @@ import java.util.function.BiConsumer;
  */
 public interface AsyncResult<V> extends AsyncChain<V>
 {
+    @Override
     AsyncResult<V> addCallback(BiConsumer<? super V, Throwable> callback);
 
     default AsyncResult<V> addCallback(Runnable runnable)
     {
         return addCallback((unused, failure) -> {
             if (failure == null) runnable.run();
-            else throw new RuntimeException(failure);
         });
     }
 
@@ -58,18 +58,13 @@ public interface AsyncResult<V> extends AsyncChain<V>
         return this;
     }
 
-    default AsyncResult<V> addListener(Runnable runnable, Executor executor)
-    {
-        addCallback(runnable, executor);
-        return this;
-    }
-
     @Override
     default void begin(BiConsumer<? super V, Throwable> callback)
     {
         addCallback(callback);
     }
 
+    @Override
     default AsyncResult<V> beginAsResult()
     {
         return this;

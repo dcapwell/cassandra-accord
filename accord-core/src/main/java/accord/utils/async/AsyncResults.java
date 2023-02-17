@@ -91,12 +91,6 @@ public class AsyncResults
             return trySetResult(new Result<>(result, failure));
         }
 
-        void setResult(Result<V> result)
-        {
-            if (!trySetResult(result))
-                throw new IllegalStateException("Result has already been set on " + this);
-        }
-
         private  AsyncChain<V> newChain()
         {
             return new AsyncChains.Head<V>()
@@ -108,7 +102,6 @@ public class AsyncResults
                 }
             };
         }
-
 
         void setResult(V result, Throwable failure)
         {
@@ -378,7 +371,11 @@ public class AsyncResults
         {
             return getBlocking(asyncResult);
         }
-        catch (ExecutionException | InterruptedException e)
+        catch (ExecutionException e)
+        {
+            throw new RuntimeException(e.getCause());
+        }
+        catch (InterruptedException e)
         {
             throw new RuntimeException(e);
         }

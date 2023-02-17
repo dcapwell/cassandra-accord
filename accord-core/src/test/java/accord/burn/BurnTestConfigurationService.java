@@ -280,14 +280,14 @@ public class BurnTestConfigurationService implements TestableConfigurationServic
         if (topology.epoch() > lastReceived + 1)
         {
             fetchTopologyForEpoch(lastReceived + 1);
-            epochs.receiveFuture(lastReceived + 1).addListener(() -> reportTopology(topology));
+            epochs.receiveFuture(lastReceived + 1).addCallback(() -> reportTopology(topology));
             return;
         }
 
         long lastAcked = epochs.lastAcknowledged;
         if (topology.epoch() > lastAcked + 1)
         {
-            epochs.acknowledgeFuture(lastAcked + 1).addListener(() -> reportTopology(topology));
+            epochs.acknowledgeFuture(lastAcked + 1).addCallback(() -> reportTopology(topology));
             return;
         }
         logger.trace("Epoch {} received by {}", topology.epoch(), node);

@@ -82,7 +82,7 @@ public class TopologyUpdates
             if (!node.topology().hasEpoch(toEpoch))
             {
                 node.configService().fetchTopologyForEpoch(toEpoch);
-                node.topology().awaitEpoch(toEpoch).addListener(() -> process(node, onDone));
+                node.topology().awaitEpoch(toEpoch).addCallback(() -> process(node, onDone));
                 return;
             }
 
@@ -273,7 +273,7 @@ public class TopologyUpdates
         while (iter.hasNext())
         {
             MessageTask next = iter.next();
-            last.addListener(next);
+            last.addCallback(next);
             last = next;
         }
 
