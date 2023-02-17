@@ -96,12 +96,22 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
             next = this;
         }
 
+        protected abstract void start(BiConsumer<? super V, Throwable> callback);
+
+        @Override
+        public void begin(BiConsumer<? super V, Throwable> callback)
+        {
+            Invariants.checkArgument(next != null);
+            next = null;
+            start(callback);
+        }
+
         void begin()
         {
             Invariants.checkArgument(next != null);
             BiConsumer<? super V, Throwable> next = this.next;
             this.next = null;
-            begin(next);
+            start(next);
         }
 
         @Override
@@ -319,7 +329,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         return new Head<V>()
         {
             @Override
-            public void begin(BiConsumer<? super V, Throwable> next)
+            protected void start(BiConsumer<? super V, Throwable> next)
             {
                 executor.execute(encapsulate(callable, next));
             }
@@ -331,7 +341,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         return new Head<Void>()
         {
             @Override
-            public void begin(BiConsumer<? super Void, Throwable> callback)
+            protected void start(BiConsumer<? super Void, Throwable> callback)
             {
                 executor.execute(AsyncChains.encapsulate(runnable, callback));
             }

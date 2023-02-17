@@ -107,7 +107,7 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
     }
 
     @Override
-    public void begin(BiConsumer<? super O, Throwable> callback)
+    protected void start(BiConsumer<? super O, Throwable> callback)
     {
         List<? extends AsyncChain<? extends I>> chains = inputs();
         state = new Object[chains.size()];

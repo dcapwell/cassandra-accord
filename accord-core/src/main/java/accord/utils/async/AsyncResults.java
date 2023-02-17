@@ -96,7 +96,7 @@ public class AsyncResults
             return new AsyncChains.Head<V>()
             {
                 @Override
-                public void begin(BiConsumer<? super V, Throwable> callback)
+                protected void start(BiConsumer<? super V, Throwable> callback)
                 {
                     AbstractResult.this.addCallback(callback);
                 }
@@ -132,7 +132,7 @@ public class AsyncResults
                 {
                     Result<V> result = (Result<V>) current;
                     callback.accept(result.value, result.failure);
-                    return null;
+                    return this;
                 }
                 if (listener == null)
                     listener = new Listener<>(callback);
@@ -225,7 +225,7 @@ public class AsyncResults
             return new AsyncChains.Head<V>()
             {
                 @Override
-                public void begin(BiConsumer<? super V, Throwable> callback)
+                protected void start(BiConsumer<? super V, Throwable> callback)
                 {
                     AsyncResults.Immediate.this.addCallback(callback);
                 }
