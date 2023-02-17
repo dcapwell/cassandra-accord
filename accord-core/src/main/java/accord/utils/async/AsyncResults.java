@@ -18,6 +18,7 @@
 
 package accord.utils.async;
 
+import accord.utils.Invariants;
 import com.google.common.base.Preconditions;
 
 import java.util.List;
@@ -162,6 +163,29 @@ public class AsyncResults
             Object current = state;
             return current instanceof Result && ((Result) current).failure == null;
         }
+
+        private Result<V> getResult()
+        {
+            Object current = state;
+            Invariants.checkState(current instanceof Result);
+            return (Result<V>) current;
+        }
+
+        public V result()
+        {
+            Result<V> result = getResult();
+            if (result.failure != null)
+                throw new IllegalStateException("Result failed " + result.failure);
+            return result.value;
+        }
+
+        public Throwable failure()
+        {
+            Result<V> result = getResult();
+            if (result.failure == null)
+                throw new IllegalStateException("Result succeeded");
+            return result.failure;
+        }
     }
 
     static class Chain<V> extends AbstractResult<V>
@@ -304,17 +328,17 @@ public class AsyncResults
         return new Settable<>();
     }
 
-    public static <V> AsyncChain<List<V>> all(List<AsyncChain<V>> results)
+    public static <V> AsyncChain<List<V>> all(List<? extends AsyncChain<? extends V>> results)
     {
         Preconditions.checkArgument(!results.isEmpty());
         return new AsyncChainCombiner.All<>(results);
     }
 
-    public static <V> AsyncChain<V> reduce(List<AsyncChain<V>> results, BiFunction<V, V, V> reducer)
+    public static <V> AsyncChain<V> reduce(List<? extends AsyncChain<? extends V>> results, BiFunction<V, V, V> reducer)
     {
         Preconditions.checkArgument(!results.isEmpty());
         if (results.size() == 1)
-            return results.get(0);
+            return (AsyncChain<V>) results.get(0);
         return new AsyncChainCombiner.Reduce<>(results, reducer);
     }
 
@@ -365,4 +389,45 @@ public class AsyncResults
     {
         getUninterruptibly(asyncResult);
     }
+
+    /**
+     * An AsyncResult that also implements Runnable
+     * @param <V>
+     */
+    public static class Unscheduled<V> extends AbstractResult<V> implements Runnable
+    {
+        private final Callable<V> callable;
+
+        public Unscheduled(Callable<V> callable)
+        {
+            this.callable = callable;
+        }
+
+        @Override
+        public void run()
+        {
+            try
+            {
+                trySetResult(callable.call(), null);
+            }
+            catch (Throwable t)
+            {
+                trySetResult(null, t);
+            }
+        }
+    }
+
+    public static <V> Unscheduled<V> unscheduled(Callable<V> callable)
+    {
+        return new Unscheduled<>(callable);
+    }
+
+    public static Unscheduled<Void> unscheduled(Runnable runnable)
+    {
+        return new Unscheduled<>(() -> {
+            runnable.run();
+            return null;
+        });
+    }
+
 }

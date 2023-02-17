@@ -33,7 +33,7 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
     private volatile BiConsumer<? super O, Throwable> callback;
     private volatile int remaining;
 
-    protected AsyncChainCombiner(List<AsyncChain<I>> inputs)
+    protected AsyncChainCombiner(List<? extends AsyncChain<? extends I>> inputs)
     {
         Preconditions.checkArgument(!inputs.isEmpty());
         this.state = inputs;
@@ -53,12 +53,12 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
         return (I[]) current;
     }
 
-    void add(AsyncChain<I> chain)
+    void add(AsyncChain<? extends I> chain)
     {
         inputs().add(chain);
     }
 
-    void addAll(List<AsyncChain<I>> chains)
+    void addAll(List<? extends AsyncChain<? extends I>> chains)
     {
         inputs().addAll(chains);
     }
@@ -121,7 +121,7 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
 
     static class All<V> extends AsyncChainCombiner<V, List<V>>
     {
-        All(List<AsyncChain<V>> asyncChains)
+        All(List<? extends AsyncChain<? extends V>> asyncChains)
         {
             super(asyncChains);
         }
@@ -137,7 +137,7 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
     static class Reduce<V> extends AsyncChainCombiner<V, V>
     {
         private final BiFunction<V, V, V> reducer;
-        Reduce(List<AsyncChain<V>> asyncChains, BiFunction<V, V, V> reducer)
+        Reduce(List<? extends AsyncChain<? extends V>> asyncChains, BiFunction<V, V, V> reducer)
         {
             super(asyncChains);
             this.reducer = reducer;
