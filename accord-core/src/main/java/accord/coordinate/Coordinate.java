@@ -32,7 +32,7 @@ import accord.local.Node.Id;
 import accord.messages.PreAccept;
 import accord.messages.PreAccept.PreAcceptOk;
 import accord.messages.PreAccept.PreAcceptReply;
-import com.google.common.base.Preconditions;
+import accord.utils.Invariants;
 
 import static accord.coordinate.Propose.Invalidate.proposeInvalidate;
 import static accord.messages.Commit.Invalidate.commitInvalidate;
@@ -134,7 +134,7 @@ public class Coordinate extends AsyncResults.Settable<Result> implements Callbac
 
     private synchronized void onPreAccepted()
     {
-        Preconditions.checkState(!preAcceptIsDone);
+        Invariants.checkState(!preAcceptIsDone);
         preAcceptIsDone = true;
 
         if (tracker.hasFastPathAccepted())

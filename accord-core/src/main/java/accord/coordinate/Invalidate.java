@@ -40,7 +40,6 @@ import accord.messages.BeginInvalidation;
 import accord.messages.BeginInvalidation.InvalidateReply;
 import accord.messages.Callback;
 import accord.utils.Invariants;
-import com.google.common.base.Preconditions;
 
 import javax.annotation.Nullable;
 
@@ -190,7 +189,7 @@ public class Invalidate implements Callback<InvalidateReply>
                         Status witnessedByInvalidation = maxReply.status;
                         if (!witnessedByInvalidation.hasBeen(Accepted))
                         {
-                            Preconditions.checkState(tracker.all(InvalidationShardTracker::isPromised));
+                            Invariants.checkState(tracker.all(InvalidationShardTracker::isPromised));
                             if (!invalidateWith.containsAll(route))
                                 witnessedByInvalidation = null;
                         }
@@ -198,19 +197,19 @@ public class Invalidate implements Callback<InvalidateReply>
                     }
                     else if (homeKey != null)
                     {
-                        Preconditions.checkState(maxReply.status.hasBeen(Accepted) || tracker.all(InvalidationShardTracker::isPromised));
+                        Invariants.checkState(maxReply.status.hasBeen(Accepted) || tracker.all(InvalidationShardTracker::isPromised));
                         // if we included the home shard, and we have either a recoverable status OR have not rejected the fast path,
                         // we must have at least one response that should contain the Route
                         if (invalidateWith.contains(homeKey) && tracker.isPromisedForKey(homeKey, txnId.epoch()))
                             throw new IllegalStateException("Received replies from a node that must have known the route, but that did not include it");
 
                         // if < Accepted, we should have short-circuited to invalidation above. This guarantees no Invaldate/Recover loop, as any later status will forbid invoking Invalidate
-                        Preconditions.checkState(!(transitivelyInvokedByPriorInvalidation && !maxReply.status.hasBeen(Accepted)));
+                        Invariants.checkState(!(transitivelyInvokedByPriorInvalidation && !maxReply.status.hasBeen(Accepted)));
 
                         Status witnessedByInvalidation = maxReply.status;
                         if (!witnessedByInvalidation.hasBeen(Accepted))
                         {
-                            Preconditions.checkState(tracker.all(InvalidationShardTracker::isPromised));
+                            Invariants.checkState(tracker.all(InvalidationShardTracker::isPromised));
                             if (!invalidateWith.contains(homeKey))
                                 witnessedByInvalidation = null;
                         }

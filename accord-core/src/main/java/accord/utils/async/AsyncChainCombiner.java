@@ -18,7 +18,7 @@
 
 package accord.utils.async;
 
-import com.google.common.base.Preconditions;
+import accord.utils.Invariants;
 import com.google.common.collect.Lists;
 
 import java.util.List;
@@ -35,21 +35,21 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
 
     protected AsyncChainCombiner(List<? extends AsyncChain<? extends I>> inputs)
     {
-        Preconditions.checkArgument(!inputs.isEmpty());
+        Invariants.checkArgument(!inputs.isEmpty());
         this.state = inputs;
     }
 
     private List<AsyncChain<? extends I>> inputs()
     {
         Object current = state;
-        Preconditions.checkState(current instanceof List);
+        Invariants.checkState(current instanceof List);
         return (List<AsyncChain<? extends I>>) current;
     }
 
     private I[] results()
     {
         Object current = state;
-        Preconditions.checkState(current instanceof Object[]);
+        Invariants.checkState(current instanceof Object[]);
         return (I[]) current;
     }
 

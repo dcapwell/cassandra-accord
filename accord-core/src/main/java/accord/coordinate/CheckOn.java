@@ -26,7 +26,6 @@ import accord.local.Commands.CommitOutcome;
 import accord.primitives.*;
 import accord.utils.Invariants;
 import accord.utils.MapReduceConsume;
-import com.google.common.base.Preconditions;
 
 import accord.api.RoutingKey;
 import accord.local.Node.Id;
@@ -67,7 +66,7 @@ public class CheckOn extends CheckShards
     {
         // TODO (desired, efficiency): restore behaviour of only collecting info if e.g. Committed or Executed
         super(node, txnId, routeWithHomeKey, srcEpoch, IncludeInfo.All);
-        Preconditions.checkArgument(routeWithHomeKey.contains(route.homeKey()));
+        Invariants.checkArgument(routeWithHomeKey.contains(route.homeKey()));
         this.sufficient = sufficient;
         this.route = route;
         this.callback = callback;
@@ -109,7 +108,7 @@ public class CheckOn extends CheckShards
     @Override
     protected void onDone(Success success, Throwable failure)
     {
-        Preconditions.checkState((success == null) != (failure == null));
+        Invariants.checkState((success == null) != (failure == null));
         if (failure != null)
         {
             callback.accept(null, failure);

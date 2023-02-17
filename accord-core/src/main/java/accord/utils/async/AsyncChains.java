@@ -30,7 +30,6 @@ import java.util.function.Function;
 
 import accord.api.VisibleForImplementation;
 import accord.utils.Invariants;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -123,8 +122,8 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         @Override
         public void begin(BiConsumer<? super O, Throwable> callback)
         {
-            Preconditions.checkArgument(!(callback instanceof AsyncChains.Head));
-            Preconditions.checkState(next instanceof AsyncChains.Head);
+            Invariants.checkArgument(!(callback instanceof AsyncChains.Head));
+            Invariants.checkState(next instanceof AsyncChains.Head);
             Head<?> head = (Head<?>) next;
             next = callback;
             head.begin();
@@ -257,7 +256,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
     // (or perhaps some additional helper implementations that permit us to simply implement apply for Map and FlatMap)
     <O, T extends AsyncChain<O> & BiConsumer<? super V, Throwable>> AsyncChain<O> add(Function<Head<?>, T> factory)
     {
-        Preconditions.checkState(next instanceof Head<?>);
+        Invariants.checkState(next instanceof Head<?>);
         Head<?> head = (Head<?>) next;
         T result = factory.apply(head);
         next = result;
@@ -266,7 +265,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
 
     <P, O, T extends AsyncChain<O> & BiConsumer<? super V, Throwable>> AsyncChain<O> add(BiFunction<Head<?>, P, T> factory, P param)
     {
-        Preconditions.checkState(next instanceof Head<?>);
+        Invariants.checkState(next instanceof Head<?>);
         Head<?> head = (Head<?>) next;
         T result = factory.apply(head, param);
         next = result;
@@ -365,13 +364,13 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
 
     public static <V> AsyncChain<List<V>> all(List<? extends AsyncChain<? extends V>> chains)
     {
-        Preconditions.checkArgument(!chains.isEmpty());
+        Invariants.checkArgument(!chains.isEmpty());
         return new AsyncChainCombiner.All<>(chains);
     }
 
     public static <V> AsyncChain<V> reduce(List<? extends AsyncChain<? extends V>> chains, BiFunction<V, V, V> reducer)
     {
-        Preconditions.checkArgument(!chains.isEmpty());
+        Invariants.checkArgument(!chains.isEmpty());
         if (chains.size() == 1)
             return (AsyncChain<V>) chains.get(0);
         if (Reduce.canAppendTo(chains.get(0), reducer))
