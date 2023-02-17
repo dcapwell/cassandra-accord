@@ -28,6 +28,7 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
+import accord.api.VisibleForImplementation;
 import accord.utils.Invariants;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -338,17 +339,41 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         };
     }
 
-    public static <V> AsyncChain<List<V>> all(List<AsyncChain<V>> chains)
+    @VisibleForImplementation
+    public static AsyncChain<Void> ofRunnables(Executor executor, Iterable<Runnable> runnables)
+    {
+        return ofRunnable(executor, () -> {
+            Throwable failure = null;
+            for (Runnable runnable : runnables)
+            {
+                try
+                {
+                    runnable.run();
+                }
+                catch (Throwable t)
+                {
+                    if (failure == null)
+                        failure = t;
+                    else
+                        failure.addSuppressed(t);
+                }
+            }
+            if (failure != null)
+                throw new RuntimeException(failure);
+        });
+    }
+
+    public static <V> AsyncChain<List<V>> all(List<? extends AsyncChain<? extends V>> chains)
     {
         Preconditions.checkArgument(!chains.isEmpty());
         return new AsyncChainCombiner.All<>(chains);
     }
 
-    public static <V> AsyncChain<V> reduce(List<AsyncChain<V>> chains, BiFunction<V, V, V> reducer)
+    public static <V> AsyncChain<V> reduce(List<? extends AsyncChain<? extends V>> chains, BiFunction<V, V, V> reducer)
     {
         Preconditions.checkArgument(!chains.isEmpty());
         if (chains.size() == 1)
-            return chains.get(0);
+            return (AsyncChain<V>) chains.get(0);
         if (Reduce.canAppendTo(chains.get(0), reducer))
         {
             AsyncChainCombiner.Reduce<V> appendTo = (AsyncChainCombiner.Reduce<V>) chains.get(0);
