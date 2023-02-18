@@ -133,7 +133,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         public void begin(BiConsumer<? super O, Throwable> callback)
         {
             Invariants.checkArgument(!(callback instanceof AsyncChains.Head));
-            Invariants.checkState(next instanceof AsyncChains.Head);
+            checkNextIsHead();
             Head<?> head = (Head<?>) next;
             next = callback;
             head.begin();
@@ -266,7 +266,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
     // (or perhaps some additional helper implementations that permit us to simply implement apply for Map and FlatMap)
     <O, T extends AsyncChain<O> & BiConsumer<? super V, Throwable>> AsyncChain<O> add(Function<Head<?>, T> factory)
     {
-        Invariants.checkState(next instanceof Head<?>);
+        checkNextIsHead();
         Head<?> head = (Head<?>) next;
         T result = factory.apply(head);
         next = result;
@@ -275,11 +275,17 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
 
     <P, O, T extends AsyncChain<O> & BiConsumer<? super V, Throwable>> AsyncChain<O> add(BiFunction<Head<?>, P, T> factory, P param)
     {
-        Invariants.checkState(next instanceof Head<?>);
+        checkNextIsHead();
         Head<?> head = (Head<?>) next;
         T result = factory.apply(head, param);
         next = result;
         return result;
+    }
+
+    protected void checkNextIsHead()
+    {
+        Invariants.checkState(next != null, "Begin was called multiple times");
+        Invariants.checkState(next instanceof Head<?>, "Next is not an instance of AsyncChains.Head (it is %s); was map/flatMap called on the same object multiple times?", next.getClass());
     }
 
     private static <V> Runnable encapsulate(Callable<V> callable, BiConsumer<? super V, Throwable> receiver)
