@@ -31,6 +31,7 @@ import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
 import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
+import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -823,7 +824,7 @@ public interface InMemoryCommandStore extends CommandStore
             }
             catch (InterruptedException e)
             {
-                throw new RuntimeException(e);
+                throw new UncheckedInterruptedException(e);
             }
             catch (ExecutionException e)
             {
