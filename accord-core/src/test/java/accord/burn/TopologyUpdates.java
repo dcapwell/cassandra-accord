@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -50,7 +51,7 @@ import static accord.coordinate.Invalidate.invalidate;
 import static accord.local.PreLoadContext.contextFor;
 import static accord.local.Status.*;
 import static accord.local.Status.Known.*;
-import static accord.utils.async.AsyncChains.awaitUninterruptibly;
+import static accord.utils.async.AsyncChains.getUninterruptibly;
 
 public class TopologyUpdates
 {
@@ -172,14 +173,13 @@ public class TopologyUpdates
         return result;
     }
 
-    private static Stream<MessageTask> syncEpochCommands(Node node, long srcEpoch, Ranges ranges, Function<CommandSync, Collection<Node.Id>> recipients, long trgEpoch, boolean committedOnly)
-    {
+    private static Stream<MessageTask> syncEpochCommands(Node node, long srcEpoch, Ranges ranges, Function<CommandSync, Collection<Node.Id>> recipients, long trgEpoch, boolean committedOnly) throws ExecutionException {
         Map<TxnId, CheckStatusOk> syncMessages = new ConcurrentHashMap<>();
         Consumer<Command> commandConsumer = command -> syncMessages.merge(command.txnId(), new CheckStatusOk(node, command), CheckStatusOk::merge);
         if (committedOnly)
-            awaitUninterruptibly(node.commandStores().forEach(commandStore -> InMemoryCommandStore.inMemory(commandStore).forCommittedInEpoch(ranges, srcEpoch, commandConsumer)));
+            getUninterruptibly(node.commandStores().forEach(commandStore -> InMemoryCommandStore.inMemory(commandStore).forCommittedInEpoch(ranges, srcEpoch, commandConsumer)));
         else
-            awaitUninterruptibly(node.commandStores().forEach(commandStore -> InMemoryCommandStore.inMemory(commandStore).forEpochCommands(ranges, srcEpoch, commandConsumer)));
+            getUninterruptibly(node.commandStores().forEach(commandStore -> InMemoryCommandStore.inMemory(commandStore).forEpochCommands(ranges, srcEpoch, commandConsumer)));
 
         return syncMessages.entrySet().stream().map(e -> {
             CommandSync sync = new CommandSync(e.getKey(), e.getValue(), srcEpoch, trgEpoch);
@@ -193,8 +193,7 @@ public class TopologyUpdates
     /**
      * Syncs all replicated commands. Overkill, but useful for confirming issues in optimizedSync
      */
-    private static Stream<MessageTask> thoroughSync(Node node, long syncEpoch)
-    {
+    private static Stream<MessageTask> thoroughSync(Node node, long syncEpoch) throws ExecutionException {
         Topology syncTopology = node.configService().getTopologyForEpoch(syncEpoch);
         Topology localTopology = syncTopology.forNode(node.id());
         Function<CommandSync, Collection<Node.Id>> allNodes = cmd -> node.topology().withUnsyncedEpochs(cmd.route, syncEpoch + 1).nodes();
@@ -211,8 +210,7 @@ public class TopologyUpdates
     /**
      * Syncs all newly replicated commands when nodes are gaining ranges and the current epoch
      */
-    private static Stream<MessageTask> optimizedSync(Node node, long srcEpoch)
-    {
+    private static Stream<MessageTask> optimizedSync(Node node, long srcEpoch) throws ExecutionException {
         long trgEpoch = srcEpoch + 1;
         Topology syncTopology = node.configService().getTopologyForEpoch(srcEpoch);
         Topology localTopology = syncTopology.forNode(node.id());
@@ -260,7 +258,15 @@ public class TopologyUpdates
 
     public static AsyncResult<Void> sync(Node node, long syncEpoch)
     {
-        Stream<MessageTask> messageStream = optimizedSync(node, syncEpoch);
+        Stream<MessageTask> messageStream;
+        try
+        {
+            messageStream = optimizedSync(node, syncEpoch);
+        }
+        catch (ExecutionException e)
+        {
+            return AsyncResults.failure(e.getCause());
+        }
 
         Iterator<MessageTask> iter = messageStream.iterator();
         if (!iter.hasNext())

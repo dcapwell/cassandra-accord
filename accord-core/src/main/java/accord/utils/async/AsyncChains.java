@@ -474,24 +474,27 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         else throw new ExecutionException(result.failure);
     }
 
-    public static <V> V getUninterruptibly(AsyncChain<V> chain)
+    public static <V> V getUninterruptibly(AsyncChain<V> chain) throws ExecutionException
     {
+        boolean interrupted = false;
         try
         {
-            return getBlocking(chain);
+            while (true)
+            {
+                try
+                {
+                    return getBlocking(chain);
+                }
+                catch (InterruptedException e)
+                {
+                    interrupted = true;
+                }
+            }
         }
-        catch (ExecutionException e)
+        finally
         {
-            throw new RuntimeException(e.getCause());
+            if (interrupted)
+                Thread.currentThread().interrupt();
         }
-        catch (InterruptedException e)
-        {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public static <V> void awaitUninterruptibly(AsyncChain<V> chain)
-    {
-        getUninterruptibly(chain);
     }
 }

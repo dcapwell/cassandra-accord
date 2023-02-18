@@ -20,12 +20,9 @@ package accord.utils.async;
 
 import accord.utils.Invariants;
 
-import java.util.List;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 public class AsyncResults
@@ -282,108 +279,9 @@ public class AsyncResults
         return new Immediate<>(failure);
     }
 
-    public static <V> AsyncResult<V> ofCallable(Executor executor, Callable<V> callable)
-    {
-        Settable<V> result = new Settable<V>();
-        executor.execute(() -> {
-            try
-            {
-                result.trySuccess(callable.call());
-            }
-            catch (Exception e)
-            {
-                result.tryFailure(e);
-            }
-        });
-        return result;
-    }
-
-    public static AsyncResult<Void> ofRunnable(Executor executor, Runnable runnable)
-    {
-        Settable<Void> result = new Settable<Void>();
-        executor.execute(() -> {
-            try
-            {
-                runnable.run();
-                result.trySuccess(null);
-            }
-            catch (Exception e)
-            {
-                result.tryFailure(e);
-            }
-        });
-        return result;
-    }
-
     public static <V> AsyncResult.Settable<V> settable()
     {
         return new Settable<>();
-    }
-
-    public static <V> AsyncChain<List<V>> all(List<? extends AsyncChain<? extends V>> results)
-    {
-        Invariants.checkArgument(!results.isEmpty());
-        return new AsyncChainCombiner.All<>(results);
-    }
-
-    public static <V> AsyncChain<V> reduce(List<? extends AsyncChain<? extends V>> results, BiFunction<V, V, V> reducer)
-    {
-        Invariants.checkArgument(!results.isEmpty());
-        if (results.size() == 1)
-            return (AsyncChain<V>) results.get(0);
-        return new AsyncChainCombiner.Reduce<>(results, reducer);
-    }
-
-    public static <V> V getBlocking(AsyncResult<V> asyncResult) throws InterruptedException, ExecutionException
-    {
-        AtomicReference<Result<V>> callbackResult = new AtomicReference<>();
-        CountDownLatch latch = new CountDownLatch(1);
-        asyncResult.addCallback((result, failure) -> {
-            callbackResult.set(new Result<>(result, failure));
-            latch.countDown();
-        });
-
-        latch.await();
-        Result<V> result = callbackResult.get();
-        if (result.failure == null) return result.value;
-        else throw new ExecutionException(result.failure);
-    }
-
-    public static <V> V getBlocking(AsyncResult<V> asyncResult, long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException
-    {
-        AtomicReference<Result<V>> callbackResult = new AtomicReference<>();
-        CountDownLatch latch = new CountDownLatch(1);
-        asyncResult.addCallback((result, failure) -> {
-            callbackResult.set(new Result(result, failure));
-            latch.countDown();
-        });
-
-        if (!latch.await(timeout, unit))
-            throw new TimeoutException();
-        Result<V> result = callbackResult.get();
-        if (result.failure == null) return result.value;
-        else throw new ExecutionException(result.failure);
-    }
-
-    public static <V> V getUninterruptibly(AsyncResult<V> asyncResult)
-    {
-        try
-        {
-            return getBlocking(asyncResult);
-        }
-        catch (ExecutionException e)
-        {
-            throw new RuntimeException(e.getCause());
-        }
-        catch (InterruptedException e)
-        {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public static <V> void awaitUninterruptibly(AsyncResult<V> asyncResult)
-    {
-        getUninterruptibly(asyncResult);
     }
 
     /**

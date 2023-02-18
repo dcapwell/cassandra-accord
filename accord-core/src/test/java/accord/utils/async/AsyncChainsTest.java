@@ -225,7 +225,7 @@ public class AsyncChainsTest
     @Test
     void headRejectsSecondBegin()
     {
-        AsyncChain<String> chain = new AsyncChains.Head<>() {
+        AsyncChain<String> chain = new AsyncChains.Head<String>() {
             @Override
             protected void start(BiConsumer<? super String, Throwable> callback) {
                 callback.accept("success", null);
@@ -239,7 +239,7 @@ public class AsyncChainsTest
     @Test
     void chainRejectsSecondBegin()
     {
-        AsyncChain<String> chain = new AsyncChains.Head<>() {
+        AsyncChain<String> chain = new AsyncChains.Head<String>() {
             @Override
             protected void start(BiConsumer<? super String, Throwable> callback) {
                 callback.accept("success", null);
@@ -286,7 +286,7 @@ public class AsyncChainsTest
 
     @Test
     void simpleHeadChain() throws ExecutionException, InterruptedException {
-        AsyncChain<Integer> chain = new AsyncChains.Head<>() {
+        AsyncChain<Integer> chain = new AsyncChains.Head<Integer>() {
             @Override
             protected void start(BiConsumer<? super Integer, Throwable> callback) {
                 callback.accept(0, null);

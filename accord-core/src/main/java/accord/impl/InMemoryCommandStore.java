@@ -819,7 +819,7 @@ public interface InMemoryCommandStore extends CommandStore
 
             try
             {
-                return AsyncResults.getBlocking(result);
+                return AsyncChains.getBlocking(result);
             }
             catch (InterruptedException e)
             {
