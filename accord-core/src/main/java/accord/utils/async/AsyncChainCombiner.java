@@ -81,7 +81,7 @@ abstract class AsyncChainCombiner<I, O> extends AsyncChains.Head<O>
         if (current == 0)
             return;
 
-        if (throwable != null && REMAINING.compareAndSet(this, current, 0))
+        if (throwable != null && REMAINING.getAndSet(this, 0) != 0)
         {
             callback.accept(null, throwable);
             return;
