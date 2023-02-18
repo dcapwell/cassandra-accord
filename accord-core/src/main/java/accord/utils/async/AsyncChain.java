@@ -68,6 +68,10 @@ public interface AsyncChain<V>
         return addCallback(AsyncCallbacks.inExecutor(runnable, executor));
     }
 
+    /**
+     * Causes the chain to begin, starting all work required.  This method must be called exactly once, not calling will
+     * not cause any work to start, and calling multiple times will be rejected.
+     */
     void begin(BiConsumer<? super V, Throwable> callback);
 
     default AsyncResult<V> beginAsResult()
