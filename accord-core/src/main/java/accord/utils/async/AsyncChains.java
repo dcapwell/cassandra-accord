@@ -99,7 +99,7 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         protected abstract void start(BiConsumer<? super V, Throwable> callback);
 
         @Override
-        public void begin(BiConsumer<? super V, Throwable> callback)
+        public final void begin(BiConsumer<? super V, Throwable> callback)
         {
             Invariants.checkArgument(next != null);
             next = null;
