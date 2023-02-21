@@ -715,7 +715,7 @@ public abstract class InMemoryCommandStore implements CommandStore
         }
     }
 
-    static class Synchronized extends InMemoryCommandStore
+    public static class Synchronized extends InMemoryCommandStore
     {
         Runnable active = null;
         final Queue<Runnable> queue = new ConcurrentLinkedQueue<>();
@@ -776,7 +776,7 @@ public abstract class InMemoryCommandStore implements CommandStore
         public void shutdown() {}
     }
 
-    static class SingleThread extends InMemoryCommandStore
+    public static class SingleThread extends InMemoryCommandStore
     {
         private final AtomicReference<Thread> expectedThread = new AtomicReference<>();
         private final ExecutorService executor;
