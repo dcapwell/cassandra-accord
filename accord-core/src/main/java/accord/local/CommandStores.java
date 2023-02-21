@@ -382,6 +382,8 @@ public abstract class CommandStores<S extends CommandStore>
             AsyncChain<O> next = shard.store.submit(context, mapReduce);
             chains.add(next);
         }
+        if (chains.isEmpty())
+            return AsyncChains.success(null);
         return AsyncChains.reduce(chains, mapReduce::reduce);
     }
 
@@ -416,6 +418,8 @@ public abstract class CommandStores<S extends CommandStore>
             AsyncChain<O> next = commandStore.submit(context, mapReduce);
             chains.add(next);
         }
+        if (chains.isEmpty())
+            return AsyncChains.success(null);
         return AsyncChains.reduce(chains, mapReduce::reduce);
     }
 
