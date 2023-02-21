@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -384,7 +385,7 @@ public abstract class CommandStores<S extends CommandStore>
         return AsyncChains.reduce(chains, mapReduce::reduce);
     }
 
-    public <O> O mapReduceBlocking(PreLoadContext context, Routables<?, ?> keys, long minEpoch, long maxEpoch, Function<SafeCommandStore, O> map, BiFunction<O, O, O> reduce)
+    public <O> O mapReduceBlocking(PreLoadContext context, Routables<?, ?> keys, long minEpoch, long maxEpoch, Function<SafeCommandStore, O> map, BiFunction<O, O, O> reduce) throws ExecutionException
     {
         AsyncChain<O> chains = mapReduce(context, keys, minEpoch, maxEpoch, new MapReduce<SafeCommandStore, O>()
         {

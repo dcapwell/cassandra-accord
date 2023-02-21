@@ -88,9 +88,17 @@ public class TopologyUpdates
             }
 
             // first check if already applied locally, and respond immediately
-            Status minStatus = node.commandStores().mapReduceBlocking(contextFor(txnId), route, toEpoch, toEpoch,
-                                                                      instance -> instance.command(txnId).current().status(),
-                                                                      (a, b) -> a.compareTo(b) <= 0 ? a : b);
+            Status minStatus = null;
+            try
+            {
+                minStatus = node.commandStores().mapReduceBlocking(contextFor(txnId), route, toEpoch, toEpoch,
+                                                                          instance -> instance.command(txnId).current().status(),
+                                                                          (a, b) -> a.compareTo(b) <= 0 ? a : b);
+            }
+            catch (ExecutionException e)
+            {
+                throw new RuntimeException(e);
+            }
 
             if (minStatus == null || minStatus.phase.compareTo(status.phase) >= 0)
             {
