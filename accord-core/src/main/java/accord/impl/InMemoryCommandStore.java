@@ -55,7 +55,6 @@ public abstract class InMemoryCommandStore implements CommandStore
     private final DataStore store;
     private final ProgressLog progressLog;
     private final RangesForEpochHolder rangesForEpochHolder;
-    private CommandStores.RangesForEpoch rangesForEpoch;
 
     private final NavigableMap<TxnId, GlobalCommand> commands = new TreeMap<>();
     private final NavigableMap<RoutableKey, GlobalCommandsForKey> commandsForKey = new TreeMap<>();
@@ -116,11 +115,6 @@ public abstract class InMemoryCommandStore implements CommandStore
     public boolean hasCommandsForKey(Key key)
     {
         return commandsForKey.containsKey(key);
-    }
-
-    void refreshRanges()
-    {
-        rangesForEpoch = rangesForEpochHolder.get();
     }
 
     public CFKLoader cfkLoader()
@@ -277,12 +271,12 @@ public abstract class InMemoryCommandStore implements CommandStore
     }
 
 
-    protected InMemorySafeStore createCommandStore(PreLoadContext context, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKeys)
+    protected InMemorySafeStore createCommandStore(PreLoadContext context, RangesForEpoch ranges, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKeys)
     {
-        return new InMemorySafeStore(this, cfkLoader, context, commands, commandsForKeys);
+        return new InMemorySafeStore(this, cfkLoader, ranges, context, commands, commandsForKeys);
     }
 
-    protected final InMemorySafeStore createCommandStore(PreLoadContext context)
+    protected final InMemorySafeStore createCommandStore(PreLoadContext context, RangesForEpoch ranges)
     {
         Map<TxnId, SafeCommand> commands = new HashMap<>();
         Map<RoutableKey, SafeCommandsForKey> commandsForKeys = new HashMap<>();
@@ -301,15 +295,14 @@ public abstract class InMemoryCommandStore implements CommandStore
                     // load range cfks here
             }
         }
-        return createCommandStore(context, commands, commandsForKeys);
+        return createCommandStore(context, ranges, commands, commandsForKeys);
     }
 
     public SafeCommandStore beginOperation(PreLoadContext context)
     {
-        refreshRanges();
         if (current != null)
             throw new IllegalStateException("Another operation is in progress or it's store was not cleared");
-        current = createCommandStore(context);
+        current = createCommandStore(context, rangesForEpochHolder.get());
         return current;
     }
 
@@ -486,14 +479,16 @@ public abstract class InMemoryCommandStore implements CommandStore
         private final InMemoryCommandStore commandStore;
         private final Map<TxnId, SafeCommand> commands;
         private final Map<RoutableKey, SafeCommandsForKey> commandsForKey;
+        private final RangesForEpoch ranges;
         private final CFKLoader cfkLoader;
 
-        public InMemorySafeStore(InMemoryCommandStore commandStore, CFKLoader cfkLoader, PreLoadContext context, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKey)
+        public InMemorySafeStore(InMemoryCommandStore commandStore, CFKLoader cfkLoader, RangesForEpoch ranges, PreLoadContext context, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKey)
         {
             super(context);
             this.commandStore = commandStore;
             this.commands = commands;
             this.commandsForKey = commandsForKey;
+            this.ranges = Invariants.nonNull(ranges);
             this.cfkLoader = cfkLoader;
         }
 
@@ -562,8 +557,7 @@ public abstract class InMemoryCommandStore implements CommandStore
         @Override
         public RangesForEpoch ranges()
         {
-            Invariants.checkState(commandStore.rangesForEpoch != null);
-            return commandStore.rangesForEpoch;
+            return ranges;
         }
 
         @Override
@@ -829,9 +823,9 @@ public abstract class InMemoryCommandStore implements CommandStore
     {
         class DebugSafeStore extends InMemorySafeStore
         {
-            public DebugSafeStore(InMemoryCommandStore commandStore, CFKLoader cfkLoader, PreLoadContext context, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKey)
+            public DebugSafeStore(InMemoryCommandStore commandStore, CFKLoader cfkLoader, RangesForEpoch ranges, PreLoadContext context, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKey)
             {
-                super(commandStore, cfkLoader, context, commands, commandsForKey);
+                super(commandStore, cfkLoader, ranges, context, commands, commandsForKey);
             }
 
             @Override
@@ -876,9 +870,9 @@ public abstract class InMemoryCommandStore implements CommandStore
         }
 
         @Override
-        protected InMemorySafeStore createCommandStore(PreLoadContext context, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKeys)
+        protected InMemorySafeStore createCommandStore(PreLoadContext context, RangesForEpoch ranges, Map<TxnId, SafeCommand> commands, Map<RoutableKey, SafeCommandsForKey> commandsForKeys)
         {
-            return new DebugSafeStore(this, cfkLoader(), context, commands, commandsForKeys);
+            return new DebugSafeStore(this, cfkLoader(), ranges, context, commands, commandsForKeys);
         }
 
     }
