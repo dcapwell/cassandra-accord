@@ -92,8 +92,8 @@ public class TopologyUpdates
             try
             {
                 minStatus = node.commandStores().mapReduceBlocking(contextFor(txnId), route, toEpoch, toEpoch,
-                                                                          instance -> instance.command(txnId).current().status(),
-                                                                          (a, b) -> a.compareTo(b) <= 0 ? a : b);
+                                                                   instance -> instance.command(txnId).current().status(),
+                                                                   (a, b) -> a.compareTo(b) <= 0 ? a : b);
             }
             catch (ExecutionException e)
             {
