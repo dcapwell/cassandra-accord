@@ -25,6 +25,7 @@ import accord.impl.CommandsForKey.CommandTimeseries;
 import accord.local.Command;
 import accord.local.SafeState;
 import accord.primitives.Timestamp;
+import accord.utils.Invariants;
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,6 +63,11 @@ public abstract class SafeCommandsForKey implements SafeState<CommandsForKey>
     @VisibleForImplementation
     public static Timestamp updateMax(CommandsForKey cfk, Timestamp timestamp)
     {
+        Invariants.checkArgument(cfk != null || timestamp != null);
+        if (cfk == null)
+            return timestamp;
+        if (timestamp == null)
+            return cfk.max();
         return Timestamp.max(cfk.max(), timestamp);
     }
 

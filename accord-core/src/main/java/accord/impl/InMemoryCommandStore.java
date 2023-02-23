@@ -629,6 +629,8 @@ public abstract class InMemoryCommandStore implements CommandStore
             Map<Range, List<Command>> collect = new TreeMap<>(Range::compare);
             commandStore.rangeCommands.forEach(((txnId, rangeCommand) -> {
                 Command command = rangeCommand.command.value();
+                if (command == null)
+                    return;
                 switch (testTimestamp)
                 {
                     default: throw new AssertionError();
