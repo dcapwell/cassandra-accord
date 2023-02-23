@@ -171,6 +171,8 @@ public interface CommonAttributes
         @Override
         public Listeners.Immutable listeners()
         {
+            if (listeners == null || listeners.isEmpty())
+                return Listeners.Immutable.EMPTY;
             if (listeners instanceof Listeners.Immutable)
                 return (Listeners.Immutable) listeners;
             return new Listeners.Immutable(listeners);
@@ -178,7 +180,9 @@ public interface CommonAttributes
 
         public Mutable addListener(CommandListener listener)
         {
-            if (listeners instanceof Listeners.Immutable)
+            if (listeners == null)
+                listeners = new Listeners();
+            else if (listeners instanceof Listeners.Immutable)
                 listeners = new Listeners(listeners);
             listeners.add(listener);
             return this;
