@@ -423,6 +423,11 @@ public class SimpleProgressLog implements ProgressLog.Factory
                     if (notAwareOfDurability == null && !maybeReady(node, command))
                         return;
 
+                    // whenReady callbacks may run in maybeReady method, and those callbacks may set the progress to Done,
+                    // in which case this logic should no-op
+                    if (progress() == Done)
+                        return;
+
                     setProgress(Investigating);
                     if (notAwareOfDurability.isEmpty())
                     {
