@@ -226,6 +226,8 @@ public abstract class InMemoryCommandStore implements CommandStore
                 {
                     for (GlobalCommandsForKey forKey : commandsForKey.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive()).values())
                     {
+                        if (forKey.value() == null)
+                            continue;
                         accumulate = map.apply(forKey.value(), accumulate);
                         if (accumulate.equals(terminalValue))
                             return accumulate;
