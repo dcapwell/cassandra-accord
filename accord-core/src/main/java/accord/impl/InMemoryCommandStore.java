@@ -212,6 +212,8 @@ public abstract class InMemoryCommandStore implements CommandStore
                 {
                     if (!slice.contains(key)) continue;
                     SafeCommandsForKey forKey = safeStore.ifLoaded(key);
+                    if (forKey.current() == null)
+                        continue;
                     accumulate = map.apply(forKey.current(), accumulate);
                     if (accumulate.equals(terminalValue))
                         return accumulate;
