@@ -313,6 +313,7 @@ public class Commands
                     case PreAccepted:
                     case Accepted:
                     case AcceptedInvalidate:
+                    case PreCommitted:
                         // we don't know when these dependencies will execute, and cannot execute until we do
 
                         command = liveCommand.addListener(Command.listener(txnId));
