@@ -32,7 +32,6 @@ import accord.topology.Shard;
 import accord.topology.Topology;
 import accord.utils.MessageTask;
 import accord.utils.Invariants;
-import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
 import com.google.common.collect.Sets;
@@ -138,7 +137,7 @@ public class TopologyUpdates
                 case Invalidated:
                     node.forEachLocal(contextFor(txnId), route, txnId.epoch(), toEpoch, safeStore -> {
                         Commands.commitInvalidate(safeStore, txnId);
-                    });
+                    }).begin(((unused, failure) -> onDone.accept(failure == null)));
             }
         }
     }
