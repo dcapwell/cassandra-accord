@@ -179,9 +179,9 @@ public abstract class Command implements CommonAttributes
         private final RoutingKey progressKey;
         private final Route<?> route;
         private final Ballot promised;
-        private final ImmutableSet<CommandListener> listeners;
+        private final Listeners.Immutable listeners;
 
-        private AbstractCommand(TxnId txnId, SaveStatus status, Status.Durability durability, RoutingKey homeKey, RoutingKey progressKey, Route<?> route, Ballot promised, ImmutableSet<CommandListener> listeners)
+        private AbstractCommand(TxnId txnId, SaveStatus status, Status.Durability durability, RoutingKey homeKey, RoutingKey progressKey, Route<?> route, Ballot promised, Listeners.Immutable listeners)
         {
             this.txnId = txnId;
             this.status = validateCommandClass(status, getClass());
@@ -270,10 +270,10 @@ public abstract class Command implements CommonAttributes
         }
 
         @Override
-        public ImmutableSet<CommandListener> listeners()
+        public Listeners.Immutable listeners()
         {
             if (listeners == null)
-                return ImmutableSet.of();
+                return Listeners.Immutable.EMPTY;
             return listeners;
         }
 
@@ -317,7 +317,7 @@ public abstract class Command implements CommonAttributes
     public abstract TxnId txnId();
     public abstract Ballot promised();
     public abstract Status.Durability durability();
-    public abstract ImmutableSet<CommandListener> listeners();
+    public abstract Listeners.Immutable listeners();
     public abstract SaveStatus saveStatus();
 
     static boolean isSameClass(Command command, Class<? extends Command> klass)
@@ -485,7 +485,7 @@ public abstract class Command implements CommonAttributes
 
     public static final class NotWitnessed extends AbstractCommand
     {
-        NotWitnessed(TxnId txnId, SaveStatus status, Status.Durability durability, RoutingKey homeKey, RoutingKey progressKey, Route<?> route, Ballot promised, ImmutableSet<CommandListener> listeners)
+        NotWitnessed(TxnId txnId, SaveStatus status, Status.Durability durability, RoutingKey homeKey, RoutingKey progressKey, Route<?> route, Ballot promised, Listeners.Immutable listeners)
         {
             super(txnId, status, durability, homeKey, progressKey, route, promised, listeners);
         }

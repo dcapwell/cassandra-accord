@@ -42,7 +42,7 @@ public interface CommonAttributes
     Route<?> route();
     PartialTxn partialTxn();
     PartialDeps partialDeps();
-    ImmutableSet<CommandListener> listeners();
+    Listeners.Immutable listeners();
 
     default Mutable mutableAttrs()
     {
@@ -58,7 +58,7 @@ public interface CommonAttributes
         private Route<?> route;
         private PartialTxn partialTxn;
         private PartialDeps partialDeps;
-        private Set<CommandListener> listeners;
+        private Listeners listeners;
 
         public Mutable(TxnId txnId)
         {
@@ -169,14 +169,17 @@ public interface CommonAttributes
         }
 
         @Override
-        public ImmutableSet<CommandListener> listeners()
+        public Listeners.Immutable listeners()
         {
-            return ensureImmutable(listeners);
+            if (listeners instanceof Listeners.Immutable)
+                return (Listeners.Immutable) listeners;
+            return new Listeners.Immutable(listeners);
         }
 
         public Mutable addListener(CommandListener listener)
         {
-            listeners = ensureMutable(listeners);
+            if (listeners instanceof Listeners.Immutable)
+                listeners = new Listeners(listeners);
             listeners.add(listener);
             return this;
         }
@@ -185,13 +188,14 @@ public interface CommonAttributes
         {
             if (listener == null || listeners.isEmpty())
                 return this;
-            listeners = ensureMutable(listeners);
+            if (listeners instanceof Listeners.Immutable)
+                listeners = new Listeners(listeners);
             listeners.remove(listener);
             return this;
         }
 
         @VisibleForImplementation
-        public Mutable setListeners(ImmutableSet<CommandListener> listeners)
+        public Mutable setListeners(Listeners.Immutable listeners)
         {
             this.listeners = listeners;
             return this;
