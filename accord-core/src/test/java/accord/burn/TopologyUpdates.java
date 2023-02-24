@@ -30,8 +30,10 @@ import accord.messages.CheckStatus.CheckStatusOk;
 import accord.primitives.*;
 import accord.topology.Shard;
 import accord.topology.Topology;
+import accord.utils.MapReduce;
 import accord.utils.MessageTask;
 import accord.utils.Invariants;
+import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
 import com.google.common.collect.Sets;
@@ -86,59 +88,55 @@ public class TopologyUpdates
                 return;
             }
 
-            // first check if already applied locally, and respond immediately
-            Status minStatus = null;
-            try
-            {
-                minStatus = node.commandStores().mapReduceBlocking(contextFor(txnId), route, toEpoch, toEpoch,
-                                                                   instance -> instance.command(txnId).current().status(),
-                                                                   (a, b) -> a.compareTo(b) <= 0 ? a : b);
-            }
-            catch (ExecutionException e)
-            {
-                throw new RuntimeException(e);
-            }
-
-            if (minStatus == null || minStatus.phase.compareTo(status.phase) >= 0)
-            {
-                // TODO (low priority): minStatus == null means we're sending redundant messages
-                onDone.accept(true);
-                return;
-            }
-
-            BiConsumer<Status.Known, Throwable> callback = (outcome, fail) -> {
-                if (fail != null)
-                    process(node, onDone);
-                else if (outcome == Nothing)
-                    invalidate(node, txnId, route.with(route.homeKey()), (i1, i2) -> process(node, onDone));
-                else
+            AsyncChain<Status> statusChain = node.commandStores().mapReduce(contextFor(txnId), route, toEpoch, toEpoch,
+                                                                          MapReduce.of(instance -> instance.command(txnId).current().status(),
+                                                                                       (a, b) -> a.compareTo(b) <= 0 ? a : b));
+            AsyncResult<Object> sync = statusChain.map(minStatus -> {
+                if (minStatus == null || minStatus.phase.compareTo(status.phase) >= 0)
+                {
+                    // TODO (low priority): minStatus == null means we're sending redundant messages
                     onDone.accept(true);
-            };
-            switch (status)
-            {
-                case NotWitnessed:
-                    onDone.accept(true);
-                    break;
-                case PreAccepted:
-                case Accepted:
-                case AcceptedInvalidate:
-                    FetchData.fetch(DefinitionOnly, node, txnId, route, toEpoch, callback);
-                    break;
-                case Committed:
-                case ReadyToExecute:
-                    FetchData.fetch(Committed.minKnown, node, txnId, route, toEpoch, callback);
-                    break;
-                case PreApplied:
-                case Applied:
-                    node.withEpoch(Math.max(executeAt.epoch(), toEpoch), () -> {
-                        FetchData.fetch(PreApplied.minKnown, node, txnId, route, executeAt, toEpoch, callback);
-                    });
-                    break;
-                case Invalidated:
-                    node.forEachLocal(contextFor(txnId), route, txnId.epoch(), toEpoch, safeStore -> {
-                        Commands.commitInvalidate(safeStore, txnId);
-                    }).begin(((unused, failure) -> onDone.accept(failure == null)));
-            }
+                    return null;
+                }
+
+                BiConsumer<Known, Throwable> callback = (outcome, fail) -> {
+                    if (fail != null)
+                        process(node, onDone);
+                    else if (outcome == Nothing)
+                        invalidate(node, txnId, route.with(route.homeKey()), (i1, i2) -> process(node, onDone));
+                    else
+                        onDone.accept(true);
+                };
+                switch (status)
+                {
+                    case NotWitnessed:
+                        onDone.accept(true);
+                        break;
+                    case PreAccepted:
+                    case Accepted:
+                    case AcceptedInvalidate:
+                        FetchData.fetch(DefinitionOnly, node, txnId, route, toEpoch, callback);
+                        break;
+                    case Committed:
+                    case ReadyToExecute:
+                        FetchData.fetch(Committed.minKnown, node, txnId, route, toEpoch, callback);
+                        break;
+                    case PreApplied:
+                    case Applied:
+                        node.withEpoch(Math.max(executeAt.epoch(), toEpoch), () -> {
+                            FetchData.fetch(PreApplied.minKnown, node, txnId, route, executeAt, toEpoch, callback);
+                        });
+                        break;
+                    case Invalidated:
+                        AsyncChain<Void> invalidate = node.forEachLocal(contextFor(txnId), route, txnId.epoch(), toEpoch, safeStore -> {
+                            Commands.commitInvalidate(safeStore, txnId);
+                        });
+
+                        dieExceptionally(invalidate.addCallback(((unused, failure) -> onDone.accept(failure == null))).beginAsResult());
+                }
+                return null;
+            }).beginAsResult();
+            dieExceptionally(sync);
         }
     }
 

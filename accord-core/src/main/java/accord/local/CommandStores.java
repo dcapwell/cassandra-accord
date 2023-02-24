@@ -387,26 +387,6 @@ public abstract class CommandStores<S extends CommandStore>
         return AsyncChains.reduce(chains, mapReduce::reduce);
     }
 
-    public <O> O mapReduceBlocking(PreLoadContext context, Routables<?, ?> keys, long minEpoch, long maxEpoch, Function<SafeCommandStore, O> map, BiFunction<O, O, O> reduce) throws ExecutionException
-    {
-        AsyncChain<O> chains = mapReduce(context, keys, minEpoch, maxEpoch, new MapReduce<SafeCommandStore, O>()
-        {
-            @Override
-            public O apply(SafeCommandStore in)
-            {
-                return map.apply(in);
-            }
-
-            @Override
-            public O reduce(O o1, O o2)
-            {
-                return reduce.apply(o1, o2);
-            }
-        });
-
-        return AsyncChains.getUninterruptibly(chains);
-    }
-
     protected <O> AsyncChain<O> mapReduce(PreLoadContext context, IntStream commandStoreIds, MapReduce<? super SafeCommandStore, O> mapReduce)
     {
         // TODO (low priority, efficiency): avoid using an array, or use a scratch buffer
