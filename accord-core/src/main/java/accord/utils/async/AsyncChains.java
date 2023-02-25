@@ -503,4 +503,16 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
                 Thread.currentThread().interrupt();
         }
     }
+
+    public static void awaitUninterruptibly(AsyncChain<?> chain)
+    {
+        try
+        {
+            getUninterruptibly(chain);
+        }
+        catch (ExecutionException e)
+        {
+            // ignore
+        }
+    }
 }
