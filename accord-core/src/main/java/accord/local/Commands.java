@@ -418,7 +418,7 @@ public class Commands
         switch (updated.status())
         {
             default:
-                throw new IllegalStateException();
+                throw new IllegalStateException("Unexpected status: " + updated.status());
             case NotWitnessed:
             case PreAccepted:
             case Accepted:
