@@ -71,7 +71,7 @@ public class TopologyRandomizer
         this.nodeLookup = nodeLookup;
     }
 
-    private enum UpdateType
+    public enum UpdateType
     {
 //        BOUNDARY(TopologyRandomizer::updateBoundary),
         SPLIT(TopologyRandomizer::split),
@@ -102,7 +102,7 @@ public class TopologyRandomizer
 
     private static Shard[] updateBoundary(Shard[] shards, RandomSource random)
     {
-        // TODO left/right may have a diff prefix
+        // TODO (now, correctness): left/right may have a diff prefix
         int idx = random.nextInt(shards.length - 1);
         Shard left = shards[idx];
         PrefixedIntHashKey.Range leftRange = (PrefixedIntHashKey.Range) left.range;
@@ -152,13 +152,21 @@ public class TopologyRandomizer
 
     private static Shard[] merge(Shard[] shards, RandomSource random)
     {
-        // TODO ranges may have different prefix
         if (shards.length <= 1)
             return shards;
 
         int idx = shards.length == 2 ? 0 : random.nextInt(shards.length - 2);
         Shard left = shards[idx];
         Shard right = shards[idx + 1];
+        while (prefix(left) != prefix(right))
+        {
+            // shards are a single prefix, so can't merge
+            if (idx + 2 == shards.length)
+                return shards;
+            idx++;
+            left = shards[idx];
+            right = shards[idx + 1];
+        }
 
         Shard[] result = new Shard[shards.length - 1];
         System.arraycopy(shards, 0, result, 0, idx);
@@ -313,7 +321,7 @@ public class TopologyRandomizer
         List<Shard> result = new ArrayList<>(shards.length);
         for (Shard shard : shards)
         {
-            int shardPrefix = ((PrefixedIntHashKey) shard.range.start()).prefix;
+            int shardPrefix = prefix(shard);
             if (shardPrefix == prefix) continue;
             result.add(shard);
         }
@@ -324,13 +332,18 @@ public class TopologyRandomizer
     {
         IntHashSet prefixes = new IntHashSet();
         for (Shard shard : shards)
-            prefixes.add(((PrefixedIntHashKey) shard.range.start()).prefix);
+            prefixes.add(prefix(shard));
         int[] result = new int[prefixes.size()];
         IntHashSet.IntIterator it = prefixes.iterator();
         for (int i = 0; it.hasNext(); i++)
             result[i] = it.nextValue();
         Arrays.sort(result);
         return result;
+    }
+
+    private static int prefix(Shard shard)
+    {
+        return ((PrefixedIntHashKey) shard.range.start()).prefix;
     }
 
     private static Map<Node.Id, Ranges> getAdditions(Topology current, Topology next)
@@ -449,11 +462,9 @@ public class TopologyRandomizer
         {
             UpdateType type = UpdateType.kind(random);
             Shard[] testShards = type.apply(newShards, random);
-            boolean overlap = !everyShardHasOverlaps(current.epoch, oldShards, testShards);
-            boolean reassigns = reassignsRanges(current, testShards, previouslyReplicated);
-            if (overlap
+            if (!everyShardHasOverlaps(current.epoch, oldShards, testShards)
                 // TODO (now): I don't think it is necessary to prevent re-replicating ranges any longer
-                || reassigns
+                || reassignsRanges(current, testShards, previouslyReplicated)
             )
             {
                 ++rejectedMutations;

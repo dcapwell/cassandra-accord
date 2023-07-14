@@ -21,8 +21,8 @@ package accord.topology;
 import accord.api.Agent;
 import accord.api.Result;
 import accord.burn.TopologyUpdates;
-import accord.impl.IntHashKey;
 import accord.impl.PrefixedIntHashKey;
+import accord.impl.TestAgent;
 import accord.impl.TopologyUtils;
 import accord.impl.basic.PendingQueue;
 import accord.impl.basic.RandomDelayQueue;
@@ -40,9 +40,14 @@ import org.junit.jupiter.api.Test;
 import accord.local.Node;
 import accord.primitives.Range;
 import accord.primitives.RoutingKeys;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import static accord.Utils.id;
 import static accord.Utils.idList;
@@ -315,21 +320,16 @@ public class TopologyManagerTest
     @Test
     void fuzz()
     {
-        qt().withSeed(-9110321796222498815L).check(rand -> {
+        qt().withSeed(-5230246813276880379L).withExamples(10).check(rand -> {
             PendingQueue queue = new RandomDelayQueue.Factory(rand).get();
-            AgentExecutor executor = new SimulatedDelayedExecutorService(queue, rejectAgent(), rand.fork());
-            int numNodes = rand.nextInt(10, 20);
+            AgentExecutor executor = new SimulatedDelayedExecutorService(queue, new TestAgent.RethrowAgent(), rand);
+            int numNodes = rand.nextInt(3, 20);
             List<Node.Id> nodes = new ArrayList<>(numNodes);
-            Range[] ranges = new Range[numNodes];
-            int delta = 100_000 / numNodes;
+            Range[] ranges = PrefixedIntHashKey.ranges(0, numNodes);
             for (int i = 0; i < numNodes; i++)
-            {
                 nodes.add(new Node.Id(i + 1));
-                int start = i * delta;
-                ranges[i] = PrefixedIntHashKey.range(0, start, start + delta);
-            }
             Topology first = TopologyUtils.initialTopology(nodes, Ranges.of(ranges), 3);
-            TopologyRandomizer randomizer = new TopologyRandomizer(() -> rand.fork(), first, new TopologyUpdates(executor), null);
+            TopologyRandomizer randomizer = new TopologyRandomizer(() -> rand, first, new TopologyUpdates(executor), null);
             TopologyManager service = new TopologyManager(SUPPLIER, ID);
             long lastFullAck = 0;
             for (int i = 0; i < 100; i++)
@@ -337,8 +337,11 @@ public class TopologyManagerTest
                 Topology current;
                 {
                     Topology t = randomizer.updateTopology();
-                    while (t == null)
+                    for (int attempt = 0; t == null && attempt < TopologyRandomizer.UpdateType.values().length * 2; attempt++)
                         t = randomizer.updateTopology();
+                    // if no new updates can happen, stop early
+                    if (t == null)
+                        return;
                     current = t;
                 }
                 service.onTopologyUpdate(current);
@@ -365,45 +368,5 @@ public class TopologyManagerTest
                 }
             }
         });
-    }
-
-    private static Agent rejectAgent()
-    {
-        return new Agent() {
-            @Override
-            public void onRecover(Node node, Result success, Throwable fail) {
-                System.out.println("trap");
-            }
-
-            @Override
-            public void onInconsistentTimestamp(Command command, Timestamp prev, Timestamp next) {
-                System.out.println("trap");
-            }
-
-            @Override
-            public void onFailedBootstrap(String phase, Ranges ranges, Runnable retry, Throwable failure) {
-                System.out.println("trap");
-            }
-
-            @Override
-            public void onUncaughtException(Throwable t) {
-                System.out.println("trap");
-            }
-
-            @Override
-            public void onHandledException(Throwable t) {
-                System.out.println("trap");
-            }
-
-            @Override
-            public boolean isExpired(TxnId initiated, long now) {
-                return false;
-            }
-
-            @Override
-            public Txn emptyTxn(Txn.Kind kind, Seekables<?, ?> keysOrRanges) {
-                return null;
-            }
-        };
     }
 }
