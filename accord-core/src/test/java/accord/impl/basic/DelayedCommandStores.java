@@ -29,13 +29,17 @@ import accord.api.DataStore;
 import accord.api.ProgressLog;
 import accord.impl.InMemoryCommandStore;
 import accord.impl.InMemoryCommandStores;
+import accord.impl.PrefixedIntHashKey;
 import accord.impl.basic.TaskExecutorService.Task;
 import accord.local.CommandStore;
 import accord.local.CommandStores;
+import accord.local.Node;
 import accord.local.NodeTimeService;
 import accord.local.PreLoadContext;
 import accord.local.SafeCommandStore;
 import accord.local.ShardDistributor;
+import accord.primitives.Range;
+import accord.topology.Topology;
 import accord.utils.RandomSource;
 import accord.utils.async.AsyncChain;
 
@@ -50,6 +54,28 @@ public class DelayedCommandStores extends InMemoryCommandStores.SingleThread
     {
         return (time, agent, store, random, shardDistributor, progressLogFactory) ->
                new DelayedCommandStores(time, agent, store, random, shardDistributor, progressLogFactory, new SimulatedDelayedExecutorService(pending, agent, random));
+    }
+
+    @Override
+    protected boolean shouldBootstrap(Node node, Topology previous, Topology updated, Range range)
+    {
+        if (!super.shouldBootstrap(node, previous, updated, range))
+            return false;
+        if (!(range.start() instanceof PrefixedIntHashKey)) return true;
+        int prefix = ((PrefixedIntHashKey) range.start()).prefix;
+        // we see new prefix when a new prefix is added, so avoid bootstrap in these cases
+        return contains(previous, prefix);
+    }
+
+    private static boolean contains(Topology previous, int searchPrefix)
+    {
+        for (Range range : previous.ranges())
+        {
+            int prefix = ((PrefixedIntHashKey) range.start()).prefix;
+            if (prefix == searchPrefix)
+                return true;
+        }
+        return false;
     }
 
     public static class DelayedCommandStore extends InMemoryCommandStore
