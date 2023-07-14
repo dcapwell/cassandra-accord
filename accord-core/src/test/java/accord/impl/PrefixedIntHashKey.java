@@ -18,38 +18,40 @@
 
 package accord.impl;
 
+import accord.api.RoutingKey;
+import accord.local.ShardDistributor;
+import accord.primitives.Keys;
+import accord.primitives.Range;
+import accord.primitives.Ranges;
+import accord.primitives.RoutableKey;
+import accord.utils.Invariants;
+
+import javax.annotation.Nonnull;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.zip.CRC32;
 
-import accord.api.RoutingKey;
-import accord.local.ShardDistributor;
-import accord.primitives.RoutableKey;
-import accord.primitives.Ranges;
-import accord.primitives.Keys;
-import accord.utils.Invariants;
-
 import static accord.utils.Utils.toArray;
-import javax.annotation.Nonnull;
 
-public abstract class IntHashKey implements RoutableKey
+public class PrefixedIntHashKey implements RoutableKey
 {
     public static class Splitter implements ShardDistributor.EvenSplit.Splitter<Long>
     {
         @Override
         public Long sizeOf(accord.primitives.Range range)
         {
-            return ((IntHashKey)range.end()).hash - (long)((IntHashKey)range.start()).hash;
+            return ((PrefixedIntHashKey)range.end()).hash - (long)((PrefixedIntHashKey)range.start()).hash;
         }
 
         @Override
         public accord.primitives.Range subRange(accord.primitives.Range range, Long start, Long end)
         {
-            Invariants.checkArgument(((IntHashKey)range.start()).hash + end.intValue() <= ((IntHashKey)range.end()).hash);
+            PrefixedIntHashKey currentStart = (PrefixedIntHashKey) range.start();
+            Invariants.checkArgument(currentStart.hash + end.intValue() <= ((PrefixedIntHashKey)range.end()).hash);
             return range.newRange(
-                    new Hash(((IntHashKey)range.start()).hash + start.intValue()),
-                    new Hash(((IntHashKey)range.start()).hash + end.intValue())
+                    new Hash(currentStart.prefix, currentStart.hash + start.intValue()),
+                    new Hash(currentStart.prefix, currentStart.hash + end.intValue())
             );
         }
 
@@ -96,25 +98,25 @@ public abstract class IntHashKey implements RoutableKey
         }
     }
 
-    public static final class Key extends IntHashKey implements accord.api.Key
+    public static final class Key extends PrefixedIntHashKey implements accord.api.Key
     {
-        private Key(int key)
+        private Key(int prefix, int key)
         {
-            super(key);
+            super(prefix, key, false);
         }
     }
-
-    public static final class Hash extends IntHashKey implements RoutingKey
+    
+    public static final class Hash extends PrefixedIntHashKey implements RoutingKey
     {
-        public Hash(int hash)
+        private Hash(int prefix, int hash)
         {
-            super(hash, true);
+            super(prefix, hash, true);
         }
 
         @Override
         public accord.primitives.Range asRange()
         {
-            return new Range(new Hash(hash - 1), new Hash(hash));
+            return new Range(new Hash(prefix, hash - 1), new Hash(prefix, hash));
         }
     }
 
@@ -123,6 +125,7 @@ public abstract class IntHashKey implements RoutableKey
         public Range(Hash start, Hash end)
         {
             super(start, end);
+            assert start.prefix == end.prefix : String.format("Unable to create range from different prefixes; %s has a different prefix than %s", start, end);
         }
 
         @Override
@@ -131,10 +134,12 @@ public abstract class IntHashKey implements RoutableKey
             return new Range((Hash) start, (Hash) end);
         }
 
+        // TODO update topology rand
         public Ranges split(int count)
         {
-            int startHash = ((IntHashKey)start()).hash;
-            int endHash = ((IntHashKey)end()).hash;
+            int prefix = ((Hash) start()).prefix;
+            int startHash = ((Hash)start()).hash;
+            int endHash = ((Hash)end()).hash;
             int currentSize = endHash - startHash;
             if (currentSize < count)
                 return Ranges.of(this);
@@ -146,64 +151,67 @@ public abstract class IntHashKey implements RoutableKey
             {
                 int subStart = i > 0 ? last : startHash;
                 int subEnd = i < count - 1 ? subStart + interval : endHash;
-                ranges[i] = new Range(new Hash(subStart), new Hash(subEnd));
+                ranges[i] = new Range(new Hash(prefix, subStart), new Hash(prefix, subEnd));
                 last = subEnd;
             }
             return Ranges.ofSortedAndDeoverlapped(ranges);
         }
     }
 
+    public final int prefix;
     public final int key;
     public final int hash;
 
-    private IntHashKey(int key)
+    private PrefixedIntHashKey(int prefix, int key, boolean isHash)
     {
-        if (key == Integer.MIN_VALUE)
-            throw new IllegalArgumentException();
-        this.key = key;
-        this.hash = hash(key);
+        this.prefix = prefix;
+        if (isHash)
+        {
+            this.key = Integer.MIN_VALUE;
+            this.hash = key;
+        }
+        else
+        {
+            if (key == Integer.MIN_VALUE)
+                throw new IllegalArgumentException();
+            this.key = key;
+            this.hash = hash(key);
+        }
     }
 
-    private IntHashKey(int hash, boolean isHash)
+    public static Key key(int prefix, int k)
     {
-        assert isHash;
-        this.key = Integer.MIN_VALUE;
-        this.hash = hash;
+        return new Key(prefix, k);
     }
 
-    public static Key key(int k)
+    public static Hash forHash(int prefix, int hash)
     {
-        return new Key(k);
+        return new Hash(prefix, hash);
     }
 
-    public static Hash forHash(int hash)
-    {
-        return new Hash(hash);
-    }
+//    public static Keys keys(int k0, int... kn)
+//    {
+//        accord.api.Key[] keys = new accord.api.Key[kn.length + 1];
+//        keys[0] = key(k0);
+//        for (int i=0; i<kn.length; i++)
+//            keys[i + 1] = key(kn[i]);
+//
+//        return Keys.of(keys);
+//    }
 
-    public static Keys keys(int k0, int... kn)
+    public static accord.primitives.Range[] ranges(int prefix, int count)
     {
-        accord.api.Key[] keys = new accord.api.Key[kn.length + 1];
-        keys[0] = key(k0);
-        for (int i=0; i<kn.length; i++)
-            keys[i + 1] = key(kn[i]);
-
-        return Keys.of(keys);
-    }
-
-    public static accord.primitives.Range[] ranges(int count)
-    {
-        List<accord.primitives.Range> result = new ArrayList<>();
+        List<accord.primitives.Range> result = new ArrayList<>(count);
         long delta = 0xffff / count;
         long start = 0;
-        Hash prev = new Hash((int)start);
+        Hash prev = new Hash(prefix, (int)start);
         for (int i = 1 ; i < count ; ++i)
         {
-            Hash next = new Hash((int)Math.min(0xffff, start + i * delta));
+            Hash next = new Hash(prefix, (int)Math.min(0xffff, start + i * delta));
             result.add(new Range(prev, next));
             prev = next;
         }
-        result.add(new Range(prev, new Hash(0xffff)));
+        result.add(new Range(prev, new Hash(prefix, 0xffff)));
         return toArray(result, accord.primitives.Range[]::new);
     }
 
@@ -212,16 +220,16 @@ public abstract class IntHashKey implements RoutableKey
         return new Range(start, end);
     }
 
-    public static accord.primitives.Range range(int start, int end)
+    public static accord.primitives.Range range(int prefix, int start, int end)
     {
-        return new Range(new Hash(start), new Hash(end));
+        return new Range(new Hash(prefix, start), new Hash(prefix, end));
     }
 
     @Override
     public String toString()
     {
-        if (key == Integer.MIN_VALUE && hash(key) != hash) return "#" + hash;
-        return Integer.toString(key);
+        if (key == Integer.MIN_VALUE && hash(key) != hash) return prefix + "#" + hash;
+        return prefix + ":" + key;
     }
 
     @Override
@@ -229,14 +237,14 @@ public abstract class IntHashKey implements RoutableKey
     {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        IntHashKey that = (IntHashKey) o;
-        return key == that.key && hash == that.hash;
+        PrefixedIntHashKey that = (PrefixedIntHashKey) o;
+        return prefix == that.prefix && key == that.key && hash == that.hash;
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hash(key, hash);
+        return Objects.hash(prefix, key, hash);
     }
 
     static int hash(int key)
@@ -253,14 +261,18 @@ public abstract class IntHashKey implements RoutableKey
     public RoutingKey toUnseekable()
     {
         if (key == Integer.MIN_VALUE)
-            return this instanceof Hash ? (Hash)this : new Hash(hash);
+            return this instanceof Hash ? (Hash)this : new Hash(prefix, hash);
 
-        return forHash(hash);
+        return forHash(prefix, hash);
     }
 
     @Override
     public int compareTo(@Nonnull RoutableKey that)
     {
-        return Integer.compare(this.hash, ((IntHashKey)that).hash);
+        PrefixedIntHashKey other = (PrefixedIntHashKey) that;
+        int rc = Integer.compare(prefix, other.prefix);
+        if (rc == 0)
+            rc = Integer.compare(this.hash, other.hash);
+        return rc;
     }
 }

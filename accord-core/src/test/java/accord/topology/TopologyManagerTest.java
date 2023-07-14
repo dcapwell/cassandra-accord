@@ -18,12 +18,31 @@
 
 package accord.topology;
 
+import accord.api.Agent;
+import accord.api.Result;
+import accord.burn.TopologyUpdates;
+import accord.impl.IntHashKey;
+import accord.impl.PrefixedIntHashKey;
+import accord.impl.TopologyUtils;
+import accord.impl.basic.PendingQueue;
+import accord.impl.basic.RandomDelayQueue;
+import accord.impl.basic.SimulatedDelayedExecutorService;
+import accord.local.AgentExecutor;
+import accord.local.Command;
+import accord.primitives.Ranges;
+import accord.primitives.Seekables;
+import accord.primitives.Timestamp;
+import accord.primitives.Txn;
+import accord.primitives.TxnId;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import accord.local.Node;
 import accord.primitives.Range;
 import accord.primitives.RoutingKeys;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static accord.Utils.id;
 import static accord.Utils.idList;
@@ -34,6 +53,7 @@ import static accord.Utils.topology;
 import static accord.impl.IntKey.keys;
 import static accord.impl.IntKey.range;
 import static accord.impl.SizeOfIntersectionSorter.SUPPLIER;
+import static accord.utils.Property.qt;
 
 public class TopologyManagerTest
 {
@@ -276,5 +296,108 @@ public class TopologyManagerTest
     void truncateTopologyCantTruncateUnsyncedEpochs()
     {
 
+    }
+
+    @Test
+    void removeRanges()
+    {
+        TopologyManager service = new TopologyManager(SUPPLIER, ID);
+        addAndMarkSynced(service, topology(1, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2))));
+        Topology t2 = topology(2, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2)));
+        Topology t3 = topology(3, shard(range(201, 400), idList(1, 2, 3), idSet(1, 2)));
+
+        service.onTopologyUpdate(t2);
+        service.onTopologyUpdate(t3);
+        markTopologySynced(service, t2.epoch());
+        markTopologySynced(service, t3.epoch());
+    }
+
+    @Test
+    void fuzz()
+    {
+        qt().withSeed(-9110321796222498815L).withExamples(1).check(rand -> {
+            PendingQueue queue = new RandomDelayQueue.Factory(rand).get();
+            AgentExecutor executor = new SimulatedDelayedExecutorService(queue, rejectAgent(), rand.fork());
+            int numNodes = rand.nextInt(100, 200);
+            List<Node.Id> nodes = new ArrayList<>(numNodes);
+            Range[] ranges = new Range[numNodes];
+            int delta = 100_000 / numNodes;
+            for (int i = 0; i < numNodes; i++)
+            {
+                nodes.add(new Node.Id(i + 1));
+                int start = i * delta;
+                ranges[i] = PrefixedIntHashKey.range(0, start, start + delta);
+            }
+            Topology first = TopologyUtils.initialTopology(nodes, Ranges.of(ranges), 3);
+            TopologyRandomizer randomizer = new TopologyRandomizer(() -> rand.fork(), first, new TopologyUpdates(executor), null);
+            TopologyManager service = new TopologyManager(SUPPLIER, ID);
+            long lastFullAck = 0;
+            for (int i = 0; i < 100; i++)
+            {
+                Topology current = randomizer.updateTopology();
+                service.onTopologyUpdate(current);
+                if (rand.decide(.2))
+                {
+                    markTopologySynced(service, current.epoch());
+                    lastFullAck = current.epoch();
+                }
+                else if (i != 0 && lastFullAck + 1 < current.epoch() && rand.decide(.5))
+                {
+                    long epoch = rand.nextLong(lastFullAck + 1, current.epoch());
+                    markTopologySynced(service, epoch);
+                    lastFullAck = epoch;
+                }
+                else
+                {
+                    TopologyManager.EpochState state = service.getEpochStateUnsafe(current.epoch());
+                    state.global().nodes().forEach(id -> {
+                        if (rand.decide(.5))
+                            service.onEpochSyncComplete(id, current.epoch());
+                    });
+                    if (state.syncComplete())
+                        lastFullAck = current.epoch();
+                }
+            }
+        });
+    }
+
+    private static Agent rejectAgent()
+    {
+        return new Agent() {
+            @Override
+            public void onRecover(Node node, Result success, Throwable fail) {
+                System.out.println("trap");
+            }
+
+            @Override
+            public void onInconsistentTimestamp(Command command, Timestamp prev, Timestamp next) {
+                System.out.println("trap");
+            }
+
+            @Override
+            public void onFailedBootstrap(String phase, Ranges ranges, Runnable retry, Throwable failure) {
+                System.out.println("trap");
+            }
+
+            @Override
+            public void onUncaughtException(Throwable t) {
+                System.out.println("trap");
+            }
+
+            @Override
+            public void onHandledException(Throwable t) {
+                System.out.println("trap");
+            }
+
+            @Override
+            public boolean isExpired(TxnId initiated, long now) {
+                return false;
+            }
+
+            @Override
+            public Txn emptyTxn(Txn.Kind kind, Seekables<?, ?> keysOrRanges) {
+                return null;
+            }
+        };
     }
 }

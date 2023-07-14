@@ -45,7 +45,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import accord.api.Key;
-import accord.impl.IntHashKey;
+import accord.impl.PrefixedIntHashKey;
 import accord.impl.basic.Cluster;
 import accord.impl.basic.PendingRunnable;
 import accord.impl.basic.PropagatingPendingQueue;
@@ -73,18 +73,19 @@ import accord.utils.RandomSource;
 import accord.utils.async.AsyncExecutor;
 import accord.verify.StrictSerializabilityVerifier;
 
-import static accord.impl.IntHashKey.forHash;
+import static accord.impl.PrefixedIntHashKey.forHash;
 import static accord.utils.Utils.toArray;
 
 public class BurnTest
 {
     private static final Logger logger = LoggerFactory.getLogger(BurnTest.class);
+    private static final int PREFIX = 0;
 
     static List<Packet> generate(RandomSource random, Function<? super CommandStore, AsyncExecutor> executor, List<Id> clients, List<Id> nodes, int keyCount, int operations)
     {
         List<Key> keys = new ArrayList<>();
         for (int i = 0 ; i < keyCount ; ++i)
-            keys.add(IntHashKey.key(i));
+            keys.add(PrefixedIntHashKey.key(PREFIX, i));
 
         List<Packet> packets = new ArrayList<>();
         int[] next = new int[keyCount];
@@ -103,7 +104,7 @@ public class BurnTest
                 while (--rangeCount >= 0)
                 {
                     int j = 1 + random.nextInt(0xffff), i = Math.max(0, j - (1 + random.nextInt(0x1ffe)));
-                    requestRanges.add(IntHashKey.range(forHash(i), forHash(j)));
+                    requestRanges.add(PrefixedIntHashKey.range(forHash(PREFIX, i), forHash(0, j)));
                 }
                 Ranges ranges = Ranges.of(requestRanges.toArray(new Range[0]));
                 ListRead read = new ListRead(random.decide(readInCommandStore) ? Function.identity() : executor, ranges, ranges);
@@ -357,6 +358,7 @@ public class BurnTest
     @Test
     public void testOne()
     {
+        while (true)
         run(ThreadLocalRandom.current().nextLong(), 1000);
     }
 
@@ -378,7 +380,7 @@ public class BurnTest
 
             List<Id> nodes = generateIds(false, random.nextInt(rf, rf * 3));
 
-            burn(random, new TopologyFactory(rf, IntHashKey.ranges(random.nextInt(Math.max(nodes.size() + 1, rf), nodes.size() * 3))),
+            burn(random, new TopologyFactory(rf, PrefixedIntHashKey.ranges(0, random.nextInt(Math.max(nodes.size() + 1, rf), nodes.size() * 3))),
                     clients,
                     nodes,
                     5 + random.nextInt(15),
@@ -402,6 +404,6 @@ public class BurnTest
 
     private static int key(Key key)
     {
-        return ((IntHashKey) key).key;
+        return ((PrefixedIntHashKey) key).key;
     }
 }
