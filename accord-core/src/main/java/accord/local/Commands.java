@@ -1088,7 +1088,7 @@ public class Commands
                     {
                         if (prevSafe == null)
                         {
-                            Invariants.checkState(cur.hasBeen(Applied) || !cur.hasBeen(PreCommitted) || safeStore.isPreBootstrap(cur, someParticipants));
+                            Invariants.checkState(cur.hasBeen(Applied) || !cur.hasBeen(PreCommitted) || safeStore.isPreBootstrap(cur, someParticipants), "Command %s has not been Applied and has been PreCommitted and is not pre-bootstrap", cur);
                             return;
                         }
 
