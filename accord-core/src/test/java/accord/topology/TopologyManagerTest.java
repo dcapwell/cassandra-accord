@@ -315,10 +315,10 @@ public class TopologyManagerTest
     @Test
     void fuzz()
     {
-        qt().withSeed(-9110321796222498815L).withExamples(1).check(rand -> {
+        qt().withSeed(-9110321796222498815L).check(rand -> {
             PendingQueue queue = new RandomDelayQueue.Factory(rand).get();
             AgentExecutor executor = new SimulatedDelayedExecutorService(queue, rejectAgent(), rand.fork());
-            int numNodes = rand.nextInt(100, 200);
+            int numNodes = rand.nextInt(10, 20);
             List<Node.Id> nodes = new ArrayList<>(numNodes);
             Range[] ranges = new Range[numNodes];
             int delta = 100_000 / numNodes;
@@ -334,7 +334,13 @@ public class TopologyManagerTest
             long lastFullAck = 0;
             for (int i = 0; i < 100; i++)
             {
-                Topology current = randomizer.updateTopology();
+                Topology current;
+                {
+                    Topology t = randomizer.updateTopology();
+                    while (t == null)
+                        t = randomizer.updateTopology();
+                    current = t;
+                }
                 service.onTopologyUpdate(current);
                 if (rand.decide(.2))
                 {
