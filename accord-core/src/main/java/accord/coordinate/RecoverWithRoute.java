@@ -51,6 +51,7 @@ import accord.primitives.TxnId;
 import accord.topology.Topologies;
 import accord.utils.Invariants;
 import accord.utils.MapReduceConsume;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 
@@ -201,9 +202,10 @@ public class RecoverWithRoute extends CheckShards<FullRoute<?>>
                                     public Object apply(SafeCommandStore store) {
                                         List<Command> blockedBy = deps.txnIds().stream()
                                                 .map(id -> store.get(id, full.homeKey).current())
-                                                .filter(c -> c.isDefined())
+                                                .filter(c -> c.status().hasBeen(Status.PreAccepted))
                                                 .collect(Collectors.toList());
-                                        System.out.println("trap");
+                                        if (!blockedBy.isEmpty())
+                                            LoggerFactory.getLogger(RecoverWithRoute.class).info("{} txn blocked by: {}", txnId.rw(), blockedBy);
                                         return null;
                                     }
 
