@@ -44,6 +44,7 @@ import java.util.function.Supplier;
 import accord.local.Node;
 import accord.topology.Shard;
 import accord.topology.Topology;
+import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.IntHashSet;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
@@ -232,7 +233,7 @@ public class BurnTest
             return () -> Math.max(0, delayQueue.nowInMillis() + (jitter.nextInt(10) - 5));
         };
 
-        StrictSerializabilityVerifier strictSerializable = new StrictSerializabilityVerifier(keyCount);
+        Int2ObjectHashMap<StrictSerializabilityVerifier> validators = new Int2ObjectHashMap<>();
         SimulatedDelayedExecutorService globalExecutor = new SimulatedDelayedExecutorService(queue, agent, random.fork());
         Function<CommandStore, AsyncExecutor> executor = ignore -> globalExecutor;
 
@@ -292,12 +293,25 @@ public class BurnTest
                 }
 
                 acks.incrementAndGet();
-                strictSerializable.begin();
+                // TODO (correctness): when a keyspace is removed, the history/validator isn't cleaned up...
+                // the current logic for add keyspace only knows what is there, so a ABA problem exists where keyspaces
+                // may come back... logically this is a problem as the history doesn't get reset, but practically that
+                // is fine as the backing map and the validator are consistent
+                IntHashSet seen = new IntHashSet();
 
                 for (int i = 0 ; i < reply.read.length ; ++i)
                 {
                     Key key = reply.responseKeys.get(i);
+                    int prefix = prefix(key);
                     int k = key(key);
+                    if (!validators.containsKey(prefix))
+                        validators.put(prefix, new StrictSerializabilityVerifier(keyCount));
+                    StrictSerializabilityVerifier strictSerializable = validators.get(prefix);
+                    if (!seen.contains(prefix))
+                    {
+                        strictSerializable.begin();
+                        seen.add(prefix);
+                    }
 
                     int[] read = reply.read[i];
                     int write = reply.update == null ? -1 : reply.update.getOrDefault(key, -1);
@@ -307,8 +321,9 @@ public class BurnTest
                     if (write >= 0)
                         strictSerializable.witnessWrite(k, write);
                 }
-
-                strictSerializable.apply(start, end);
+                IntHashSet.IntIterator it = seen.iterator();
+                while (it.hasNext())
+                    validators.get(it.nextValue()).apply(start, end);
             }
             catch (Throwable t)
             {
@@ -430,5 +445,10 @@ public class BurnTest
     private static int key(Key key)
     {
         return ((PrefixedIntHashKey) key).key;
+    }
+
+    private static int prefix(Key key)
+    {
+        return ((PrefixedIntHashKey) key).prefix;
     }
 }
