@@ -884,7 +884,7 @@ public class Commands
         if (durableBefore.global(txnId) == Universal)
         {
             if (status.hasBeen(PreCommitted) && !status.hasBeen(Applied)) // TODO (expected): may be stale
-                throw new IllegalStateException("Loading universally-durable command that has been PreCommitted but not Applied");
+                throw new IllegalStateException(String.format("Loading universally-durable command that has been PreCommitted (%s) but not Applied", status));
             return Cleanup.ERASE;
         }
 
