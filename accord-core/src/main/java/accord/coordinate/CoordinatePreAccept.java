@@ -33,10 +33,13 @@ import accord.messages.PreAccept;
 import accord.messages.PreAccept.PreAcceptOk;
 import accord.messages.PreAccept.PreAcceptReply;
 import accord.primitives.FullRoute;
+import accord.primitives.Routables;
+import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
+import accord.topology.Topology;
 import accord.utils.Invariants;
 import accord.utils.async.AsyncResults.SettableResult;
 
@@ -237,6 +240,17 @@ abstract class CoordinatePreAccept<T> extends SettableResult<T> implements Callb
         // TODO (desired, efficiency): check if we have already have a valid quorum for the future epoch
         //  (noting that nodes may have adopted new ranges, in which case they should be discounted, and quorums may have changed shape)
         node.withEpoch(executeAt.epoch(), () -> {
+            Topology execTopology = node.topology().globalForEpoch(executeAt.epoch());
+            if (!valid(execTopology))
+            {
+                TopologyMismatch mismatch = new TopologyMismatch(txnId, route.homeKey(), execTopology, txn.keys());
+                Invalidate.invalidate(node, txnId, route, (outcome, failure) -> {
+                    if (failure != null)
+                        mismatch.addSuppressed(failure);
+                   accept(null, mismatch);
+                });
+                return;
+            }
             topologies = node.topology().withUnsyncedEpochs(route, txnId.epoch(), executeAt.epoch());
             boolean equivalent = topologies.oldestEpoch() <= prevTopologies.currentEpoch();
             for (long epoch = topologies.currentEpoch() ; equivalent && epoch > prevTopologies.currentEpoch() ; --epoch)
@@ -252,6 +266,13 @@ abstract class CoordinatePreAccept<T> extends SettableResult<T> implements Callb
                 extraPreAccept.start();
             }
         });
+    }
+
+    private boolean valid(Topology exec)
+    {
+        Seekables<?, ?> keysOrRanges = txn.keys();
+        Seekables<?, ?> updatedRanges = keysOrRanges.slice(exec.ranges(), Routables.Slice.Minimal);
+        return updatedRanges.containsAll(keysOrRanges);
     }
 
     abstract void onPreAccepted(Topologies topologies, Timestamp executeAt, List<PreAcceptOk> successes);
