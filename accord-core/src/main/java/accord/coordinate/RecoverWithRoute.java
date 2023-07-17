@@ -18,20 +18,31 @@
 
 package accord.coordinate;
 
+import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
 
 import accord.coordinate.FetchData.OnDone;
+import accord.local.Command;
+import accord.local.CommandStore;
 import accord.local.Node;
 import accord.local.Node.Id;
+import accord.local.PreLoadContext;
+import accord.local.SafeCommandStore;
 import accord.local.Status;
 import accord.local.Status.Known;
 import accord.messages.CheckStatus;
 import accord.messages.CheckStatus.CheckStatusOk;
 import accord.messages.CheckStatus.CheckStatusOkFull;
 import accord.messages.CheckStatus.IncludeInfo;
+import accord.messages.MessageType;
+import accord.messages.ReplyContext;
+import accord.messages.Request;
 import accord.primitives.Ballot;
 import accord.primitives.Deps;
 import accord.primitives.FullRoute;
+import accord.primitives.Keys;
 import accord.primitives.PartialRoute;
 import accord.primitives.Ranges;
 import accord.primitives.Route;
@@ -39,6 +50,8 @@ import accord.primitives.Txn;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
 import accord.utils.Invariants;
+import accord.utils.MapReduceConsume;
+
 import javax.annotation.Nullable;
 
 import static accord.local.Status.KnownExecuteAt.ExecuteAtKnown;
@@ -172,6 +185,41 @@ public class RecoverWithRoute extends CheckShards<FullRoute<?>>
                 if (known.deps.hasDecidedDeps())
                 {
                     Deps deps = full.committedDeps.reconstitute(route());
+                    if (txnId.rw() == Txn.Kind.ExclusiveSyncPoint)
+                    {
+                        node.send(topologies().current(), new Request() {
+                            @Override
+                            public void process(Node on, Id from, ReplyContext replyContext) {
+                                // TODO (now): remove, this is for debugging
+                                on.commandStores().mapReduceConsume(PreLoadContext.contextFor(deps.txnIds(), Keys.EMPTY), new MapReduceConsume<SafeCommandStore, Object>() {
+                                    @Override
+                                    public void accept(Object result, Throwable failure) {
+
+                                    }
+
+                                    @Override
+                                    public Object apply(SafeCommandStore store) {
+                                        List<Command> blockedBy = deps.txnIds().stream()
+                                                .map(id -> store.get(id, full.homeKey).current())
+                                                .filter(c -> c.isDefined())
+                                                .collect(Collectors.toList());
+                                        System.out.println("trap");
+                                        return null;
+                                    }
+
+                                    @Override
+                                    public Object reduce(Object o1, Object o2) {
+                                        return null;
+                                    }
+                                });
+                            }
+
+                            @Override
+                            public MessageType type() {
+                                return null;
+                            }
+                        });
+                    }
                     node.withEpoch(full.executeAt.epoch(), () -> {
                         Persist.persistMaximal(node, txnId, route(), txn, full.executeAt, deps, full.writes, full.result);
                     });
