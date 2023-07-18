@@ -534,7 +534,17 @@ public class TopologyManager
         for (int i = count - 1 ; i >= 0 ; --i)
         {
             EpochState epochState = snapshot.get(minEpoch + i);
-            topologies.add(epochState.global.forSelection(select));
+            if (epochState.global.ranges.containsAll(select))
+            {
+                topologies.add(epochState.global.forSelection(select));
+            }
+            else
+            {
+                // topology partially matches the selection...
+                Unseekables<?> intersects = select.slice(epochState.global.ranges);
+                if (intersects.isEmpty()) continue;
+                topologies.add(epochState.global.forSelection(intersects));
+            }
             select = select.subtract(epochState.addedRanges);
         }
 
