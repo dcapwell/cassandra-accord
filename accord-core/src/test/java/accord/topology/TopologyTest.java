@@ -25,6 +25,7 @@ import accord.impl.IntKey;
 import accord.impl.PrefixedIntHashKey;
 import accord.impl.TopologyFactory;
 import accord.local.Node;
+import accord.primitives.AbstractRanges;
 import accord.primitives.Range;
 import accord.primitives.Keys;
 import accord.primitives.Ranges;
@@ -36,7 +37,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeSet;
 
 import static accord.utils.AccordGens.topologys;
@@ -177,6 +180,8 @@ public class TopologyTest
 
     private static void checkTopology(Topology topology, RandomSource rs)
     {
+        for (Node.Id node : topology.nodes())
+            assertThat(topology.forNode(node)).isRangesEqualTo(topology.rangesForNode(node));
         for (Range range : topology.ranges())
         {
             for (int i = 0; i < 10; i++)
