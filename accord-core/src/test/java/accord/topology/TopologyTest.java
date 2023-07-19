@@ -39,6 +39,7 @@ import org.junit.jupiter.api.Test;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.TreeSet;
@@ -153,14 +154,12 @@ public class TopologyTest
                     {
                         List<Shard> forEachShard = new ArrayList<>(1);
                         subset.forEach(s -> forEachShard.add(s)); // cant do forEachShard::add due ambiguous signature (multiple matches in topology)
-                        assertThat(forEachShard).isEqualTo(Arrays.asList(shard));
+                        assertThat(forEachShard).isEqualTo(Collections.singletonList(shard));
                     }
 
-                    Consumer<Unseekables<?>> foldl = unseekables -> {
-                        assertThat(subset.foldl(unseekables, (s, accum, indexed) -> accum + System.identityHashCode(s), 0))
-                                .isEqualTo(trimmed.foldl(unseekables, (s, accum, indexed) -> accum + System.identityHashCode(s), 0))
-                                .isEqualTo(System.identityHashCode(shard));
-                    };
+                    Consumer<Unseekables<?>> foldl = unseekables -> assertThat(subset.foldl(unseekables, (s, accum, indexed) -> accum + System.identityHashCode(s), 0))
+                            .isEqualTo(trimmed.foldl(unseekables, (s, accum, indexed) -> accum + System.identityHashCode(s), 0))
+                            .isEqualTo(System.identityHashCode(shard));
                     Consumer<Unseekables<?>> visitNodeForKeysOnceOrMore = unseekables -> {
                         List<Node.Id> actual = new ArrayList<>(shard.nodes.size());
                         subset.visitNodeForKeysOnceOrMore(unseekables, actual::add);
@@ -201,9 +200,9 @@ public class TopologyTest
             Topology subset = topology.forNode(node);
             assertThat(subset).isRangesEqualTo(topology.rangesForNode(node));
 
-            assertThat(topology.mapReduceOn(node, 0, (p1, p2, p3, idx) -> System.identityHashCode(topology.get(idx)), 0, 0, 0, (a, b) -> a + b, 0))
+            assertThat(topology.mapReduceOn(node, 0, (p1, p2, p3, idx) -> System.identityHashCode(topology.get(idx)), 0, 0, 0, Integer::sum, 0))
                     .isEqualTo(subset.shards().stream().mapToInt(System::identityHashCode).sum())
-                    .isEqualTo(subset.mapReduceOn(node, 0, (p1, p2, p3, idx) -> System.identityHashCode(subset.get(idx)), 0, 0, 0, (a, b) -> a + b, 0))
+                    .isEqualTo(subset.mapReduceOn(node, 0, (p1, p2, p3, idx) -> System.identityHashCode(subset.get(idx)), 0, 0, 0, Integer::sum, 0))
                     .isEqualTo(topology.foldlIntOn(node, (p1, accum, idx) -> accum + System.identityHashCode(topology.get(idx)), 0, 0, 0, Integer.MIN_VALUE))
                     .isEqualTo(subset.foldlIntOn(node, (p1, accum, idx) -> accum + System.identityHashCode(subset.get(idx)), 0, 0, 0, Integer.MIN_VALUE));
         }
@@ -233,12 +232,6 @@ public class TopologyTest
             }
         }
         assertThat(topology.forSelection(topology.ranges())).isEqualTo(topology);
-    }
-
-    private static RoutingKey routing(Ranges ranges, RandomSource rs)
-    {
-        Range range = ranges.get(rs.nextInt(ranges.size()));
-        return routing(range, rs);
     }
 
     private static RoutingKey routing(Range range, RandomSource rs)
