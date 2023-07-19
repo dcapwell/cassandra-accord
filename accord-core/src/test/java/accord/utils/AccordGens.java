@@ -26,14 +26,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiFunction;
-import java.util.function.IntFunction;
 
 import accord.api.Key;
 import accord.api.RoutingKey;
 import accord.impl.IntHashKey;
 import accord.impl.IntKey;
 import accord.impl.PrefixedIntHashKey;
-import accord.impl.TopologyUtils;
 import accord.local.Node;
 import accord.primitives.Deps;
 import accord.primitives.KeyDeps;
@@ -69,7 +67,7 @@ public class AccordGens
 
     public static Gen<TxnId> txnIds()
     {
-        return txnIds(epochs()::nextLong, rs -> rs.nextLong(0, Long.MAX_VALUE), nodes());
+        return txnIds(epochs(), rs -> rs.nextLong(0, Long.MAX_VALUE), nodes());
     }
 
     public static Gen<TxnId> txnIds(Gen.LongGen epochs, Gen.LongGen hlcs, Gen<Node.Id> nodes)
@@ -133,32 +131,17 @@ public class AccordGens
                 int minElectorate = nodes.size() - maxFailures;
                 for (int i = 0, size = rs.nextInt(minElectorate, nodes.size()); i < size; i++)
                 {
+                    //noinspection StatementWithEmptyBody
                     while (!fastPath.add(nodes.get(rs.nextInt(nodes.size()))));
                 }
             }
             Set<Node.Id> joining = new HashSet<>();
             for (int i = 0, size = rs.nextInt(nodes.size()); i < size; i++)
             {
+                //noinspection StatementWithEmptyBody
                 while (!joining.add(nodes.get(rs.nextInt(nodes.size()))));
             }
             return new Shard(range, nodes, fastPath, joining);
-        };
-    }
-
-    public static Gen<Ranges> prefixedIntHashKeyRanges(int numNodes, int rf)
-    {
-        return rs -> {
-            int numPrefixes = rs.nextInt(1, 10);
-            List<Range> ranges = new ArrayList<>(numPrefixes * numNodes * 3);
-            IntHashSet prefixes = new IntHashSet();
-            for (int i = 0; i < numPrefixes; i++)
-            {
-                int prefix;
-                while (!prefixes.add(prefix = rs.nextInt(0, 100)));
-                ranges.addAll(Arrays.asList(PrefixedIntHashKey.ranges(prefix, rs.nextInt(Math.max(numNodes + 1, rf), numNodes * 3))));
-            }
-            Collections.sort(ranges, Range::compare);
-            return Ranges.ofSortedAndDeoverlapped(Utils.toArray(ranges, Range[]::new));
         };
     }
 
@@ -192,7 +175,7 @@ public class AccordGens
                 WrapAroundList<Node.Id> replicas = electorates.get(i % electorates.size());
                 Range range = ranges.get(i);
                 shards.add(shards(ignore -> range, ignore -> replicas).next(rs));
-                noShard.removeAll(replicas);
+                replicas.forEach(noShard::remove);
             }
             if (!noShard.isEmpty())
                 throw new AssertionError(String.format("The following electorates were found without a shard: %s", noShard));
@@ -237,6 +220,24 @@ public class AccordGens
         };
     }
 
+    public static Gen<Ranges> prefixedIntHashKeyRanges(int numNodes, int rf)
+    {
+        return rs -> {
+            int numPrefixes = rs.nextInt(1, 10);
+            List<Range> ranges = new ArrayList<>(numPrefixes * numNodes * 3);
+            IntHashSet prefixes = new IntHashSet();
+            for (int i = 0; i < numPrefixes; i++)
+            {
+                int prefix;
+                //noinspection StatementWithEmptyBody
+                while (!prefixes.add(prefix = rs.nextInt(0, 100)));
+                ranges.addAll(Arrays.asList(PrefixedIntHashKey.ranges(prefix, rs.nextInt(Math.max(numNodes + 1, rf), numNodes * 3))));
+            }
+            ranges.sort(Range::compare);
+            return Ranges.ofSortedAndDeoverlapped(Utils.toArray(ranges, Range[]::new));
+        };
+    }
+
     public static Gen<RangeDeps> rangeDeps(Gen<Range> rangeGen)
     {
         return rangeDeps(rangeGen, txnIds());
@@ -247,14 +248,16 @@ public class AccordGens
         double emptyProb = .2D;
         return rs -> {
             if (rs.decide(emptyProb)) return RangeDeps.NONE;
-            RangeDeps.Builder builder = RangeDeps.builder();
-            for (int i = 0, numKeys = rs.nextInt(1, 10); i < numKeys; i++)
+            try (RangeDeps.Builder builder = RangeDeps.builder())
             {
-                builder.nextKey(rangeGen.next(rs));
-                for (int j = 0, numTxn = rs.nextInt(1, 10); j < numTxn; j++)
-                    builder.add(idGen.next(rs));
+                for (int i = 0, numKeys = rs.nextInt(1, 10); i < numKeys; i++)
+                {
+                    builder.nextKey(rangeGen.next(rs));
+                    for (int j = 0, numTxn = rs.nextInt(1, 10); j < numTxn; j++)
+                        builder.add(idGen.next(rs));
+                }
+                return builder.build();
             }
-            return builder.build();
         };
     }
 
