@@ -29,6 +29,7 @@ import accord.primitives.Range;
 import accord.primitives.Keys;
 import accord.primitives.Ranges;
 import accord.primitives.RoutingKeys;
+import accord.primitives.Unseekables;
 import accord.utils.Gens;
 import accord.utils.RandomSource;
 import com.google.common.collect.Iterables;
@@ -41,6 +42,7 @@ import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.TreeSet;
+import java.util.function.Consumer;
 
 import static accord.utils.AccordGens.topologys;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -120,7 +122,6 @@ public class TopologyTest
     void basic()
     {
         qt().withSeed(247220790093642898L).forAll(topologys(), Gens.random()).check((topology, rs) -> {
-            Ranges ranges = topology.ranges;
             assertThat(topology)
                     .isNotSubset()
                     .isEqualTo(topology.withEpoch(topology.epoch))
@@ -134,7 +135,7 @@ public class TopologyTest
                 for (boolean withNodes : Arrays.asList(true, false))
                 {
                     Topology subset = withNodes ?
-                                      topology.forSubset(new int[] {i}, topology.nodes()) :
+                                      topology.forSubset(new int[] {i}, topology.nodes()) : // TODO (correctness): should this drop non-overlapping nodes, or reject?
                                       topology.forSubset(new int[] {i});
                     Topology trimmed = subset.trim();
 
@@ -155,13 +156,30 @@ public class TopologyTest
                         assertThat(forEachShard).isEqualTo(Arrays.asList(shard));
                     }
 
+                    Consumer<Unseekables<?>> foldl = unseekables -> {
+                        assertThat(subset.foldl(unseekables, (s, accum, indexed) -> accum + System.identityHashCode(s), 0))
+                                .isEqualTo(trimmed.foldl(unseekables, (s, accum, indexed) -> accum + System.identityHashCode(s), 0))
+                                .isEqualTo(System.identityHashCode(shard));
+                    };
+                    Consumer<Unseekables<?>> visitNodeForKeysOnceOrMore = unseekables -> {
+                        List<Node.Id> actual = new ArrayList<>(shard.nodes.size());
+                        subset.visitNodeForKeysOnceOrMore(unseekables, actual::add);
+                        assertThat(actual).isEqualTo(shard.nodes);
+                    };
                     for (Range range : subset.ranges())
                     {
                         for (int j = 0; j < 10; j++)
                         {
                             RoutingKey key = routing(range, rs);
                             assertThat(subset.forKey(key)).isEqualTo(shard);
+
+                            RoutingKeys unseekables = RoutingKeys.of(key);
+                            foldl.accept(unseekables);
+                            visitNodeForKeysOnceOrMore.accept(unseekables);
                         }
+                        Ranges unseekables = Ranges.single(range);
+                        foldl.accept(unseekables);
+                        visitNodeForKeysOnceOrMore.accept(unseekables);
                     }
 
                     for (Node.Id node : new TreeSet<>(subset.nodes()))
@@ -176,11 +194,6 @@ public class TopologyTest
                     // by Node
                     // public <P> int foldlIntOn(Id on, IndexedIntFunction<P> consumer, P param, int offset, int initialValue, int terminalValue)
                     // public <P1, P2, P3, O> O mapReduceOn(Id on, int offset, IndexedTriFunction<? super P1, ? super P2, ? super P3, ? extends O> function, P1 p1, P2 p2, P3 p3, BiFunction<? super O, ? super O, ? extends O> reduce, O initialValue)
-
-                    // by Range
-                    // public <T> T foldl(Unseekables<?> select, IndexedBiFunction<Shard, T, T> function, T accumulator)
-                    // public void visitNodeForKeysOnceOrMore(Unseekables<?> select, Consumer<Id> nodes)
-                    // public Topology forSelection(Unseekables<?> select, Collection<Id> nodes)
                 }
             }
         });
