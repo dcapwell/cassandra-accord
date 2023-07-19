@@ -450,6 +450,11 @@ public class TopologyManager
         return current().epoch;
     }
 
+    public long minEpoch()
+    {
+        return epochs.minEpoch();
+    }
+
     @VisibleForTesting
     EpochState getEpochStateUnsafe(long epoch)
     {
@@ -548,7 +553,6 @@ public class TopologyManager
             select = select.subtract(epochState.addedRanges);
         }
 
-        for (int i = count - 1 ; i >= 0 ; --i)
         Invariants.checkState(!topologies.isEmpty(), "Unable to find an epoch that contained %s", select);
 
         return topologies;
