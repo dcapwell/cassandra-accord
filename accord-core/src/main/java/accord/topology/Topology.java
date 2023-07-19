@@ -105,7 +105,7 @@ public class Topology
     @Override
     public String toString()
     {
-        return "Topology{" + "epoch=" + epoch + ", " + Arrays.toString(shards) + '}';
+        return "Topology{" + "epoch=" + epoch + ", " + shards() + '}';
     }
 
     @Override
@@ -182,15 +182,15 @@ public class Topology
     // TODO (low priority, efficiency): optimised HomeKey concept containing the Key, Shard and Topology to avoid lookups when topology hasn't changed
     public Shard forKey(RoutingKey key)
     {
-        int i = ranges.indexOf(key);
+        int i = subsetOfRanges.indexOf(key);
         if (i < 0)
             throw new IllegalArgumentException("Range not found for " + key);
-        return shards[i];
+        return shards[supersetIndexes[i]];
     }
 
     public int indexForKey(RoutingKey key)
     {
-        int i = ranges.indexOf(key);
+        int i = subsetOfRanges.indexOf(key);
         if (i < 0) return -1;
         return Arrays.binarySearch(supersetIndexes, i);
     }
@@ -312,7 +312,7 @@ public class Topology
     public <T> T foldl(Unseekables<?> select, IndexedBiFunction<Shard, T, T> function, T accumulator)
     {
         Unseekables<?> as = select;
-        Ranges bs = ranges;
+        Ranges bs = subsetOfRanges;
         int ai = 0, bi = 0;
 
         while (true)
@@ -324,7 +324,7 @@ public class Topology
             ai = (int)(abi);
             bi = (int)(abi >>> 32);
 
-            accumulator = function.apply(shards[bi], accumulator, bi);
+            accumulator = function.apply(shards[supersetIndexes[bi]], accumulator, bi);
             ++bi;
         }
 
@@ -478,7 +478,7 @@ public class Topology
 
     public Ranges ranges()
     {
-        return ranges;
+        return subsetOfRanges;
     }
 
     public Shard[] unsafeGetShards()
