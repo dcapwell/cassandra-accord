@@ -46,16 +46,21 @@ public class TopologyUtils
         return Ranges.of(ranges);
     }
 
-    public static Topology initialTopology(Node.Id[] cluster, Ranges ranges, int rf)
+    public static Topology topology(long epoch, List<Node.Id> cluster, Ranges ranges, int rf)
+    {
+        return topology(epoch, toArray(cluster, Node.Id[]::new), ranges, rf);
+    }
+
+    public static Topology topology(long epoch, Node.Id[] cluster, Ranges ranges, int rf)
     {
         final Map<Node.Id, Integer> lookup = new HashMap<>();
-        for (int i = 0 ; i < cluster.length ; ++i)
+        for (int i = 0; i < cluster.length ; ++i)
             lookup.put(cluster[i], i);
 
         List<WrapAroundList<Node.Id>> electorates = new ArrayList<>();
         List<Set<Node.Id>> fastPathElectorates = new ArrayList<>();
 
-        for (int i = 0 ; i < cluster.length + rf - 1 ; ++i)
+        for (int i = 0; i < cluster.length + rf - 1 ; ++i)
         {
             WrapAroundList<Node.Id> electorate = new WrapAroundList<>(cluster, i % cluster.length, (i + rf) % cluster.length);
             Set<Node.Id> fastPathElectorate = new WrapAroundSet<>(lookup, electorate);
@@ -65,7 +70,7 @@ public class TopologyUtils
 
         final List<Shard> shards = new ArrayList<>();
         Set<Node.Id> noShard = new HashSet<>(Arrays.asList(cluster));
-        for (int i = 0 ; i < ranges.size() ; ++i)
+        for (int i = 0; i < ranges.size() ; ++i)
         {
             shards.add(new Shard(ranges.get(i), electorates.get(i % electorates.size()), fastPathElectorates.get(i % fastPathElectorates.size())));
             noShard.removeAll(electorates.get(i % electorates.size()));
@@ -73,7 +78,12 @@ public class TopologyUtils
         if (!noShard.isEmpty())
             throw new AssertionError(String.format("The following electorates were found without a shard: %s", noShard));
 
-        return new Topology(1, toArray(shards, Shard[]::new));
+        return new Topology(epoch, toArray(shards, Shard[]::new));
+    }
+
+    public static Topology initialTopology(Node.Id[] cluster, Ranges ranges, int rf)
+    {
+        return topology(1, cluster, ranges, rf);
     }
 
     public static Topology initialTopology(List<Node.Id> cluster, Ranges ranges, int rf)

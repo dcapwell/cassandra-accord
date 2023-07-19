@@ -25,6 +25,7 @@ import java.util.Set;
 import accord.local.Node.Id;
 import accord.api.Key;
 import accord.primitives.Range;
+import accord.primitives.RoutableKey;
 import accord.utils.SortedArrays.ExtendedSortedArrayList;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -95,7 +96,7 @@ public class Shard
         return nodes.size();
     }
 
-    public boolean contains(Key key)
+    public boolean contains(RoutableKey key)
     {
         return range.contains(key);
     }

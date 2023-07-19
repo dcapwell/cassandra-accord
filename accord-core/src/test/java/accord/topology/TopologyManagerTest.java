@@ -18,8 +18,6 @@
 
 package accord.topology;
 
-import accord.api.Agent;
-import accord.api.Result;
 import accord.burn.TopologyUpdates;
 import accord.impl.PrefixedIntHashKey;
 import accord.impl.TestAgent;
@@ -28,26 +26,19 @@ import accord.impl.basic.PendingQueue;
 import accord.impl.basic.RandomDelayQueue;
 import accord.impl.basic.SimulatedDelayedExecutorService;
 import accord.local.AgentExecutor;
-import accord.local.Command;
 import accord.primitives.Ranges;
-import accord.primitives.Seekables;
-import accord.primitives.Timestamp;
-import accord.primitives.Txn;
-import accord.primitives.TxnId;
+import accord.primitives.Unseekables;
+import accord.utils.RandomSource;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import accord.local.Node;
 import accord.primitives.Range;
 import accord.primitives.RoutingKeys;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
+import java.util.Set;
 
 import static accord.Utils.id;
 import static accord.Utils.idList;
@@ -58,6 +49,7 @@ import static accord.Utils.topology;
 import static accord.impl.IntKey.keys;
 import static accord.impl.IntKey.range;
 import static accord.impl.SizeOfIntersectionSorter.SUPPLIER;
+import static accord.utils.ExtendedAssertions.assertThat;
 import static accord.utils.Property.qt;
 
 public class TopologyManagerTest
@@ -317,10 +309,35 @@ public class TopologyManagerTest
         markTopologySynced(service, t3.epoch());
     }
 
+    /**
+     * The ABA problem is a problem with registers where you set the value A, then B, then A again; when you observe you see A... which A?
+     */
+    @Test
+    void aba()
+    {
+        TopologyManager service = new TopologyManager(SUPPLIER, ID);
+        List<Node.Id> dc1Nodes = idList(1, 2, 3);
+        Set<Node.Id> dc1Fp = idSet(1, 2);
+        List<Node.Id> dc2Nodes = idList(4, 5, 6);
+        Set<Node.Id> dc2Fp = idSet(4, 5);
+        addAndMarkSynced(service, topology(1,
+                shard(PrefixedIntHashKey.range(0, 0, 100), dc2Nodes, dc2Fp),
+                shard(PrefixedIntHashKey.range(1, 0, 100), dc1Nodes, dc1Fp)));
+        addAndMarkSynced(service, topology(2,
+                shard(PrefixedIntHashKey.range(1, 0, 100), dc1Nodes, dc1Fp)));
+        addAndMarkSynced(service, topology(3,
+                shard(PrefixedIntHashKey.range(0, 0, 100), dc2Nodes, dc2Fp),
+                shard(PrefixedIntHashKey.range(1, 0, 100), dc1Nodes, dc1Fp)));
+
+        // prefix=0 was added in epoch=1, removed in epoch=2, and added back to epoch=3
+        qt().withSeed(-264748563329313076L).check(rs -> checkAPI(service, rs));
+    }
+
     @Test
     void fuzz()
     {
-        qt().withSeed(-5230246813276880379L).withExamples(10).check(rand -> {
+        // seeds to add back: 645630353491283432L
+        qt().withExamples(Integer.MAX_VALUE).check(rand -> {
             PendingQueue queue = new RandomDelayQueue.Factory(rand).get();
             AgentExecutor executor = new SimulatedDelayedExecutorService(queue, new TestAgent.RethrowAgent(), rand);
             int numNodes = rand.nextInt(3, 20);
@@ -366,7 +383,73 @@ public class TopologyManagerTest
                     if (state.syncComplete())
                         lastFullAck = current.epoch();
                 }
+
+                checkAPI(service, rand);
             }
         });
+    }
+
+    private static void checkAPI(TopologyManager service, RandomSource rand)
+    {
+        checkWithUnsyncedEpochs(service, rand);
+        checkPreciseEpochs(service, rand);
+    }
+
+    private static void checkPreciseEpochs(TopologyManager service, RandomSource rand)
+    {
+        EpochRange range = EpochRange.from(service, rand);
+        Unseekables<?> select = select(service, range, rand);
+        Topologies topologies = service.preciseEpochs(select, range.min, range.max);
+        assertThat(topologies)
+                .isNotEmpty()
+                .hasEpochsBetween(range.min, range.max)
+                .containsAll(select)
+                .containsAll(service, select);
+    }
+
+    private static void checkWithUnsyncedEpochs(TopologyManager service, RandomSource rand)
+    {
+//        EpochRange range = EpochRange.from(service, rand);
+//        Unseekables<?> select = select(service, range, rand);
+//        Topologies topologies = service.withUnsyncedEpochs(select, range.min, range.max);
+    }
+
+    private static Unseekables<?> select(TopologyManager service, EpochRange range, RandomSource rand)
+    {
+        List<Range> selected = new ArrayList<>();
+        for (long epoch = range.min; epoch <= range.max; epoch++)
+        {
+            Topology topology = service.globalForEpoch(epoch);
+            Ranges ranges = topology.ranges();
+            int selectionCount = rand.nextInt(10);
+            for (int i = 0; i < selectionCount; i++)
+                // may have duplicates; they will be merged later
+                selected.add(ranges.get(rand.nextInt(ranges.size())));
+        }
+        return Ranges.of(selected.toArray(new Range[selected.size()])).mergeTouching();
+    }
+
+    private static class EpochRange
+    {
+        final long min, max;
+
+        private EpochRange(long min, long max)
+        {
+            this.min = min;
+            this.max = max;
+        }
+
+        static EpochRange from(TopologyManager service, RandomSource rand)
+        {
+            long min = rand.nextLong(service.minEpoch(), service.epoch() + 1);
+            long max = rand.nextLong(service.minEpoch(), service.epoch() + 1);
+            if (min > max)
+            {
+                long tmp = max;
+                max = min;
+                min = tmp;
+            }
+            return new EpochRange(min, max);
+        }
     }
 }

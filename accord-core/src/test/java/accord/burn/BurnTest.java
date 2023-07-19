@@ -399,8 +399,8 @@ public class BurnTest
     @Test
     public void testOne()
     {
-//        run(-1330125844737109546L, 1000);
-        run(-8777868070417459876L, 1000);
+//        run(-8777868070417459876L, 1000); // updated TM.preciseEpochs
+        run(5925385057950493178L, 1000);
         while (true)
         run(ThreadLocalRandom.current().nextLong(), 1000);
     }

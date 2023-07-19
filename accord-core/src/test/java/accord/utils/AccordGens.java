@@ -18,25 +18,37 @@
 
 package accord.utils;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiFunction;
+import java.util.function.IntFunction;
 
 import accord.api.Key;
 import accord.api.RoutingKey;
 import accord.impl.IntHashKey;
 import accord.impl.IntKey;
+import accord.impl.PrefixedIntHashKey;
+import accord.impl.TopologyUtils;
 import accord.local.Node;
 import accord.primitives.Deps;
 import accord.primitives.KeyDeps;
 import accord.primitives.Range;
 import accord.primitives.RangeDeps;
+import accord.primitives.Ranges;
 import accord.primitives.Routable;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
+import accord.topology.Shard;
+import accord.topology.Topology;
+import org.agrona.collections.IntHashSet;
+
+import static accord.utils.Utils.toArray;
 
 public class AccordGens
 {
@@ -45,16 +57,26 @@ public class AccordGens
         return Gens.longs().between(0, Timestamp.MAX_EPOCH);
     }
 
-    public static Gen<TxnId> txnIds()
+    public static Gen<Node.Id> nodes()
     {
-        return txnIds(epochs()::nextLong, rs -> rs.nextLong(0, Long.MAX_VALUE), RandomSource::nextInt);
+        return nodes(RandomSource::nextInt);
     }
 
-    public static Gen<TxnId> txnIds(Gen.LongGen epochs, Gen.LongGen hlcs, Gen.IntGen nodes)
+    public static Gen<Node.Id> nodes(Gen.IntGen nodes)
+    {
+        return nodes.map(Node.Id::new);
+    }
+
+    public static Gen<TxnId> txnIds()
+    {
+        return txnIds(epochs()::nextLong, rs -> rs.nextLong(0, Long.MAX_VALUE), nodes());
+    }
+
+    public static Gen<TxnId> txnIds(Gen.LongGen epochs, Gen.LongGen hlcs, Gen<Node.Id> nodes)
     {
         Gen<Txn.Kind> kinds = Gens.enums().all(Txn.Kind.class);
         Gen<Routable.Domain> domains = Gens.enums().all(Routable.Domain.class);
-        return rs -> new TxnId(epochs.nextLong(rs), hlcs.nextLong(rs), kinds.next(rs), domains.next(rs), new Node.Id(nodes.nextInt(rs)));
+        return rs -> new TxnId(epochs.nextLong(rs), hlcs.nextLong(rs), kinds.next(rs), domains.next(rs), nodes.next(rs));
     }
 
     public static Gen<Key> intKeys()
@@ -93,6 +115,95 @@ public class AccordGens
                 return builder.build();
             }
         };
+    }
+
+    public static Gen<Shard> shards(Gen<Range> rangeGen, Gen<List<Node.Id>> nodesGen)
+    {
+        return rs -> {
+            Range range = rangeGen.next(rs);
+            List<Node.Id> nodes = nodesGen.next(rs);
+            int maxFailures = (nodes.size() - 1) / 2;
+            Set<Node.Id> fastPath = new HashSet<>();
+            if (maxFailures == 0)
+            {
+                fastPath.addAll(nodes);
+            }
+            else
+            {
+                int minElectorate = nodes.size() - maxFailures;
+                for (int i = 0, size = rs.nextInt(minElectorate, nodes.size()); i < size; i++)
+                {
+                    while (!fastPath.add(nodes.get(rs.nextInt(nodes.size()))));
+                }
+            }
+            Set<Node.Id> joining = new HashSet<>();
+            for (int i = 0, size = rs.nextInt(nodes.size()); i < size; i++)
+            {
+                while (!joining.add(nodes.get(rs.nextInt(nodes.size()))));
+            }
+            return new Shard(range, nodes, fastPath, joining);
+        };
+    }
+
+    public static Gen<Ranges> prefixedIntHashKeyRanges(int numNodes, int rf)
+    {
+        return rs -> {
+            int numPrefixes = rs.nextInt(1, 10);
+            List<Range> ranges = new ArrayList<>(numPrefixes * numNodes * 3);
+            IntHashSet prefixes = new IntHashSet();
+            for (int i = 0; i < numPrefixes; i++)
+            {
+                int prefix;
+                while (!prefixes.add(prefix = rs.nextInt(0, 100)));
+                ranges.addAll(Arrays.asList(PrefixedIntHashKey.ranges(prefix, rs.nextInt(Math.max(numNodes + 1, rf), numNodes * 3))));
+            }
+            Collections.sort(ranges, Range::compare);
+            return Ranges.ofSortedAndDeoverlapped(Utils.toArray(ranges, Range[]::new));
+        };
+    }
+
+    public static Gen<Topology> topologys()
+    {
+        return topologys(epochs(), nodes());
+    }
+
+    public static Gen<Topology> topologys(Gen.LongGen epochGen, Gen<Node.Id> nodeGen)
+    {
+        return topologys(epochGen, nodeGen, AccordGens::prefixedIntHashKeyRanges);
+    }
+
+    public static Gen<Topology> topologys(Gen.LongGen epochGen, Gen<Node.Id> nodeGen, RangesGenFactory rangesGenFactory)
+    {
+        return rs -> {
+            long epoch = epochGen.nextLong(rs);
+            Node.Id[] nodes = Utils.toArray(Gens.lists(nodeGen).unique().ofSizeBetween(1, 10).next(rs), Node.Id[]::new);
+            int rf = Math.min(nodes.length, 3);
+            Ranges ranges = rangesGenFactory.apply(nodes.length, rf).next(rs);
+
+            int numElectorate = nodes.length + rf - 1;
+            List<WrapAroundList<Node.Id>> electorates = new ArrayList<>(numElectorate);
+            for (int i = 0; i < numElectorate; i++)
+                electorates.add(new WrapAroundList<>(nodes, i % nodes.length, (i + rf) % nodes.length));
+
+            final List<Shard> shards = new ArrayList<>();
+            Set<Node.Id> noShard = new HashSet<>(Arrays.asList(nodes));
+            for (int i = 0; i < ranges.size() ; ++i)
+            {
+                WrapAroundList<Node.Id> replicas = electorates.get(i % electorates.size());
+                Range range = ranges.get(i);
+                shards.add(shards(ignore -> range, ignore -> replicas).next(rs));
+                noShard.removeAll(replicas);
+            }
+            if (!noShard.isEmpty())
+                throw new AssertionError(String.format("The following electorates were found without a shard: %s", noShard));
+
+            return new Topology(epoch, toArray(shards, Shard[]::new));
+        };
+    }
+
+    public interface RangesGenFactory
+    {
+        Gen<Ranges> apply(int nodeCount, int rf);
     }
 
     public interface RangeFactory

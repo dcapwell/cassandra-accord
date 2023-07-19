@@ -29,6 +29,7 @@ import accord.primitives.*;
 import accord.utils.*;
 import accord.utils.ArrayBuffers.IntBuffers;
 import com.google.common.annotations.VisibleForTesting;
+import org.agrona.collections.IntArrayList;
 
 import static accord.utils.SortedArrays.Search.FLOOR;
 import static accord.utils.SortedArrays.exponentialSearch;
@@ -63,6 +64,23 @@ public class Topology
             this.supersetIndexes = supersetIndexes;
         }
 
+        private NodeInfo forSubset(int[] newSubset)
+        {
+            IntArrayList matches = new IntArrayList();
+            List<Range> matchedRanges = new ArrayList<>(newSubset.length);
+            for (int index : newSubset)
+            {
+                int idx = Arrays.binarySearch(supersetIndexes, index);
+                if (idx < 0) continue;
+                // found a match
+                matches.add(index);
+                matchedRanges.add(ranges.get(idx));
+            }
+            Ranges ranges = Ranges.ofSortedAndDeoverlapped(Utils.toArray(matchedRanges, Range[]::new));
+            int[] supersetIndexes = matches.toIntArray();
+            return new NodeInfo(ranges, supersetIndexes);
+        }
+
         @Override
         public String toString()
         {
@@ -78,20 +96,19 @@ public class Topology
         this.subsetOfRanges = ranges;
         this.supersetIndexes = IntStream.range(0, shards.length).toArray();
         this.nodeLookup = new HashMap<>();
-        Map<Id, List<Integer>> build = new HashMap<>();
+        Map<Id, IntArrayList> build = new HashMap<>();
         for (int i = 0 ; i < shards.length ; ++i)
         {
             for (Id node : shards[i].nodes)
-                build.computeIfAbsent(node, ignore -> new ArrayList<>()).add(i);
+                build.computeIfAbsent(node, ignore -> new IntArrayList()).add(i);
         }
-        for (Map.Entry<Id, List<Integer>> e : build.entrySet())
+        for (Map.Entry<Id, IntArrayList> e : build.entrySet())
         {
-            int[] supersetIndexes = e.getValue().stream().mapToInt(i -> i).toArray();
+            int[] supersetIndexes = e.getValue().toIntArray();
             Ranges ranges = this.ranges.select(supersetIndexes);
             nodeLookup.put(e.getKey(), new NodeInfo(ranges, supersetIndexes));
         }
     }
-
     public Topology(long epoch, Shard[] shards, Ranges ranges, Map<Id, NodeInfo> nodeLookup, Ranges subsetOfRanges, int[] supersetIndexes)
     {
         this.epoch = epoch;
@@ -128,16 +145,15 @@ public class Topology
     @Override
     public int hashCode()
     {
-        int result = Objects.hash(epoch, ranges, subsetOfRanges);
-        result = 31 * result + Arrays.hashCode(shards);
-        result = 31 * result + Arrays.hashCode(supersetIndexes);
+        int result = Objects.hash(epoch);
+        result = 31 * result + shards().hashCode();
         return result;
     }
 
-    public static Topology select(long epoch, Shard[] shards, int[] indexes)
+    private static Topology select(long epoch, Shard[] shards, int[] indexes)
     {
         Shard[] subset = new Shard[indexes.length];
-        for (int i=0; i<indexes.length; i++)
+        for (int i = 0; i < indexes.length; i++)
             subset[i] = shards[indexes[i]];
         return new Topology(epoch, subset);
     }
@@ -190,9 +206,7 @@ public class Topology
 
     public int indexForKey(RoutingKey key)
     {
-        int i = subsetOfRanges.indexOf(key);
-        if (i < 0) return -1;
-        return Arrays.binarySearch(supersetIndexes, i);
+        return subsetOfRanges.indexOf(key);
     }
 
     @VisibleForTesting
@@ -211,7 +225,8 @@ public class Topology
         return forSubset(subsetFor(select), nodes);
     }
 
-    private Topology forSubset(int[] newSubset)
+    @VisibleForTesting
+    Topology forSubset(int[] newSubset)
     {
         Ranges rangeSubset = ranges.select(newSubset);
 
@@ -220,7 +235,7 @@ public class Topology
         {
             Shard shard = shards[shardIndex];
             for (Id id : shard.nodes)
-                nodeLookup.putIfAbsent(id, this.nodeLookup.get(id));
+                nodeLookup.putIfAbsent(id, this.nodeLookup.get(id).forSubset(newSubset));
         }
         return new Topology(epoch, shards, ranges, nodeLookup, rangeSubset, newSubset);
     }

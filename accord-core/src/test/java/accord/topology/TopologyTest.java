@@ -20,26 +20,37 @@ package accord.topology;
 
 import accord.Utils;
 import accord.api.Key;
+import accord.api.RoutingKey;
 import accord.impl.IntKey;
+import accord.impl.PrefixedIntHashKey;
 import accord.impl.TopologyFactory;
 import accord.local.Node;
 import accord.primitives.Range;
 import accord.primitives.Keys;
+import accord.primitives.Ranges;
+import accord.utils.Gens;
+import accord.utils.RandomSource;
 import com.google.common.collect.Iterables;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.TreeSet;
 
-import static accord.impl.IntKey.*;
+import static accord.utils.AccordGens.topologys;
+import static org.assertj.core.api.Assertions.assertThat;
+import static accord.utils.ExtendedAssertions.assertThat;
+import static accord.utils.Property.qt;
 
 public class TopologyTest
 {
     private static void assertRangeForKey(Topology topology, int key, int start, int end)
     {
-        Key expectedKey = key(key);
-        Shard shard = topology.forKey(routing(key));
-        Range expectedRange = range(start, end);
+        Key expectedKey = IntKey.key(key);
+        Shard shard = topology.forKey(IntKey.routing(key));
+        Range expectedRange = IntKey.range(start, end);
         Assertions.assertTrue(expectedRange.contains(expectedKey));
         Assertions.assertTrue(shard.range.contains(expectedKey));
         Assertions.assertEquals(expectedRange, shard.range);
@@ -75,7 +86,7 @@ public class TopologyTest
     {
         try
         {
-            topology.forKey(routing(key));
+            topology.forKey(IntKey.routing(key));
             Assertions.fail("Expected exception");
         }
         catch (IllegalArgumentException e)
@@ -99,5 +110,107 @@ public class TopologyTest
     void forRangesTest()
     {
 
+    }
+
+    @Test
+    void basic()
+    {
+        qt().withSeed(247220790093642898L).forAll(topologys(), Gens.random()).check((topology, rs) -> {
+            Ranges ranges = topology.ranges;
+            assertThat(topology)
+                    .isNotSubset()
+                    .isEqualTo(topology.withEpoch(topology.epoch))
+                    .hasSameHashCodeAs(topology.withEpoch(topology.epoch));
+
+            checkTopology(topology, rs);
+
+            for (int i = 0; i < topology.size(); i++)
+            {
+                Shard shard = topology.get(i);
+                Topology subset = topology.forSubset(new int[] {i});
+                Topology trimmed = subset.trim();
+
+                assertThat(subset)
+                        .isSubset()
+                        .isEqualTo(trimmed)
+                        .hasSameHashCodeAs(trimmed)
+                        // this is slightly redundant as trimmed model should catch this... it is here in case trim breaks
+                        .hasSize(1)
+                        .isShardsEqualTo(shard)
+                        .isHostsEqualTo(shard.nodes)
+                        .isRangesEqualTo(shard.range);
+
+                checkTopology(subset, rs);
+                {
+                    List<Shard> forEachShard = new ArrayList<>(1);
+                    subset.forEach(s -> forEachShard.add(s)); // cant do forEachShard::add due ambiguous signature (multiple matches in topology)
+                    assertThat(forEachShard).isEqualTo(Arrays.asList(shard));
+                }
+
+                for (Range range : subset.ranges())
+                {
+                    RoutingKey key = routing(range, rs);
+                    assertThat(subset.forKey(key)).isEqualTo(shard);
+                }
+
+                for (Node.Id node : new TreeSet<>(subset.nodes()))
+                {
+                    assertThat(subset.forNode(node))
+                            .isEqualTo(trimmed.forNode(node))
+                            .isRangesEqualTo(subset.rangesForNode(node))
+                            .isRangesEqualTo(trimmed.rangesForNode(node));
+                }
+
+                // TODO
+                // by Node
+                // public <P> int foldlIntOn(Id on, IndexedIntFunction<P> consumer, P param, int offset, int initialValue, int terminalValue)
+                // public <P1, P2, P3, O> O mapReduceOn(Id on, int offset, IndexedTriFunction<? super P1, ? super P2, ? super P3, ? extends O> function, P1 p1, P2 p2, P3 p3, BiFunction<? super O, ? super O, ? extends O> reduce, O initialValue)
+
+                // by Range
+                // public <T> T foldl(Unseekables<?> select, IndexedBiFunction<Shard, T, T> function, T accumulator)
+                // public void visitNodeForKeysOnceOrMore(Unseekables<?> select, Consumer<Id> nodes)
+                // public Topology forSelection(Unseekables<?> select, Collection<Id> nodes)
+                // public Topology forSelection(Unseekables<?> select)
+            }
+        });
+    }
+
+    private static void checkTopology(Topology topology, RandomSource rs)
+    {
+        for (Range range : topology.ranges())
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                RoutingKey key = routing(range, rs);
+
+                assertThat(topology.forKey(key))
+                        .describedAs("forKey(key) != get(indexForKey(key)) for key %s", key)
+                        .isEqualTo(topology.get(topology.indexForKey(key)))
+                        .contains(key);
+            }
+        }
+    }
+
+    private static RoutingKey routing(Ranges ranges, RandomSource rs)
+    {
+        Range range = ranges.get(rs.nextInt(ranges.size()));
+        return routing(range, rs);
+    }
+
+    private static RoutingKey routing(Range range, RandomSource rs)
+    {
+        if (range.start() instanceof PrefixedIntHashKey)
+        {
+            PrefixedIntHashKey.Hash start = (PrefixedIntHashKey.Hash) range.start();
+            PrefixedIntHashKey.Hash end = (PrefixedIntHashKey.Hash) range.end();
+            int value = rs.nextInt(start.hash, end.hash);
+            if (range.endInclusive()) // exclude start, but include end... so +1
+                value++;
+            return PrefixedIntHashKey.forHash(start.prefix, value);
+        }
+        else
+        {
+            throw new IllegalArgumentException("Key type " + range.start().getClass() + " is not supported");
+        }
     }
 }
