@@ -189,11 +189,6 @@ public class TopologyTest
                                 .isRangesEqualTo(subset.rangesForNode(node))
                                 .isRangesEqualTo(trimmed.rangesForNode(node));
                     }
-
-                    // TODO
-                    // by Node
-                    // public <P> int foldlIntOn(Id on, IndexedIntFunction<P> consumer, P param, int offset, int initialValue, int terminalValue)
-                    // public <P1, P2, P3, O> O mapReduceOn(Id on, int offset, IndexedTriFunction<? super P1, ? super P2, ? super P3, ? extends O> function, P1 p1, P2 p2, P3 p3, BiFunction<? super O, ? super O, ? extends O> reduce, O initialValue)
                 }
             }
         });
@@ -202,7 +197,16 @@ public class TopologyTest
     private static void checkTopology(Topology topology, RandomSource rs)
     {
         for (Node.Id node : topology.nodes())
-            assertThat(topology.forNode(node)).isRangesEqualTo(topology.rangesForNode(node));
+        {
+            Topology subset = topology.forNode(node);
+            assertThat(subset).isRangesEqualTo(topology.rangesForNode(node));
+
+            assertThat(topology.mapReduceOn(node, 0, (p1, p2, p3, idx) -> System.identityHashCode(topology.get(idx)), 0, 0, 0, (a, b) -> a + b, 0))
+                    .isEqualTo(subset.shards().stream().mapToInt(System::identityHashCode).sum())
+                    .isEqualTo(subset.mapReduceOn(node, 0, (p1, p2, p3, idx) -> System.identityHashCode(subset.get(idx)), 0, 0, 0, (a, b) -> a + b, 0))
+                    .isEqualTo(topology.foldlIntOn(node, (p1, accum, idx) -> accum + System.identityHashCode(topology.get(idx)), 0, 0, 0, Integer.MIN_VALUE))
+                    .isEqualTo(subset.foldlIntOn(node, (p1, accum, idx) -> accum + System.identityHashCode(subset.get(idx)), 0, 0, 0, Integer.MIN_VALUE));
+        }
         for (Range range : topology.ranges())
         {
             Topology subset = topology.forSelection(Ranges.single(range));
