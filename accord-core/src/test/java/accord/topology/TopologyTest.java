@@ -25,7 +25,6 @@ import accord.impl.IntKey;
 import accord.impl.PrefixedIntHashKey;
 import accord.impl.TopologyFactory;
 import accord.local.Node;
-import accord.primitives.AbstractRanges;
 import accord.primitives.Range;
 import accord.primitives.Keys;
 import accord.primitives.Ranges;
@@ -35,17 +34,18 @@ import com.google.common.collect.Iterables;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
+import java.util.EnumSet;
 import java.util.List;
-import java.util.Map;
 import java.util.TreeSet;
 
 import static accord.utils.AccordGens.topologys;
 import static org.assertj.core.api.Assertions.assertThat;
 import static accord.utils.ExtendedAssertions.assertThat;
 import static accord.utils.Property.qt;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class TopologyTest
 {
@@ -152,8 +152,11 @@ public class TopologyTest
 
                 for (Range range : subset.ranges())
                 {
-                    RoutingKey key = routing(range, rs);
-                    assertThat(subset.forKey(key)).isEqualTo(shard);
+                    for (int j = 0; j < 10; j++)
+                    {
+                        RoutingKey key = routing(range, rs);
+                        assertThat(subset.forKey(key)).isEqualTo(shard);
+                    }
                 }
 
                 for (Node.Id node : new TreeSet<>(subset.nodes()))
@@ -184,6 +187,7 @@ public class TopologyTest
             assertThat(topology.forNode(node)).isRangesEqualTo(topology.rangesForNode(node));
         for (Range range : topology.ranges())
         {
+            Topology subset = topology.forSelection(Ranges.single(range));
             for (int i = 0; i < 10; i++)
             {
                 RoutingKey key = routing(range, rs);
@@ -191,9 +195,20 @@ public class TopologyTest
                 assertThat(topology.forKey(key))
                         .describedAs("forKey(key) != get(indexForKey(key)) for key %s", key)
                         .isEqualTo(topology.get(topology.indexForKey(key)))
+                        .describedAs("forKey(key) != forSelection(range).forKey(key): key=%s, range=%s", key, range)
+                        .isEqualTo(subset.forKey(key))
                         .contains(key);
             }
+            for (int i = 0; i < 10; i++)
+            {
+                RoutingKey outsideRange = routingOutsideRange(range, rs);
+                if (outsideRange == null) break;
+                assertThatThrownBy(() -> subset.forKey(outsideRange))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("Range not found for %s", outsideRange);
+            }
         }
+        assertThat(topology.forSelection(topology.ranges())).isEqualTo(topology);
     }
 
     private static RoutingKey routing(Ranges ranges, RandomSource rs)
@@ -211,6 +226,46 @@ public class TopologyTest
             int value = rs.nextInt(start.hash, end.hash);
             if (range.endInclusive()) // exclude start, but include end... so +1
                 value++;
+            return PrefixedIntHashKey.forHash(start.prefix, value);
+        }
+        else
+        {
+            throw new IllegalArgumentException("Key type " + range.start().getClass() + " is not supported");
+        }
+    }
+
+    private enum Outside { BEFORE, AFTER }
+
+    @Nullable
+    private static RoutingKey routingOutsideRange(Range range, RandomSource rs)
+    {
+        if (range.start() instanceof PrefixedIntHashKey)
+        {
+            int minHash = 0;
+            int maxHash = 0xffff;
+            PrefixedIntHashKey.Hash start = (PrefixedIntHashKey.Hash) range.start();
+            PrefixedIntHashKey.Hash end = (PrefixedIntHashKey.Hash) range.end();
+
+            EnumSet<Outside> allowed = EnumSet.allOf(Outside.class);
+            if (start.hash == minHash)
+                allowed.remove(Outside.BEFORE);
+            if (end.hash == maxHash)
+                allowed.remove(Outside.AFTER);
+            if (allowed.isEmpty()) return null;
+            Outside next = Gens.pick(new ArrayList<>(allowed)).next(rs);
+            int value;
+            switch (next)
+            {
+                case BEFORE:
+                    value = rs.nextInt(minHash, range.startInclusive() ? start.hash : start.hash + 1);
+                    break;
+                case AFTER:
+                    value = rs.nextInt(range.endInclusive() ? end.hash + 1 : end.hash, maxHash);
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unknown value " + next);
+            }
+
             return PrefixedIntHashKey.forHash(start.prefix, value);
         }
         else

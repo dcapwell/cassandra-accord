@@ -299,7 +299,7 @@ public class Topology
                         break;
 
                     bi = (int)(abi >>> 32);
-                    newSubset[count++] = bi;
+                    newSubset[count++] = this.supersetIndexes[bi];
 
                     ++bi;
                 }
