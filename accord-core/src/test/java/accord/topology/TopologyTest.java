@@ -28,6 +28,7 @@ import accord.local.Node;
 import accord.primitives.Range;
 import accord.primitives.Keys;
 import accord.primitives.Ranges;
+import accord.primitives.RoutingKeys;
 import accord.utils.Gens;
 import accord.utils.RandomSource;
 import com.google.common.collect.Iterables;
@@ -130,53 +131,57 @@ public class TopologyTest
             for (int i = 0; i < topology.size(); i++)
             {
                 Shard shard = topology.get(i);
-                Topology subset = topology.forSubset(new int[] {i});
-                Topology trimmed = subset.trim();
-
-                assertThat(subset)
-                        .isSubset()
-                        .isEqualTo(trimmed)
-                        .hasSameHashCodeAs(trimmed)
-                        // this is slightly redundant as trimmed model should catch this... it is here in case trim breaks
-                        .hasSize(1)
-                        .isShardsEqualTo(shard)
-                        .isHostsEqualTo(shard.nodes)
-                        .isRangesEqualTo(shard.range);
-
-                checkTopology(subset, rs);
+                for (boolean withNodes : Arrays.asList(true, false))
                 {
-                    List<Shard> forEachShard = new ArrayList<>(1);
-                    subset.forEach(s -> forEachShard.add(s)); // cant do forEachShard::add due ambiguous signature (multiple matches in topology)
-                    assertThat(forEachShard).isEqualTo(Arrays.asList(shard));
-                }
+                    Topology subset = withNodes ?
+                                      topology.forSubset(new int[] {i}, topology.nodes()) :
+                                      topology.forSubset(new int[] {i});
+                    Topology trimmed = subset.trim();
 
-                for (Range range : subset.ranges())
-                {
-                    for (int j = 0; j < 10; j++)
+                    assertThat(subset)
+                            .isSubset()
+                            .isEqualTo(trimmed)
+                            .hasSameHashCodeAs(trimmed)
+                            // this is slightly redundant as trimmed model should catch this... it is here in case trim breaks
+                            .hasSize(1)
+                            .isShardsEqualTo(shard)
+                            .isHostsEqualTo(shard.nodes)
+                            .isRangesEqualTo(shard.range);
+
+                    checkTopology(subset, rs);
                     {
-                        RoutingKey key = routing(range, rs);
-                        assertThat(subset.forKey(key)).isEqualTo(shard);
+                        List<Shard> forEachShard = new ArrayList<>(1);
+                        subset.forEach(s -> forEachShard.add(s)); // cant do forEachShard::add due ambiguous signature (multiple matches in topology)
+                        assertThat(forEachShard).isEqualTo(Arrays.asList(shard));
                     }
+
+                    for (Range range : subset.ranges())
+                    {
+                        for (int j = 0; j < 10; j++)
+                        {
+                            RoutingKey key = routing(range, rs);
+                            assertThat(subset.forKey(key)).isEqualTo(shard);
+                        }
+                    }
+
+                    for (Node.Id node : new TreeSet<>(subset.nodes()))
+                    {
+                        assertThat(subset.forNode(node))
+                                .isEqualTo(trimmed.forNode(node))
+                                .isRangesEqualTo(subset.rangesForNode(node))
+                                .isRangesEqualTo(trimmed.rangesForNode(node));
+                    }
+
+                    // TODO
+                    // by Node
+                    // public <P> int foldlIntOn(Id on, IndexedIntFunction<P> consumer, P param, int offset, int initialValue, int terminalValue)
+                    // public <P1, P2, P3, O> O mapReduceOn(Id on, int offset, IndexedTriFunction<? super P1, ? super P2, ? super P3, ? extends O> function, P1 p1, P2 p2, P3 p3, BiFunction<? super O, ? super O, ? extends O> reduce, O initialValue)
+
+                    // by Range
+                    // public <T> T foldl(Unseekables<?> select, IndexedBiFunction<Shard, T, T> function, T accumulator)
+                    // public void visitNodeForKeysOnceOrMore(Unseekables<?> select, Consumer<Id> nodes)
+                    // public Topology forSelection(Unseekables<?> select, Collection<Id> nodes)
                 }
-
-                for (Node.Id node : new TreeSet<>(subset.nodes()))
-                {
-                    assertThat(subset.forNode(node))
-                            .isEqualTo(trimmed.forNode(node))
-                            .isRangesEqualTo(subset.rangesForNode(node))
-                            .isRangesEqualTo(trimmed.rangesForNode(node));
-                }
-
-                // TODO
-                // by Node
-                // public <P> int foldlIntOn(Id on, IndexedIntFunction<P> consumer, P param, int offset, int initialValue, int terminalValue)
-                // public <P1, P2, P3, O> O mapReduceOn(Id on, int offset, IndexedTriFunction<? super P1, ? super P2, ? super P3, ? extends O> function, P1 p1, P2 p2, P3 p3, BiFunction<? super O, ? super O, ? extends O> reduce, O initialValue)
-
-                // by Range
-                // public <T> T foldl(Unseekables<?> select, IndexedBiFunction<Shard, T, T> function, T accumulator)
-                // public void visitNodeForKeysOnceOrMore(Unseekables<?> select, Consumer<Id> nodes)
-                // public Topology forSelection(Unseekables<?> select, Collection<Id> nodes)
-                // public Topology forSelection(Unseekables<?> select)
             }
         });
     }
@@ -191,6 +196,8 @@ public class TopologyTest
             for (int i = 0; i < 10; i++)
             {
                 RoutingKey key = routing(range, rs);
+
+                assertThat(topology.forSelection(RoutingKeys.of(key))).isEqualTo(subset);
 
                 assertThat(topology.forKey(key))
                         .describedAs("forKey(key) != get(indexForKey(key)) for key %s", key)

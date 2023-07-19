@@ -240,12 +240,17 @@ public class Topology
         return new Topology(epoch, shards, ranges, nodeLookup, rangeSubset, newSubset);
     }
 
-    private Topology forSubset(int[] newSubset, Collection<Id> nodes)
+    @VisibleForTesting
+    Topology forSubset(int[] newSubset, Collection<Id> nodes)
     {
         Ranges rangeSubset = ranges.select(newSubset);
         Map<Id, NodeInfo> nodeLookup = new HashMap<>();
         for (Id id : nodes)
-            nodeLookup.put(id, this.nodeLookup.get(id));
+        {
+            NodeInfo info = this.nodeLookup.get(id).forSubset(newSubset);
+            if (info.ranges.isEmpty()) continue;
+            nodeLookup.put(id, info);
+        }
         return new Topology(epoch, shards, ranges, nodeLookup, rangeSubset, newSubset);
     }
 
