@@ -37,8 +37,10 @@ import accord.primitives.Range;
 import accord.primitives.RoutingKeys;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import static accord.Utils.id;
 import static accord.Utils.idList;
@@ -329,15 +331,28 @@ public class TopologyManagerTest
                 shard(PrefixedIntHashKey.range(0, 0, 100), dc2Nodes, dc2Fp),
                 shard(PrefixedIntHashKey.range(1, 0, 100), dc1Nodes, dc1Fp)));
 
-        // prefix=0 was added in epoch=1, removed in epoch=2, and added back to epoch=3
-        qt().withSeed(-264748563329313076L).check(rs -> checkAPI(service, rs));
+        // prefix=0 was added in epoch=1, removed in epoch=2, and added back to epoch=3; the ABA problem
+        RoutingKeys unseekables = RoutingKeys.of(PrefixedIntHashKey.forHash(0, 42));
+        for (Supplier<Topologies> fn : Arrays.<Supplier<Topologies>>asList(() -> service.preciseEpochs(unseekables, 1, 3),
+                                                                           () -> service.withUnsyncedEpochs(unseekables, 1, 3)))
+        {
+            assertThat(fn.get())
+                    .isNotEmpty()
+                    .hasAllEpochsBetween(1, 3)
+                    .containsAll(unseekables)
+                    .topology(1, a -> a.isEmpty())
+                    .topology(2, a -> a.isEmpty())
+                    .topology(3, a -> a.isNotEmpty()
+                                       .isRangesEqualTo(PrefixedIntHashKey.range(0, 0, 100))
+                                       .isHostsEqualTo(dc2Nodes));
+        }
     }
 
     @Test
     void fuzz()
     {
         // seeds to add back: 645630353491283432L
-        qt().withExamples(Integer.MAX_VALUE).check(rand -> {
+        qt().check(rand -> {
             PendingQueue queue = new RandomDelayQueue.Factory(rand).get();
             AgentExecutor executor = new SimulatedDelayedExecutorService(queue, new TestAgent.RethrowAgent(), rand);
             int numNodes = rand.nextInt(3, 20);
@@ -402,7 +417,7 @@ public class TopologyManagerTest
         Topologies topologies = service.preciseEpochs(select, range.min, range.max);
         assertThat(topologies)
                 .isNotEmpty()
-                .hasEpochsBetween(range.min, range.max)
+                .hasAllEpochsBetween(range.min, range.max)
                 .containsAll(select)
                 .containsAll(service, select);
     }

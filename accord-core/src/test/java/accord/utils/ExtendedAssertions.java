@@ -36,6 +36,7 @@ import org.assertj.core.error.ShouldNotBeEmpty;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class ExtendedAssertions
 {
@@ -75,6 +76,22 @@ public class ExtendedAssertions
             isNotNull();
             if (actual.isSubset())
                 throwAssertionError(new BasicErrorMessageFactory("%nExpected not to be a subset but was"));
+            return myself;
+        }
+
+        public TopologyAssert isEmpty()
+        {
+            isNotNull();
+            if (actual.size() != 0 || !actual.shards().isEmpty() || !actual.nodes().isEmpty())
+                throwAssertionError(ShouldBeEmpty.shouldBeEmpty(actual));
+            return myself;
+        }
+
+        public TopologyAssert isNotEmpty()
+        {
+            isNotNull();
+            if (actual.size() == 0 || actual.shards().isEmpty() || actual.nodes().isEmpty())
+                throwAssertionError(ShouldNotBeEmpty.shouldNotBeEmpty());
             return myself;
         }
 
@@ -141,11 +158,34 @@ public class ExtendedAssertions
             return myself;
         }
 
-        public TopologiesAssert hasEpochsBetween(long min, long max)
+        public TopologiesAssert hasAllEpochsBetween(long min, long max)
         {
             isNotNull();
-            if (!(actual.oldestEpoch() >= min && actual.oldestEpoch() <= max && actual.currentEpoch() >= min && actual.currentEpoch() <= max))
-                throwAssertionError(new BasicErrorMessageFactory("%nExpected epochs between %d and %d, but given %d and %d", min, max, actual.oldestEpoch(), actual.currentEpoch()));
+            for (long epoch = min; epoch <= max; epoch++)
+            {
+                try
+                {
+                    assertThat(actual.forEpoch(epoch)).isNotNull();
+                }
+                catch (Throwable t)
+                {
+                   throwAssertionError(new BasicErrorMessageFactory("%nExpected all epochs in [%s, %s], but %s was missing", min, max, epoch));
+                }
+            }
+            return myself;
+        }
+
+        public TopologiesAssert hasEpoch(long epoch)
+        {
+            isNotNull();
+            try
+            {
+                assertThat(actual.forEpoch(epoch)).isNotNull();
+            }
+            catch (Throwable t)
+            {
+                throwAssertionError(new BasicErrorMessageFactory("%nExpected epoch %s, but was missing; epochs [%s, %s]", epoch, actual.oldestEpoch(), actual.currentEpoch()));
+            }
             return myself;
         }
 
@@ -174,6 +214,13 @@ public class ExtendedAssertions
                 if (!globalIntersect.equals(selectedIntersect))
                     throwAssertionError(new BasicErrorMessageFactory("%nEpoch %s: select %s expected to match %s but actually matched %s", global.epoch(), select, globalIntersect, selectedIntersect));
             }
+            return myself;
+        }
+
+        public TopologiesAssert topology(long epoch, Consumer<TopologyAssert> fn)
+        {
+            hasEpoch(epoch);
+            fn.accept(assertThat(actual.forEpoch(epoch)));
             return myself;
         }
     }
