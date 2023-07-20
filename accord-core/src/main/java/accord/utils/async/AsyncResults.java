@@ -104,7 +104,11 @@ public class AsyncResults
         void setResult(V result, Throwable failure)
         {
             if (!trySetResult(result, failure))
-                throw new IllegalStateException("Result has already been set on " + this);
+            {
+                IllegalStateException f = new IllegalStateException("Result has already been set on " + this);
+                f.addSuppressed(failure);
+                throw f;
+            }
         }
 
         @Override
