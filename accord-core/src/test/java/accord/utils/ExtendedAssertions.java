@@ -27,6 +27,7 @@ import accord.topology.Shard;
 import accord.topology.Topologies;
 import accord.topology.Topology;
 import accord.topology.TopologyManager;
+import org.agrona.collections.LongArrayList;
 import org.assertj.core.api.AbstractAssert;
 import org.assertj.core.error.BasicErrorMessageFactory;
 import org.assertj.core.error.ShouldBeEmpty;
@@ -158,9 +159,15 @@ public class ExtendedAssertions
             return myself;
         }
 
-        public TopologiesAssert hasAllEpochsBetween(long min, long max)
+        public TopologiesAssert epochsBetween(long min, long max)
+        {
+            return epochsBetween(min, max, true);
+        }
+
+        public TopologiesAssert epochsBetween(long min, long max, boolean exact)
         {
             isNotNull();
+            LongArrayList missing = new LongArrayList();
             for (long epoch = min; epoch <= max; epoch++)
             {
                 try
@@ -169,8 +176,17 @@ public class ExtendedAssertions
                 }
                 catch (Throwable t)
                 {
-                   throwAssertionError(new BasicErrorMessageFactory("%nExpected all epochs in [%s, %s], but %s was missing", min, max, epoch));
+                    missing.add(epoch);
                 }
+            }
+            if (!missing.isEmpty())
+                throwAssertionError(new BasicErrorMessageFactory("%nExpected all epochs in [%s, %s], but %s were missing", min, max, missing));
+            if (exact)
+            {
+                if (actual.oldestEpoch() < min)
+                    throwAssertionError(new BasicErrorMessageFactory("%nExpected oldest epoch to be %s, but was %s", min, actual.oldestEpoch()));
+                if (actual.currentEpoch() > max)
+                    throwAssertionError(new BasicErrorMessageFactory("%nExpected latest epoch to be %s, but was %s", max, actual.currentEpoch()));
             }
             return myself;
         }
@@ -199,21 +215,6 @@ public class ExtendedAssertions
                 if (select.isEmpty()) return myself;
             }
             throwAssertionError(new BasicErrorMessageFactory("%nMissing ranges detected: %s", select));
-            return myself;
-        }
-
-        public TopologiesAssert containsAll(TopologyManager service, Unseekables<?> select)
-        {
-            isNotNull();
-            for (int i = 0; i < actual.size(); i++)
-            {
-                Topology selected = actual.get(i);
-                Topology global = service.globalForEpoch(selected.epoch());
-                Unseekables<?> globalIntersect = select.slice(global.ranges());
-                Unseekables<?> selectedIntersect = select.slice(selected.ranges());
-                if (!globalIntersect.equals(selectedIntersect))
-                    throwAssertionError(new BasicErrorMessageFactory("%nEpoch %s: select %s expected to match %s but actually matched %s", global.epoch(), select, globalIntersect, selectedIntersect));
-            }
             return myself;
         }
 

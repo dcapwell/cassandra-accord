@@ -18,14 +18,22 @@
 
 package accord.impl;
 
+import accord.api.RoutingKey;
 import accord.primitives.Range;
 import accord.local.Node;
 import accord.primitives.Ranges;
+import accord.primitives.RoutingKeys;
+import accord.primitives.Unseekables;
+import accord.primitives.Unseekables.UnseekablesKind;
 import accord.topology.Shard;
 import accord.topology.Topology;
+import accord.utils.Gens;
+import accord.utils.RandomSource;
+import accord.utils.Utils;
 import accord.utils.WrapAroundList;
 import accord.utils.WrapAroundSet;
 
+import javax.annotation.Nullable;
 import java.util.*;
 
 import static accord.utils.Utils.toArray;
@@ -89,5 +97,90 @@ public class TopologyUtils
     public static Topology initialTopology(List<Node.Id> cluster, Ranges ranges, int rf)
     {
         return initialTopology(toArray(cluster, Node.Id[]::new), ranges, rf);
+    }
+
+    public static RoutingKey routingKey(Range range, RandomSource rs)
+    {
+        if (range.start() instanceof PrefixedIntHashKey.Hash)
+        {
+            PrefixedIntHashKey.Hash start = (PrefixedIntHashKey.Hash) range.start();
+            PrefixedIntHashKey.Hash end = (PrefixedIntHashKey.Hash) range.end();
+            int value = rs.nextInt(start.hash, end.hash);
+            if (range.endInclusive()) // exclude start, but include end... so +1
+                value++;
+            return PrefixedIntHashKey.forHash(start.prefix, value);
+        }
+        else if (range.start() instanceof IntKey.Routing)
+        {
+            IntKey.Routing start = (IntKey.Routing) range.start();
+            IntKey.Routing end = (IntKey.Routing) range.end();
+            int value = rs.nextInt(start.key, end.key);
+            if (range.endInclusive()) // exclude start, but include end... so +1
+                value++;
+            return IntKey.routing(value);
+        }
+        else
+        {
+            throw new IllegalArgumentException("Key type " + range.start().getClass() + " is not supported");
+        }
+    }
+
+    private enum Outside { BEFORE, AFTER }
+
+    @Nullable
+    public static RoutingKey routingKeyOutsideRange(Range range, RandomSource rs)
+    {
+        if (range.start() instanceof PrefixedIntHashKey)
+        {
+            int minHash = 0;
+            int maxHash = 0xffff;
+            PrefixedIntHashKey.Hash start = (PrefixedIntHashKey.Hash) range.start();
+            PrefixedIntHashKey.Hash end = (PrefixedIntHashKey.Hash) range.end();
+
+            EnumSet<Outside> allowed = EnumSet.allOf(Outside.class);
+            if (start.hash == minHash)
+                allowed.remove(Outside.BEFORE);
+            if (end.hash == maxHash)
+                allowed.remove(Outside.AFTER);
+            if (allowed.isEmpty()) return null;
+            Outside next = Gens.pick(new ArrayList<>(allowed)).next(rs);
+            int value;
+            switch (next)
+            {
+                case BEFORE:
+                    value = rs.nextInt(minHash, range.startInclusive() ? start.hash : start.hash + 1);
+                    break;
+                case AFTER:
+                    value = rs.nextInt(range.endInclusive() ? end.hash + 1 : end.hash, maxHash);
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unknown value " + next);
+            }
+
+            return PrefixedIntHashKey.forHash(start.prefix, value);
+        }
+        else
+        {
+            throw new IllegalArgumentException("Key type " + range.start().getClass() + " is not supported");
+        }
+    }
+
+    public static Unseekables<?> select(Ranges ranges, RandomSource rs)
+    {
+        UnseekablesKind kind = rs.next(UnseekablesKind.RoutingKeys, UnseekablesKind.RoutingRanges);
+        switch (kind)
+        {
+            default: throw new IllegalStateException("Unexpected kind: " + kind);
+            case RoutingKeys:
+                Set<RoutingKey> keys = new TreeSet<>();
+                for (int i = 0, attempts = rs.nextInt(1, 10); i < attempts; i++)
+                    keys.add(routingKey(ranges.get(rs.nextInt(ranges.size())), rs));
+                return RoutingKeys.ofSortedUnique(Utils.toArray(new ArrayList<>(keys), RoutingKey[]::new));
+            case RoutingRanges:
+                Set<Range> selected = new TreeSet<>(Range::compare);
+                for (int i = 0, attempts = rs.nextInt(1, 10); i < attempts; i++)
+                    selected.add(ranges.get(rs.nextInt(ranges.size()))); // TODO sub-ranges
+                return Ranges.ofSortedAndDeoverlapped(Utils.toArray(new ArrayList<>(selected), Range[]::new));
+        }
     }
 }

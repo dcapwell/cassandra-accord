@@ -18,7 +18,12 @@
 
 package accord.utils;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
@@ -174,6 +179,40 @@ public interface RandomSource
 
     double nextGaussian();
 
+    default long next(long... array)
+    {
+        return next(array, 0, array.length);
+    }
+
+    default <T> T next(T... array)
+    {
+        return next(Arrays.asList(array));
+    }
+
+    default long next(long[] array, int offset, int length)
+    {
+        Impl.checkNextArray(array, array.length, offset, length);
+        return array[nextInt(offset, offset + length)];
+    }
+
+    default <T extends Comparable<T>> T next(Set<T> set)
+    {
+        List<T> values = new ArrayList<>(set);
+        values.sort(Comparator.naturalOrder());
+        return next(values);
+    }
+
+    default <T> T next(List<T> values)
+    {
+        return next(values, 0, values.size());
+    }
+
+    default <T> T next(List<T> values, int offset, int length)
+    {
+        Impl.checkNextArray(values, values.size(), offset, length);
+        return values.get(nextInt(offset, offset + length));
+    }
+
     void setSeed(long seed);
 
     RandomSource fork();
@@ -265,5 +304,16 @@ public interface RandomSource
                 return RandomSource.this.nextGaussian();
             }
         };
+    }
+
+    class Impl // once jdk8 is dropped can have private functions and replace this class
+    {
+        private static void checkNextArray(Object array, int realLength, int offset, int length)
+        {
+            if (length == 0 || realLength == 0)
+                throw new IllegalArgumentException("Can not fetch next from empty array");
+            if (offset + length > realLength)
+                throw new IndexOutOfBoundsException(String.format("offset = %d, length = %d; array length was %d", offset, length, realLength));
+        }
     }
 }

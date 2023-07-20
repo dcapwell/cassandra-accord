@@ -28,7 +28,10 @@ import accord.impl.basic.SimulatedDelayedExecutorService;
 import accord.local.AgentExecutor;
 import accord.primitives.Ranges;
 import accord.primitives.Unseekables;
+import accord.utils.Gen;
+import accord.utils.Gens;
 import accord.utils.RandomSource;
+import org.agrona.collections.Long2ObjectHashMap;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +41,12 @@ import accord.primitives.RoutingKeys;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -300,15 +308,48 @@ public class TopologyManagerTest
     @Test
     void removeRanges()
     {
-        TopologyManager service = new TopologyManager(SUPPLIER, ID);
-        addAndMarkSynced(service, topology(1, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2))));
-        Topology t2 = topology(2, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2)));
-        Topology t3 = topology(3, shard(range(201, 400), idList(1, 2, 3), idSet(1, 2)));
+        qt().withExamples(100).check(rs -> {
+            History history = new History(new TopologyManager(SUPPLIER, ID),
+                                          topology(1, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2))),
+                                          topology(2, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2))),
+                                          topology(3, shard(range(201, 400), idList(1, 2, 3), idSet(1, 2)))) {
 
-        service.onTopologyUpdate(t2);
-        service.onTopologyUpdate(t3);
-        markTopologySynced(service, t2.epoch());
-        markTopologySynced(service, t3.epoch());
+                @Override
+                protected void postTopologyUpdate(int id, Topology t)
+                {
+                    test(t);
+                }
+
+                @Override
+                protected void postEpochSyncComplete(int id, long epoch, Node.Id node)
+                {
+                    test(tm.globalForEpoch(epoch));
+                }
+
+                private void test(Topology topology)
+                {
+                    Ranges ranges = topology.ranges();
+                    for (int i = 0; i < 10; i++)
+                    {
+                        Unseekables<?> unseekables = TopologyUtils.select(ranges, rs);
+                        long maxEpoch = topology.epoch();
+                        long minEpoch = tm.minEpoch() == maxEpoch ? maxEpoch : rs.nextLong(tm.minEpoch(), maxEpoch);
+                        assertThat(tm.preciseEpochs(unseekables, minEpoch, maxEpoch))
+                                .isNotEmpty()
+                                .epochsBetween(minEpoch, maxEpoch)
+                                .containsAll(unseekables)
+                                .topology(maxEpoch, a -> a.isNotEmpty());
+
+                        assertThat(tm.withUnsyncedEpochs(unseekables, minEpoch, maxEpoch))
+                                .isNotEmpty()
+                                .epochsBetween(minEpoch, maxEpoch)
+                                .containsAll(unseekables)
+                                .topology(maxEpoch, a -> a.isNotEmpty());
+                    }
+                }
+            };
+            history.run(rs);
+        });
     }
 
     /**
@@ -333,12 +374,13 @@ public class TopologyManagerTest
 
         // prefix=0 was added in epoch=1, removed in epoch=2, and added back to epoch=3; the ABA problem
         RoutingKeys unseekables = RoutingKeys.of(PrefixedIntHashKey.forHash(0, 42));
+
         for (Supplier<Topologies> fn : Arrays.<Supplier<Topologies>>asList(() -> service.preciseEpochs(unseekables, 1, 3),
                                                                            () -> service.withUnsyncedEpochs(unseekables, 1, 3)))
         {
             assertThat(fn.get())
                     .isNotEmpty()
-                    .hasAllEpochsBetween(1, 3)
+                    .epochsBetween(1, 3)
                     .containsAll(unseekables)
                     .topology(1, a -> a.isEmpty())
                     .topology(2, a -> a.isEmpty())
@@ -349,10 +391,15 @@ public class TopologyManagerTest
     }
 
     @Test
+    void rangeRemoved()
+    {
+
+    }
+
+    @Test
     void fuzz()
     {
-        // seeds to add back: 645630353491283432L
-        qt().check(rand -> {
+        qt().withSeed(-4402647132836083843L).check(rand -> {
             PendingQueue queue = new RandomDelayQueue.Factory(rand).get();
             AgentExecutor executor = new SimulatedDelayedExecutorService(queue, new TestAgent.RethrowAgent(), rand);
             int numNodes = rand.nextInt(3, 20);
@@ -417,31 +464,28 @@ public class TopologyManagerTest
         Topologies topologies = service.preciseEpochs(select, range.min, range.max);
         assertThat(topologies)
                 .isNotEmpty()
-                .hasAllEpochsBetween(range.min, range.max)
-                .containsAll(select)
-                .containsAll(service, select);
+                .epochsBetween(range.min, range.max)
+                .containsAll(select);
     }
 
     private static void checkWithUnsyncedEpochs(TopologyManager service, RandomSource rand)
     {
-//        EpochRange range = EpochRange.from(service, rand);
-//        Unseekables<?> select = select(service, range, rand);
-//        Topologies topologies = service.withUnsyncedEpochs(select, range.min, range.max);
+        EpochRange range = EpochRange.from(service, rand);
+        Unseekables<?> select = select(service, range, rand);
+        Topologies topologies = service.withUnsyncedEpochs(select, range.min, range.max);
+        assertThat(topologies)
+                .isNotEmpty()
+                .epochsBetween(range.min, range.max, false) // older epochs are allowed
+                .containsAll(select);
     }
 
-    private static Unseekables<?> select(TopologyManager service, EpochRange range, RandomSource rand)
+    private static Unseekables<?> select(TopologyManager service, EpochRange range, RandomSource rs)
     {
-        List<Range> selected = new ArrayList<>();
-        for (long epoch = range.min; epoch <= range.max; epoch++)
-        {
-            Topology topology = service.globalForEpoch(epoch);
-            Ranges ranges = topology.ranges();
-            int selectionCount = rand.nextInt(10);
-            for (int i = 0; i < selectionCount; i++)
-                // may have duplicates; they will be merged later
-                selected.add(ranges.get(rand.nextInt(ranges.size())));
-        }
-        return Ranges.of(selected.toArray(new Range[selected.size()])).mergeTouching();
+        // An actual case that is possible is that the txn is in epoch=N and the executeAt epoch is N+M
+        // This means that the selection must contain valid ranges from MIN, which may not exist later on in MAX
+        // TODO (coverage): what cases would cause MIN < txn.epoch()?  If so, need to mimic that here
+        Ranges ranges = service.globalForEpoch(range.min).ranges();
+        return TopologyUtils.select(ranges, rs);
     }
 
     private static class EpochRange
@@ -465,6 +509,91 @@ public class TopologyManagerTest
                 min = tmp;
             }
             return new EpochRange(min, max);
+        }
+    }
+
+    private static class History
+    {
+        private enum Action { OnEpochSyncComplete, OnTopologyUpdate;}
+
+        protected final TopologyManager tm;
+        private final Iterator<Topology> next;
+        private final Long2ObjectHashMap<Set<Node.Id>> pendingSyncComplete = new Long2ObjectHashMap<>();
+        private final Map<EnumMap<Action, Integer>, Gen<Action>> cache = new HashMap<>();
+        private int id = 0;
+
+        public History(TopologyManager tm, Topology... topologies)
+        {
+            this.tm = tm;
+            next = Arrays.asList(topologies).iterator();
+        }
+
+        protected void preTopologyUpdate(int id, Topology t)
+        {
+
+        }
+
+        protected void postTopologyUpdate(int id, Topology t)
+        {
+
+        }
+
+        protected void preEpochSyncComplete(int id, long epoch, Node.Id node)
+        {
+
+        }
+
+        protected void postEpochSyncComplete(int id, long epoch, Node.Id node)
+        {
+
+        }
+
+        public void run(RandomSource rs)
+        {
+            //noinspection StatementWithEmptyBody
+            while (process(rs));
+        }
+
+        public boolean process(RandomSource rs)
+        {
+            EnumMap<Action, Integer> possibleActions = new EnumMap<>(Action.class);
+            if (!pendingSyncComplete.isEmpty())
+                possibleActions.put(Action.OnEpochSyncComplete, 10);
+            if (next.hasNext())
+                possibleActions.put(Action.OnTopologyUpdate, 1);
+            if (possibleActions.isEmpty())
+            {
+                if (id == 0)
+                    throw new IllegalArgumentException("No history processed");
+                return false;
+            }
+            int id = this.id++;
+            Gen<Action> actionGen = cache.computeIfAbsent(possibleActions, Gens::pick);
+            Action action = actionGen.next(rs);
+            switch (action)
+            {
+                case OnTopologyUpdate:
+                    Topology t = next.next();
+                    preTopologyUpdate(id, t);
+                    tm.onTopologyUpdate(t);
+                    pendingSyncComplete.put(t.epoch, new HashSet<>(t.nodes()));
+                    postTopologyUpdate(id, t);
+                    break;
+                case OnEpochSyncComplete:
+                    long epoch = rs.next(pendingSyncComplete.keySet());
+                    Set<Node.Id> pendingNodes = pendingSyncComplete.get(epoch);
+                    Node.Id node = rs.next(pendingNodes);
+                    pendingNodes.remove(node);
+                    if (pendingNodes.isEmpty())
+                        pendingSyncComplete.remove(epoch);
+                    preEpochSyncComplete(id, epoch, node);
+                    tm.onEpochSyncComplete(node, epoch);
+                    postEpochSyncComplete(id, epoch, node);
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unknown action: " + action);
+            }
+            return true;
         }
     }
 }

@@ -502,27 +502,31 @@ public class TopologyManager
         while (i < maxi)
         {
             EpochState epochState = snapshot.epochs[i++];
-            topologies.add(epochState.global.forSelection(select));
+            topologies.add(epochState.global.forSelection(remaining));
+            remaining = remaining.subtract(isSufficientFor.apply(epochState));
             remaining = remaining.subtract(epochState.addedRanges);
         }
-
-        if (i == snapshot.epochs.length)
+        if (remaining.isEmpty())
             return topologies;
 
+        if (i == snapshot.epochs.length)
+        {
+            if (!remaining.isEmpty()) throw new IllegalArgumentException("Ranges " + remaining + " could not be found");
+            return topologies;
+        }
+
         // include any additional epochs to reach sufficiency
-        EpochState prev = snapshot.epochs[maxi - 1];
         do
         {
-            Ranges sufficient = isSufficientFor.apply(prev);
-            remaining = remaining.subtract(sufficient);
-            remaining = remaining.subtract(prev.addedRanges);
-            if (remaining.isEmpty())
-                return topologies;
-
             EpochState next = snapshot.epochs[i++];
             topologies.add(next.global.forSelection(remaining));
-            prev = next;
+            remaining = remaining.subtract(isSufficientFor.apply(next));
+            remaining = remaining.subtract(next.addedRanges);
+            if (remaining.isEmpty())
+                return topologies;
         } while (i < snapshot.epochs.length);
+
+        if (!remaining.isEmpty()) throw new IllegalArgumentException("Ranges " + remaining + " could not be found");
 
         return topologies;
     }
@@ -546,9 +550,7 @@ public class TopologyManager
             else
             {
                 // topology partially matches the selection...
-                Unseekables<?> intersects = select.slice(epochState.global.ranges);
-                if (intersects.isEmpty()) continue;
-                topologies.add(epochState.global.forSelection(intersects));
+                topologies.add(epochState.global.forSelection(select.slice(epochState.global.ranges)));
             }
             select = select.subtract(epochState.addedRanges);
         }
