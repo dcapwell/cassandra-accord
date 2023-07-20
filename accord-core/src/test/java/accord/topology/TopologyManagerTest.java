@@ -309,10 +309,11 @@ public class TopologyManagerTest
     void removeRanges()
     {
         qt().withExamples(100).check(rs -> {
+            long epochCounter = rs.nextInt(1, 42);
             History history = new History(new TopologyManager(SUPPLIER, ID),
-                                          topology(1, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2))),
-                                          topology(2, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2))),
-                                          topology(3, shard(range(201, 400), idList(1, 2, 3), idSet(1, 2)))) {
+                                          topology(epochCounter++, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2))),
+                                          topology(epochCounter++, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2))),
+                                          topology(epochCounter++, shard(range(201, 400), idList(1, 2, 3), idSet(1, 2)))) {
 
                 @Override
                 protected void postTopologyUpdate(int id, Topology t)
