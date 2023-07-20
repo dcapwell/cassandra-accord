@@ -101,6 +101,7 @@ public class Commands
     {
     }
 
+    @Nullable
     private static Ranges covers(@Nullable PartialTxn txn)
     {
         return txn == null ? null : txn.covering();
@@ -1346,7 +1347,7 @@ public class Commands
 
     // FIXME (immutable-state): has this been removed?
     private static boolean validate(EnsureAction action, Ranges existingRanges, Ranges additionalRanges,
-                                    Ranges existing, Ranges adding, String kind, Object obj)
+                                    @Nullable Ranges existing, Ranges adding, String kind, Object obj)
     {
         switch (action)
         {
@@ -1368,10 +1369,10 @@ public class Commands
             case Set:
                 // failing any of these tests is always an illegal state
                 Invariants.checkState(adding != null);
-                if (!adding.containsAll(existingRanges))
+                if (!adding.containsAll(existingRanges) && !adding.intersects(existingRanges))
                     throw new IllegalArgumentException("Incomplete " + kind + " (" + obj + ") provided; does not cover " + existingRanges);
 
-                if (additionalRanges != existingRanges && !adding.containsAll(additionalRanges))
+                if (additionalRanges != existingRanges && !adding.intersects(additionalRanges))
                     throw new IllegalArgumentException("Incomplete " + kind + " (" + obj + ") provided; does not cover " + additionalRanges);
                 break;
 
