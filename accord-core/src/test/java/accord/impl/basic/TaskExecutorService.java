@@ -29,6 +29,7 @@ import java.util.concurrent.TimeoutException;
 
 import accord.local.AgentExecutor;
 import accord.utils.async.AsyncResults;
+import com.google.common.base.Throwables;
 
 public abstract class TaskExecutorService extends AbstractExecutorService implements AgentExecutor
 {
@@ -50,7 +51,13 @@ public abstract class TaskExecutorService extends AbstractExecutorService implem
             }
             catch (Throwable t)
             {
-                setFailure(t);
+                // setSuccess may trigger callbacks, which may throw exceptions... if that happens then the result was
+                // already set
+                if (!tryFailure(t))
+                {
+                    Throwables.throwIfUnchecked(t);
+                    throw new RuntimeException(t);
+                }
             }
         }
 
