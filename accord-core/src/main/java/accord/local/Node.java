@@ -418,7 +418,11 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
     public void reply(Id replyingToNode, ReplyContext replyContext, Reply send)
     {
         if (send == null)
-            throw new NullPointerException();
+        {
+            NullPointerException e = new NullPointerException();
+            agent.onUncaughtException(e);
+            throw e;
+        }
         messageSink.reply(replyingToNode, replyContext, send);
     }
 
