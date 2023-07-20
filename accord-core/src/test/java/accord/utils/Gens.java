@@ -21,12 +21,15 @@ package accord.utils;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 
 public class Gens {
@@ -52,6 +55,25 @@ public class Gens {
     {
         Gen.IntGen offset = ints().between(0, ts.size() - 1);
         return rs -> ts.get(offset.nextInt(rs));
+    }
+
+    public static <T> Gen<T> pick(Map<T, Integer> values)
+    {
+        if (values == null || values.isEmpty())
+            throw new IllegalArgumentException("values is empty");
+        double totalWeight = values.values().stream().mapToDouble(Integer::intValue).sum();
+        List<Weight<T>> list = values.entrySet().stream().map(e -> new Weight<>(e.getKey(), e.getValue())).collect(Collectors.toList());
+        Collections.sort(list);
+        return rs -> {
+            double value = rs.nextDouble() * totalWeight;
+            for (Weight<T> w : list)
+            {
+                value -= w.weight;
+                if (value <= 0)
+                    return w.value;
+            }
+            return list.get(list.size() - 1).value;
+        };
     }
 
     public static Gen<char[]> charArray(Gen.IntGen sizes, char[] domain)
@@ -465,6 +487,22 @@ public class Gens {
         @Override
         public void reset() {
             base.reset();
+        }
+    }
+
+    private static class Weight<T> implements Comparable<Weight<T>>
+    {
+        private final T value;
+        private final double weight;
+
+        private Weight(T value, double weight) {
+            this.value = value;
+            this.weight = weight;
+        }
+
+        @Override
+        public int compareTo(Weight<T> o) {
+            return Double.compare(weight, o.weight);
         }
     }
 }
