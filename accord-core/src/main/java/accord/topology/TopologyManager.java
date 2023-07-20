@@ -175,6 +175,14 @@ public class TopologyManager
         {
             return syncComplete.containsAll(intersect);
         }
+
+        @Override
+        public String toString()
+        {
+            return "EpochState{" +
+                   "epoch=" + global.epoch() +
+                   '}';
+        }
     }
 
     private static class Epochs

@@ -31,6 +31,7 @@ import accord.primitives.Range;
 import accord.primitives.Ranges;
 import accord.utils.Invariants;
 
+import com.google.common.collect.Sets;
 import org.agrona.collections.IntHashSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -199,11 +200,15 @@ public class TopologyRandomizer
         if (Arrays.stream(shards).allMatch(shard -> shard.sortedNodes.containsAll(shardLeft.sortedNodes) || shardLeft.containsAll(shard.sortedNodes)))
             return shards;
 
+        Set<Node.Id> joining = new HashSet<>();
+        joining.addAll(shardLeft.joining);
+
         int idxRight;
         Shard shardRight;
         do {
             idxRight = random.nextInt(shards.length);
             shardRight = shards[idxRight];
+            joining.addAll(shardRight.joining);
         } while (idxRight == idxLeft || shardLeft.sortedNodes.containsAll(shardRight.sortedNodes) || shardRight.sortedNodes.containsAll(shardLeft.sortedNodes));
 
         List<Node.Id> nodesLeft;
@@ -230,8 +235,8 @@ public class TopologyRandomizer
         nodesRight.add(toRight);
 
         Shard[] newShards = shards.clone();
-        newShards[idxLeft] = new Shard(shardLeft.range, nodesLeft, newFastPath(nodesLeft, random), shardLeft.joining);
-        newShards[idxRight] = new Shard(shardRight.range, nodesRight, newFastPath(nodesRight, random), shardRight.joining);
+        newShards[idxLeft] = new Shard(shardLeft.range, nodesLeft, newFastPath(nodesLeft, random), Sets.intersection(joining, new HashSet<>(nodesLeft)));
+        newShards[idxRight] = new Shard(shardRight.range, nodesRight, newFastPath(nodesRight, random), Sets.intersection(joining, new HashSet<>(nodesRight)));
         logger.debug("updated membership on {} & {} {} {} to {} {}",
                     idxLeft, idxRight,
                     shardLeft.toString(true), shardRight.toString(true),
@@ -293,8 +298,7 @@ public class TopologyRandomizer
             Range range = ranges[i];
             List<Node.Id> replicas = select(nodes, rf, random);
             Set<Node.Id> fastPath = newFastPath(replicas, random);
-            // TODO (correcness) : joining is all nodes joining or just the ones in the replica set?
-            result.add(new Shard(range, replicas, fastPath, joining));
+            result.add(new Shard(range, replicas, fastPath, Sets.intersection(joining, new HashSet<>(replicas))));
         }
         return result.toArray(new Shard[result.size()]);
     }

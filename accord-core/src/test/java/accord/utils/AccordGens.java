@@ -149,6 +149,11 @@ public class AccordGens
         return topologys(epochs(), nodes());
     }
 
+    public static Gen<Topology> topologys(Gen.LongGen epochGen)
+    {
+        return topologys(epochGen, nodes());
+    }
+
     public static Gen<Topology> topologys(Gen.LongGen epochGen, Gen<Node.Id> nodeGen)
     {
         return topologys(epochGen, nodeGen, AccordGens::prefixedIntHashKeyRanges);

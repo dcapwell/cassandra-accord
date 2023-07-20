@@ -22,15 +22,19 @@ import accord.burn.TopologyUpdates;
 import accord.impl.PrefixedIntHashKey;
 import accord.impl.TestAgent;
 import accord.impl.TopologyUtils;
+import accord.impl.basic.Pending;
 import accord.impl.basic.PendingQueue;
 import accord.impl.basic.RandomDelayQueue;
 import accord.impl.basic.SimulatedDelayedExecutorService;
 import accord.local.AgentExecutor;
 import accord.primitives.Ranges;
 import accord.primitives.Unseekables;
+import accord.utils.AccordGens;
 import accord.utils.Gen;
 import accord.utils.Gens;
 import accord.utils.RandomSource;
+import com.google.common.collect.AbstractIterator;
+import com.google.common.collect.Iterators;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -39,7 +43,6 @@ import accord.local.Node;
 import accord.primitives.Range;
 import accord.primitives.RoutingKeys;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -400,55 +403,61 @@ public class TopologyManagerTest
     @Test
     void fuzz()
     {
-        qt().withSeed(-4402647132836083843L).check(rand -> {
-            PendingQueue queue = new RandomDelayQueue.Factory(rand).get();
-            AgentExecutor executor = new SimulatedDelayedExecutorService(queue, new TestAgent.RethrowAgent(), rand);
-            int numNodes = rand.nextInt(3, 20);
-            List<Node.Id> nodes = new ArrayList<>(numNodes);
-            Range[] ranges = PrefixedIntHashKey.ranges(0, numNodes);
-            for (int i = 0; i < numNodes; i++)
-                nodes.add(new Node.Id(i + 1));
-            Topology first = TopologyUtils.initialTopology(nodes, Ranges.of(ranges), 3);
-            TopologyRandomizer randomizer = new TopologyRandomizer(() -> rand, first, new TopologyUpdates(executor), null);
+        Gen<Topology> topologyGen = AccordGens.topologys(Gens.longs().between(1, 1024));
+        qt().withSeed(-4402647132836083843L).check(rs -> {
+            PendingQueue queue = new RandomDelayQueue.Factory(rs).get();
+            Runnable processQueue = () -> {
+                for (int i = 0, size = rs.nextInt(1, 10); i < size; i++)
+                {
+                    Pending pending = queue.poll();
+                    if (pending == null) return;
+                    if (pending instanceof Runnable) ((Runnable) pending).run();
+                    else                             throw new IllegalStateException("Unexpected pending element: " + pending);
+                }
+            };
+            AgentExecutor executor = new SimulatedDelayedExecutorService(queue, new TestAgent.RethrowAgent(), rs);
+            Topology first = topologyGen.next(rs);
+            TopologyRandomizer randomizer = new TopologyRandomizer(() -> rs, first, new TopologyUpdates(executor), null);
             TopologyManager service = new TopologyManager(SUPPLIER, ID);
-            long lastFullAck = 0;
-            for (int i = 0; i < 100; i++)
+            Iterator<Topology> next = Iterators.limit(new AbstractIterator<Topology>()
             {
-                Topology current;
+                @Override
+                protected Topology computeNext()
                 {
                     Topology t = randomizer.updateTopology();
                     for (int attempt = 0; t == null && attempt < TopologyRandomizer.UpdateType.values().length * 2; attempt++)
                         t = randomizer.updateTopology();
-                    // if no new updates can happen, stop early
-                    if (t == null)
-                        return;
-                    current = t;
+                    return t == null ? endOfData() : t;
                 }
-                service.onTopologyUpdate(current);
-                if (rand.decide(.2))
+            }, 100);
+            History history = new History(service, next) {
+                @Override
+                protected void preTopologyUpdate(int id, Topology t)
                 {
-                    markTopologySynced(service, current.epoch());
-                    lastFullAck = current.epoch();
-                }
-                else if (i != 0 && lastFullAck + 1 < current.epoch() && rand.decide(.5))
-                {
-                    long epoch = rand.nextLong(lastFullAck + 1, current.epoch());
-                    markTopologySynced(service, epoch);
-                    lastFullAck = epoch;
-                }
-                else
-                {
-                    TopologyManager.EpochState state = service.getEpochStateUnsafe(current.epoch());
-                    state.global().nodes().forEach(id -> {
-                        if (rand.decide(.5))
-                            service.onEpochSyncComplete(id, current.epoch());
-                    });
-                    if (state.syncComplete())
-                        lastFullAck = current.epoch();
+                    processQueue.run();
                 }
 
-                checkAPI(service, rand);
-            }
+                @Override
+                protected void postTopologyUpdate(int id, Topology t)
+                {
+                    checkAPI(tm, rs);
+                    processQueue.run();
+                }
+
+                @Override
+                protected void preEpochSyncComplete(int id, long epoch, Node.Id node)
+                {
+                    processQueue.run();
+                }
+
+                @Override
+                protected void postEpochSyncComplete(int id, long epoch, Node.Id node)
+                {
+                    checkAPI(tm, rs);
+                    processQueue.run();
+                }
+            };
+            history.run(rs);
         });
     }
 
@@ -511,6 +520,12 @@ public class TopologyManagerTest
             }
             return new EpochRange(min, max);
         }
+
+        @Override
+        public String toString()
+        {
+            return "[" + min + ", " + max + "]";
+        }
     }
 
     private static class History
@@ -525,8 +540,13 @@ public class TopologyManagerTest
 
         public History(TopologyManager tm, Topology... topologies)
         {
+            this(tm, Arrays.asList(topologies).iterator());
+        }
+
+        public History(TopologyManager tm, Iterator<Topology> next)
+        {
             this.tm = tm;
-            this.next = Arrays.asList(topologies).iterator();
+            this.next = next;
         }
 
         protected void preTopologyUpdate(int id, Topology t)
