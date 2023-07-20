@@ -526,7 +526,7 @@ public class TopologyManagerTest
         public History(TopologyManager tm, Topology... topologies)
         {
             this.tm = tm;
-            next = Arrays.asList(topologies).iterator();
+            this.next = Arrays.asList(topologies).iterator();
         }
 
         protected void preTopologyUpdate(int id, Topology t)
