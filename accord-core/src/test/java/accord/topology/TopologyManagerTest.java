@@ -397,7 +397,7 @@ public class TopologyManagerTest
         Gen<Topology> topologyGen = AccordGens.topologys(Gens.longs().between(1, 1024));
         AgentExecutor executor = Mockito.mock(AgentExecutor.class, Mockito.withSettings().defaultAnswer(ignore -> { throw new IllegalStateException("Attempted to perform async operation"); }));
         Mockito.doReturn(new TestAgent.RethrowAgent()).when(executor).agent();
-        qt().withSeed(-7359919505787252503L).withExamples(20).check(rs -> {
+        qt().withExamples(20).check(rs -> {
             TopologyRandomizer randomizer = new TopologyRandomizer(() -> rs, topologyGen.next(rs), new TopologyUpdates(executor), null);
             Iterator<Topology> next = Iterators.limit(new AbstractIterator<Topology>()
             {
@@ -415,38 +415,43 @@ public class TopologyManagerTest
                 @Override
                 protected void postTopologyUpdate(int id, Topology t)
                 {
-                    checkAPI(tm, rs);
+                    check(tm, rs);
                 }
 
                 @Override
                 protected void postEpochSyncComplete(int id, long epoch, Node.Id node)
                 {
-                    checkAPI(tm, rs);
+                    check(tm, rs);
                 }
             };
             history.run(rs);
         });
     }
 
-    private static void checkAPI(TopologyManager service, RandomSource rand)
+    private static void check(TopologyManager service, RandomSource rand)
     {
-        EpochRange range = EpochRange.from(service, rand);
-        Unseekables<?> select = select(service, range, rand);
+        for (int i = 0; i < 2; i++)
+        {
+            EpochRange range = EpochRange.from(service, rand);
+            Unseekables<?> select = select(service, range, rand);
 
-        assertThat(service.preciseEpochs(select, range.min, range.max))
-                .isNotEmpty()
-                .epochsBetween(range.min, range.max)
-                .containsAll(select);
+            assertThat(service.preciseEpochs(select, range.min, range.max))
+                    .isNotEmpty()
+                    .epochsBetween(range.min, range.max)
+                    .containsAll(select);
 
-        assertThat(service.withUnsyncedEpochs(select, range.min, range.max))
-                .isNotEmpty()
-                .epochsBetween(range.min, range.max, false) // older epochs are allowed
-                .containsAll(select);
+            assertThat(service.withUnsyncedEpochs(select, range.min, range.max))
+                    .isNotEmpty()
+                    .epochsBetween(range.min, range.max, false) // older epochs are allowed
+                    .containsAll(select);
+        }
     }
 
     private static Unseekables<?> select(TopologyManager service, EpochRange range, RandomSource rs)
     {
-        long epoch = range.min == range.max ? range.min : rs.pickLong(range.min, range.max);
+        long epoch = range.min == range.max ?
+                     range.min :
+                     rs.pickLong(range.min, range.max);
         Ranges ranges = service.globalForEpoch(epoch).ranges();
         return TopologyUtils.select(ranges, rs);
     }
@@ -463,6 +468,8 @@ public class TopologyManagerTest
 
         static EpochRange from(TopologyManager service, RandomSource rand)
         {
+            if (service.minEpoch() == service.epoch())
+                return new EpochRange(service.epoch(), service.epoch());
             long min = rand.nextLong(service.minEpoch(), service.epoch() + 1);
             long max = rand.nextLong(service.minEpoch(), service.epoch() + 1);
             if (min > max)
