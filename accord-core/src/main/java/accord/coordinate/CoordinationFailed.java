@@ -26,7 +26,7 @@ import accord.primitives.TxnId;
 /**
  * Thrown when a transaction exceeds its specified timeout for obtaining a result for a client
  */
-public class CoordinationFailed extends Throwable
+public class CoordinationFailed extends RuntimeException
 {
     private @Nullable TxnId txnId;
     private @Nullable RoutingKey homeKey;
