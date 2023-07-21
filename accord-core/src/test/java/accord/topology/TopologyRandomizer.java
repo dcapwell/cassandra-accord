@@ -396,9 +396,7 @@ public class TopologyRandomizer
     {
         Invariants.nonNull(nodeLookup);
         Topology current = epochs.get(epochs.size() - 1);
-        List<Node.Id> nodes = new ArrayList<>(current.nodes());
-        Node.Id nodeId = nodes.get(random.nextInt(nodes.size()));
-        Node node = nodeLookup.apply(nodeId);
+        Node node = nodeLookup.apply(random.pick(current.nodes()));
         Ranges ranges = selectRanges(node.topology().currentLocal().ranges);
         CoordinateSyncPoint.exclusive(node, ranges)
                            .addCallback((success, fail) -> {
