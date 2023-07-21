@@ -170,7 +170,7 @@ public abstract class AbstractKeys<K extends RoutableKey> implements Iterable<K>
     @Override
     public String toString()
     {
-        return stream().map(Object::toString).collect(Collectors.joining(",", "[", "]"));
+        return stream().map(Object::toString).collect(Collectors.joining(", ", "[", "]"));
     }
 
 
