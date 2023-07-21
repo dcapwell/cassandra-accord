@@ -31,7 +31,9 @@ import accord.primitives.FullRoute;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
+import accord.topology.Topology;
 import accord.utils.async.AsyncResult;
+import accord.utils.async.AsyncResults;
 
 import static accord.coordinate.Propose.Invalidate.proposeAndCommitInvalidate;
 import static accord.coordinate.ProposeAndExecute.proposeAndExecute;
@@ -51,6 +53,9 @@ public class CoordinateTransaction extends CoordinatePreAccept<Result>
 
     public static AsyncResult<Result> coordinate(Node node, TxnId txnId, Txn txn, FullRoute<?> route)
     {
+        Topology t = node.topology().globalForEpoch(txnId.epoch());
+        if (!validFor(txn, t))
+            return AsyncResults.failure(new TopologyMismatch(txnId, null, t, txn.keys()));
         CoordinateTransaction coordinate = new CoordinateTransaction(node, txnId, txn, route);
         coordinate.start();
         return coordinate;

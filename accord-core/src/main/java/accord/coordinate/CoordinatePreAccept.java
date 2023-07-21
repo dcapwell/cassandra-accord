@@ -241,7 +241,7 @@ abstract class CoordinatePreAccept<T> extends SettableResult<T> implements Callb
         //  (noting that nodes may have adopted new ranges, in which case they should be discounted, and quorums may have changed shape)
         node.withEpoch(executeAt.epoch(), () -> {
             Topology execTopology = node.topology().globalForEpoch(executeAt.epoch());
-            if (!valid(execTopology))
+            if (!validFor(txn, execTopology))
             {
                 TopologyMismatch mismatch = new TopologyMismatch(txnId, route.homeKey(), execTopology, txn.keys());
                 Invalidate.invalidate(node, txnId, route, (outcome, failure) -> {
@@ -268,10 +268,10 @@ abstract class CoordinatePreAccept<T> extends SettableResult<T> implements Callb
         });
     }
 
-    private boolean valid(Topology exec)
+    protected static boolean validFor(Txn txn, Topology t)
     {
         Seekables<?, ?> keysOrRanges = txn.keys();
-        Seekables<?, ?> updatedRanges = keysOrRanges.slice(exec.ranges(), Routables.Slice.Minimal);
+        Seekables<?, ?> updatedRanges = keysOrRanges.slice(t.ranges(), Routables.Slice.Minimal);
         return updatedRanges.containsAll(keysOrRanges);
     }
 
