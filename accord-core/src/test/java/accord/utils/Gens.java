@@ -18,6 +18,8 @@
 
 package accord.utils;
 
+import com.google.common.collect.Iterables;
+
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -61,6 +63,11 @@ public class Gens {
     {
         if (values == null || values.isEmpty())
             throw new IllegalArgumentException("values is empty");
+        if (values.size() == 1)
+        {
+            T singleValue = Iterables.getFirst(values.keySet(), null);
+            return rs -> singleValue;
+        }
         double totalWeight = values.values().stream().mapToDouble(Integer::intValue).sum();
         List<Weight<T>> list = values.entrySet().stream().map(e -> new Weight<>(e.getKey(), e.getValue())).collect(Collectors.toList());
         Collections.sort(list);

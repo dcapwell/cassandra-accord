@@ -394,18 +394,18 @@ public class TopologyManagerTest
     @Test
     void fuzz()
     {
-        Gen<Topology> topologyGen = AccordGens.topologys(Gens.longs().between(1, 1024));
+        Gen<Topology> firstTopology = AccordGens.topologys(Gens.longs().between(1, 1024)); // limit the epochs between 1-1024 so its easier to tell the difference while in a debugger
         AgentExecutor executor = Mockito.mock(AgentExecutor.class, Mockito.withSettings().defaultAnswer(ignore -> { throw new IllegalStateException("Attempted to perform async operation"); }));
         Mockito.doReturn(new TestAgent.RethrowAgent()).when(executor).agent();
         qt().withExamples(20).check(rs -> {
-            TopologyRandomizer randomizer = new TopologyRandomizer(() -> rs, topologyGen.next(rs), new TopologyUpdates(executor), null);
+            TopologyRandomizer randomizer = new TopologyRandomizer(() -> rs, firstTopology.next(rs), new TopologyUpdates(executor), null);
             Iterator<Topology> next = Iterators.limit(new AbstractIterator<Topology>()
             {
                 @Override
                 protected Topology computeNext()
                 {
                     Topology t = randomizer.updateTopology();
-                    for (int attempt = 0; t == null && attempt < TopologyRandomizer.UpdateType.values().length * 2; attempt++)
+                    for (int attempt = 0, maxAttempt = TopologyRandomizer.UpdateType.values().length * 2; t == null && attempt < maxAttempt; attempt++)
                         t = randomizer.updateTopology();
                     return t == null ? endOfData() : t;
                 }
@@ -535,11 +535,11 @@ public class TopologyManagerTest
             while (process(rs));
         }
 
-        public boolean process(RandomSource rs)
+        private boolean process(RandomSource rs)
         {
             EnumMap<Action, Integer> possibleActions = new EnumMap<>(Action.class);
             if (!pendingSyncComplete.isEmpty())
-                possibleActions.put(Action.OnEpochSyncComplete, 10);
+                possibleActions.put(Action.OnEpochSyncComplete, 10); // TODO (correctness): should the weight be based off the backlog?
             if (next.hasNext())
                 possibleActions.put(Action.OnTopologyUpdate, 1);
             if (possibleActions.isEmpty())
