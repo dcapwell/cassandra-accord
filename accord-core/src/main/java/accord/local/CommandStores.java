@@ -323,6 +323,9 @@ public abstract class CommandStores
         if (epoch <= prev.global.epoch())
             return new TopologyUpdate(prev, () -> done(epoch));
 
+        Ranges globalAdd = newTopology.ranges().subtract(prev.global.ranges());
+        Ranges globalSubtracted = prev.global.ranges().subtract(newTopology.ranges());
+
         Topology newLocalTopology = newTopology.forNode(supplier.time.id()).trim();
         Ranges added = newLocalTopology.ranges().subtract(prev.local.ranges());
         Ranges subtracted = prev.local.ranges().subtract(newLocalTopology.ranges());

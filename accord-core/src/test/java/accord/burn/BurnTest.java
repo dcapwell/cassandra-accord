@@ -223,7 +223,8 @@ public class BurnTest
         PendingQueue queue = new PropagatingPendingQueue(failures, delayQueue);
         RandomSource retryRandom = random.fork();
         ListAgent agent = new ListAgent(1000L, failures::add, retry -> {
-            long delay = retryRandom.nextInt(1, 15);
+//            long delay = retryRandom.nextInt(1, 15);
+            long delay = retryRandom.nextInt(60, 300);
             queue.add((PendingRunnable)retry::run, delay, TimeUnit.SECONDS);
         });
 
@@ -400,9 +401,10 @@ public class BurnTest
     public void testOne()
     {
 //        run(-8777868070417459876L, 1000); // updated TM.preciseEpochs
-        run(5925385057950493178L, 1000);
-//        while (true)
-//        run(ThreadLocalRandom.current().nextLong(), 1000);
+//        run(5925385057950493178L, 1000);
+        run(-457204434570210605L, 1000);
+        while (true)
+        run(ThreadLocalRandom.current().nextLong(), 1000);
     }
 
     private static void run(long seed, int operations)

@@ -111,9 +111,11 @@ class Bootstrap
         boolean completed; // we have finished fetching all the data we are able to, but we may still have in-flight fetches
         Throwable fetchOutcome;
         TxnId globalSyncId, localSyncId;
+        private final int id;
 
-        Attempt(Ranges ranges)
+        Attempt(int id, Ranges ranges)
         {
+            this.id = id;
             this.valid = ranges;
         }
 
@@ -332,7 +334,7 @@ class Bootstrap
                 accept(null, failure);
 
             store.agent().onFailedBootstrap("PartialFetch", newFailures, () -> {
-                store.execute(empty(), safeStore -> restart(safeStore, newFailures.slice(allValid))).begin(store.agent());
+                store.execute(empty(), safeStore -> restart(safeStore, id, newFailures.slice(allValid))).begin(store.agent());
             }, failure);
             Invariants.checkState(!newFailures.intersects(fetchedAndSafeToRead));
         }
@@ -408,7 +410,7 @@ class Bootstrap
             if (!retry.isEmpty())
             {
                 store.agent().onFailedBootstrap("Fetch", retry, () -> {
-                    store.execute(empty(), safeStore -> restart(safeStore, retry)).begin(node.agent());
+                    store.execute(empty(), safeStore -> restart(safeStore, id, retry)).begin(node.agent());
                 }, fetchOutcome);
             }
         }
@@ -437,10 +439,10 @@ class Bootstrap
 
     void start(SafeCommandStore safeStore0)
     {
-        restart(safeStore0, allValid);
+        restart(safeStore0, -1, allValid);
     }
 
-    private synchronized void restart(SafeCommandStore safeStore, Ranges ranges)
+    private synchronized void restart(SafeCommandStore safeStore, int id, Ranges ranges)
     {
         ranges = ranges.slice(allValid);
         if (ranges.isEmpty())
@@ -449,7 +451,11 @@ class Bootstrap
         for (Attempt attempt : inProgress)
             Invariants.checkArgument(!ranges.intersects(attempt.valid));
 
-        Attempt attempt = new Attempt(ranges);
+//        if (id == 100)
+////            throw new IllegalStateException("Too many attempts for ranges " + ranges);
+//            System.out.println("Too many attempts for ranges " + ranges);
+
+        Attempt attempt = new Attempt(id + 1, ranges);
         inProgress.add(attempt);
         attempt.start(safeStore);
     }
