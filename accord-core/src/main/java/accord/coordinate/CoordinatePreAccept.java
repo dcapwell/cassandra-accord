@@ -270,7 +270,11 @@ abstract class CoordinatePreAccept<T> extends SettableResult<T> implements Callb
 
     protected static boolean validFor(Txn txn, Topology t)
     {
-        Seekables<?, ?> keysOrRanges = txn.keys();
+        return validFor(txn.keys(), t);
+    }
+
+    protected static boolean validFor(Seekables<?, ?> keysOrRanges, Topology t)
+    {
         Seekables<?, ?> updatedRanges = keysOrRanges.slice(t.ranges(), Routables.Slice.Minimal);
         return updatedRanges.containsAll(keysOrRanges);
     }

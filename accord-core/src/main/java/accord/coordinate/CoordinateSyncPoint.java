@@ -34,8 +34,10 @@ import accord.primitives.Txn;
 import accord.primitives.Txn.Kind;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
+import accord.topology.Topology;
 import accord.utils.async.AsyncResult;
 import accord.utils.Invariants;
+import accord.utils.async.AsyncResults;
 
 import static accord.coordinate.Propose.Invalidate.proposeAndCommitInvalidate;
 import static accord.primitives.Timestamp.mergeMax;
@@ -71,6 +73,9 @@ public class CoordinateSyncPoint extends CoordinatePreAccept<SyncPoint>
     {
         TxnId txnId = node.nextTxnId(kind, ranges.domain());
         return node.withEpoch(txnId.epoch(), () -> {
+            Topology t = node.topology().globalForEpoch(txnId.epoch());
+            if (!validFor(ranges, t))
+                return AsyncResults.failure(new TopologyMismatch(txnId, null, t, ranges));
             FullRangeRoute route = (FullRangeRoute) node.computeRoute(txnId, ranges);
             CoordinateSyncPoint coordinate = new CoordinateSyncPoint(node, txnId, node.agent().emptyTxn(kind, ranges), route, ranges);
             coordinate.start();
