@@ -167,7 +167,7 @@ public class TopologyUtils
 
     public static Unseekables<?> select(Ranges ranges, RandomSource rs)
     {
-        UnseekablesKind kind = rs.next(UnseekablesKind.RoutingKeys, UnseekablesKind.RoutingRanges);
+        UnseekablesKind kind = rs.pick(UnseekablesKind.RoutingKeys, UnseekablesKind.RoutingRanges);
         switch (kind)
         {
             default: throw new IllegalStateException("Unexpected kind: " + kind);

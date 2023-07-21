@@ -397,7 +397,7 @@ public class TopologyManagerTest
         Gen<Topology> topologyGen = AccordGens.topologys(Gens.longs().between(1, 1024));
         AgentExecutor executor = Mockito.mock(AgentExecutor.class, Mockito.withSettings().defaultAnswer(ignore -> { throw new IllegalStateException("Attempted to perform async operation"); }));
         Mockito.doReturn(new TestAgent.RethrowAgent()).when(executor).agent();
-        qt().withSeed(-4402647132836083843L).withExamples(20).check(rs -> {
+        qt().withSeed(-7359919505787252503L).withExamples(20).check(rs -> {
             TopologyRandomizer randomizer = new TopologyRandomizer(() -> rs, topologyGen.next(rs), new TopologyUpdates(executor), null);
             Iterator<Topology> next = Iterators.limit(new AbstractIterator<Topology>()
             {
@@ -430,27 +430,15 @@ public class TopologyManagerTest
 
     private static void checkAPI(TopologyManager service, RandomSource rand)
     {
-//        checkWithUnsyncedEpochs(service, rand);
-//        checkPreciseEpochs(service, rand);
-    }
-
-    private static void checkPreciseEpochs(TopologyManager service, RandomSource rand)
-    {
         EpochRange range = EpochRange.from(service, rand);
         Unseekables<?> select = select(service, range, rand);
-        Topologies topologies = service.preciseEpochs(select, range.min, range.max);
-        assertThat(topologies)
+
+        assertThat(service.preciseEpochs(select, range.min, range.max))
                 .isNotEmpty()
                 .epochsBetween(range.min, range.max)
                 .containsAll(select);
-    }
 
-    private static void checkWithUnsyncedEpochs(TopologyManager service, RandomSource rand)
-    {
-        EpochRange range = EpochRange.from(service, rand);
-        Unseekables<?> select = select(service, range, rand);
-        Topologies topologies = service.withUnsyncedEpochs(select, range.min, range.max);
-        assertThat(topologies)
+        assertThat(service.withUnsyncedEpochs(select, range.min, range.max))
                 .isNotEmpty()
                 .epochsBetween(range.min, range.max, false) // older epochs are allowed
                 .containsAll(select);
@@ -458,10 +446,8 @@ public class TopologyManagerTest
 
     private static Unseekables<?> select(TopologyManager service, EpochRange range, RandomSource rs)
     {
-        // An actual case that is possible is that the txn is in epoch=N and the executeAt epoch is N+M
-        // This means that the selection must contain valid ranges from MIN, which may not exist later on in MAX
-        // TODO (coverage): what cases would cause MIN < txn.epoch()?  If so, need to mimic that here
-        Ranges ranges = service.globalForEpoch(range.min).ranges();
+        long epoch = range.min == range.max ? range.min : rs.pickLong(range.min, range.max);
+        Ranges ranges = service.globalForEpoch(epoch).ranges();
         return TopologyUtils.select(ranges, rs);
     }
 
@@ -568,9 +554,9 @@ public class TopologyManagerTest
                     postTopologyUpdate(id, t);
                     break;
                 case OnEpochSyncComplete:
-                    long epoch = rs.next(pendingSyncComplete.keySet());
+                    long epoch = rs.pick(pendingSyncComplete.keySet());
                     Set<Node.Id> pendingNodes = pendingSyncComplete.get(epoch);
-                    Node.Id node = rs.next(pendingNodes);
+                    Node.Id node = rs.pick(pendingNodes);
                     pendingNodes.remove(node);
                     if (pendingNodes.isEmpty())
                         pendingSyncComplete.remove(epoch);

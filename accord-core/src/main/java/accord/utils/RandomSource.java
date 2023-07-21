@@ -18,6 +18,7 @@
 
 package accord.utils;
 
+import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -179,37 +180,54 @@ public interface RandomSource
 
     double nextGaussian();
 
-    default long next(long... array)
+    default long pickLong(long first, long second, long... rest)
     {
-        return next(array, 0, array.length);
+        long[] array = new long[rest.length + 2];
+        array[0] = first;
+        array[1] = second;
+        System.arraycopy(rest, 0, array, 2, rest.length);
+        return pickLong(array, 0, array.length);
     }
 
-    default <T> T next(T... array)
+    default long pickLong(long[] array)
     {
-        return next(Arrays.asList(array));
+        return pickLong(array, 0, array.length);
     }
 
-    default long next(long[] array, int offset, int length)
+    default long pickLong(long[] array, int offset, int length)
     {
         Impl.checkNextArray(array, array.length, offset, length);
+        if (length == 1)
+            return array[offset];
         return array[nextInt(offset, offset + length)];
     }
 
-    default <T extends Comparable<T>> T next(Set<T> set)
+    default <T extends Comparable<T>> T pick(Set<T> set)
     {
         List<T> values = new ArrayList<>(set);
         values.sort(Comparator.naturalOrder());
-        return next(values);
+        return pick(values);
     }
 
-    default <T> T next(List<T> values)
+    default <T> T pick(T first, T second, T... rest)
     {
-        return next(values, 0, values.size());
+        T[] array = (T[]) Array.newInstance(rest.getClass().getComponentType(), rest.length + 2);
+        array[0] = first;
+        array[1] = second;
+        System.arraycopy(rest, 0, array, 2, rest.length);
+        return pick(Arrays.asList(array), 0, array.length);
     }
 
-    default <T> T next(List<T> values, int offset, int length)
+    default <T> T pick(List<T> values)
+    {
+        return pick(values, 0, values.size());
+    }
+
+    default <T> T pick(List<T> values, int offset, int length)
     {
         Impl.checkNextArray(values, values.size(), offset, length);
+        if (length == 1)
+            return values.get(offset);
         return values.get(nextInt(offset, offset + length));
     }
 

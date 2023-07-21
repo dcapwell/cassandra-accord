@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
 
+import accord.primitives.Unseekable;
 import com.google.common.annotations.VisibleForTesting;
 
 import accord.api.RoutingKey;
@@ -507,13 +508,19 @@ public class TopologyManager
         Topologies.Multi topologies = new Topologies.Multi(sorter, maxi - i);
 
         Unseekables<?> remaining = select;
+        Unseekables<?> unknown = null;
         while (i < maxi)
         {
             EpochState epochState = snapshot.epochs[i++];
-            topologies.add(epochState.global.forSelection(remaining));
+            Ranges ranges = epochState.global().ranges();
+            topologies.add(epochState.global.forSelection(remaining.slice(ranges)));
             remaining = remaining.subtract(isSufficientFor.apply(epochState));
             remaining = remaining.subtract(epochState.addedRanges);
+            unknown = Unseekables.merge((Unseekables<Unseekable>) unknown, (Unseekables<Unseekable>) remaining.subtract(ranges));
+            unknown = unknown.subtract(epochState.removedRanges);
         }
+        if (unknown != null && !unknown.isEmpty())
+            throw new IllegalArgumentException(String.format("Unable to find %s in epoch range [%d, %d]", unknown, minEpoch, maxEpoch));
         if (remaining.isEmpty())
             return topologies;
 
