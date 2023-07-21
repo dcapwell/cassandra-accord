@@ -128,7 +128,9 @@ public class TopologyRandomizer
 
     private static Shard[] split(Shard[] shards, RandomSource random)
     {
-        int idx = random.nextInt(shards.length - 1);
+        if (shards.length == 0)
+            throw new IllegalArgumentException("Unable to split an empty array");
+        int idx = shards.length == 1 ? 0 : random.nextInt(shards.length - 1);
         Shard split = shards[idx];
         PrefixedIntHashKey.Range splitRange = (PrefixedIntHashKey.Range) split.range;
         PrefixedIntHashKey minBound = (PrefixedIntHashKey) splitRange.start();
