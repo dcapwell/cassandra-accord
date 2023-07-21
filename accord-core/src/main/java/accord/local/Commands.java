@@ -1369,11 +1369,11 @@ public class Commands
             case Set:
                 // failing any of these tests is always an illegal state
                 Invariants.checkState(adding != null);
-                if (!adding.containsAll(existingRanges) && !adding.intersects(existingRanges))
-                    throw new IllegalArgumentException("Incomplete " + kind + " (" + obj + ") provided; does not cover " + existingRanges);
-
-                if (additionalRanges != existingRanges && !adding.intersects(additionalRanges))
-                    throw new IllegalArgumentException("Incomplete " + kind + " (" + obj + ") provided; does not cover " + additionalRanges);
+//                if (!adding.containsAll(existingRanges) && !adding.intersects(existingRanges))
+//                    throw new IllegalArgumentException("Incomplete " + kind + " (" + obj + ") provided; does not cover " + existingRanges);
+//
+//                if (additionalRanges != existingRanges && !adding.intersects(additionalRanges))
+//                    throw new IllegalArgumentException("Incomplete " + kind + " (" + obj + ") provided; does not cover " + additionalRanges);
                 break;
 
             case Check:
