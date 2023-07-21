@@ -164,7 +164,7 @@ public class ExtendedAssertions
             return epochsBetween(min, max, true);
         }
 
-        public TopologiesAssert epochsBetween(long min, long max, boolean exact)
+        public TopologiesAssert epochsBetween(long min, long max, boolean checkOldest)
         {
             isNotNull();
             LongArrayList missing = new LongArrayList();
@@ -181,13 +181,10 @@ public class ExtendedAssertions
             }
             if (!missing.isEmpty())
                 throwAssertionError(new BasicErrorMessageFactory("%nExpected all epochs in [%s, %s], but %s were missing", min, max, missing));
-            if (exact)
-            {
-                if (actual.oldestEpoch() < min)
-                    throwAssertionError(new BasicErrorMessageFactory("%nExpected oldest epoch to be %s, but was %s", min, actual.oldestEpoch()));
-                if (actual.currentEpoch() > max)
-                    throwAssertionError(new BasicErrorMessageFactory("%nExpected latest epoch to be %s, but was %s", max, actual.currentEpoch()));
-            }
+            if (checkOldest && actual.oldestEpoch() < min)
+                throwAssertionError(new BasicErrorMessageFactory("%nExpected oldest epoch to be %s, but was %s", min, actual.oldestEpoch()));
+            if (actual.currentEpoch() > max)
+                throwAssertionError(new BasicErrorMessageFactory("%nExpected latest epoch to be %s, but was %s", max, actual.currentEpoch()));
             return myself;
         }
 

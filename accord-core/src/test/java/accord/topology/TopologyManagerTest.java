@@ -311,9 +311,14 @@ public class TopologyManagerTest
         qt().withExamples(100).check(rs -> {
             long epochCounter = rs.nextInt(1, 42);
             History history = new History(new TopologyManager(SUPPLIER, ID),
-                                          topology(epochCounter++, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2))),
-                                          topology(epochCounter++, shard(range(0, 200), idList(1, 2, 3), idSet(1, 2))),
-                                          topology(epochCounter++, shard(range(201, 400), idList(1, 2, 3), idSet(1, 2)))) {
+                                          topology(epochCounter++,
+                                                   shard(PrefixedIntHashKey.range(0, 0, 100), idList(1, 2, 3), idSet(1, 2)),
+                                                   shard(PrefixedIntHashKey.range(1, 0, 100), idList(1, 2, 3), idSet(1, 2))),
+                                          topology(epochCounter++,
+                                                   shard(PrefixedIntHashKey.range(0, 0, 100), idList(1, 2, 3), idSet(1, 2)),
+                                                   shard(PrefixedIntHashKey.range(1, 0, 100), idList(1, 2, 3), idSet(1, 2))),
+                                          topology(epochCounter++,
+                                                   shard(PrefixedIntHashKey.range(1, 0, 100), idList(1, 2, 3), idSet(1, 2)))) {
 
                 @Override
                 protected void postTopologyUpdate(int id, Topology t)
@@ -334,7 +339,7 @@ public class TopologyManagerTest
                     {
                         Unseekables<?> unseekables = TopologyUtils.select(ranges, rs);
                         long maxEpoch = topology.epoch();
-                        long minEpoch = tm.minEpoch() == maxEpoch ? maxEpoch : rs.nextLong(tm.minEpoch(), maxEpoch);
+                        long minEpoch = tm.minEpoch() == maxEpoch ? maxEpoch : rs.nextLong(tm.minEpoch(), maxEpoch + 1);
                         assertThat(tm.preciseEpochs(unseekables, minEpoch, maxEpoch))
                                 .isNotEmpty()
                                 .epochsBetween(minEpoch, maxEpoch)
@@ -343,7 +348,7 @@ public class TopologyManagerTest
 
                         assertThat(tm.withUnsyncedEpochs(unseekables, minEpoch, maxEpoch))
                                 .isNotEmpty()
-                                .epochsBetween(minEpoch, maxEpoch)
+                                .epochsBetween(minEpoch, maxEpoch, false) // older epochs are allowed
                                 .containsAll(unseekables)
                                 .topology(maxEpoch, a -> a.isNotEmpty());
                     }
