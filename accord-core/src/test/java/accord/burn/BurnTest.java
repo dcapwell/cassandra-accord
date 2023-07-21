@@ -403,8 +403,8 @@ public class BurnTest
 //        run(-8777868070417459876L, 1000); // updated TM.preciseEpochs
 //        run(5925385057950493178L, 1000);
         run(-457204434570210605L, 1000);
-        while (true)
-        run(ThreadLocalRandom.current().nextLong(), 1000);
+//        while (true)
+//        run(ThreadLocalRandom.current().nextLong(), 1000);
     }
 
     private static void run(long seed, int operations)
