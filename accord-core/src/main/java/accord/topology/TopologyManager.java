@@ -555,20 +555,19 @@ public class TopologyManager
 
         int count = (int)(1 + maxEpoch - minEpoch);
         Topologies.Multi topologies = new Topologies.Multi(sorter, count);
+        Unseekables<?> remaining = select;
+        Unseekables<?> unknown = null;
         for (int i = count - 1 ; i >= 0 ; --i)
         {
             EpochState epochState = snapshot.get(minEpoch + i);
-            if (epochState.global.ranges.containsAll(select))
-            {
-                topologies.add(epochState.global.forSelection(select));
-            }
-            else
-            {
-                // topology partially matches the selection...
-                topologies.add(epochState.global.forSelection(select.slice(epochState.global.ranges)));
-            }
-            select = select.subtract(epochState.addedRanges);
+            Ranges ranges = epochState.global().ranges();
+            topologies.add(epochState.global.forSelection(remaining.slice(ranges)));
+            remaining = remaining.subtract(epochState.addedRanges);
+            unknown = Unseekables.merge((Unseekables<Unseekable>) unknown, (Unseekables<Unseekable>) remaining.subtract(ranges));
+            unknown = unknown.subtract(epochState.removedRanges);
         }
+        if (unknown != null && !unknown.isEmpty())
+            throw new IllegalArgumentException(String.format("Unable to find %s in epoch range [%d, %d]", unknown, minEpoch, maxEpoch));
 
         Invariants.checkState(!topologies.isEmpty(), "Unable to find an epoch that contained %s", select);
 
