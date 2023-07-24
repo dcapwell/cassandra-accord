@@ -20,6 +20,7 @@ package accord.messages;
 
 import javax.annotation.Nullable;
 
+import accord.topology.TopologyManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,9 +62,9 @@ public class WaitUntilApplied extends ReadData implements Command.TransientListe
     public final Timestamp executeAt;
     private boolean isInvalid;
 
-    public WaitUntilApplied(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope, Timestamp executeAt)
+    public WaitUntilApplied(Node.Id to, TopologyManager tm, Topologies topologies, TxnId txnId, Participants<?> readScope, Timestamp executeAt)
     {
-        super(to, topologies, txnId, readScope);
+        super(to, tm, topologies, txnId, readScope);
         this.executeAt = executeAt;
     }
 

@@ -24,6 +24,7 @@ import accord.local.Node.Id;
 import accord.local.Status.Durability;
 import accord.primitives.*;
 import accord.topology.Topologies;
+import accord.topology.TopologyManager;
 import accord.utils.Invariants;
 
 import static accord.api.ProgressLog.ProgressShard.Adhoc;
@@ -46,9 +47,9 @@ public class InformDurable extends TxnRequest<Reply> implements PreLoadContext
     public final Durability durability;
     private transient ProgressShard shard;
 
-    public InformDurable(Id to, Topologies topologies, FullRoute<?> route, TxnId txnId, Timestamp executeAt, Durability durability)
+    public InformDurable(Id to, TopologyManager tm, Topologies topologies, FullRoute<?> route, TxnId txnId, Timestamp executeAt, Durability durability)
     {
-        super(to, topologies, route, txnId);
+        super(to, tm, topologies, route, txnId);
         this.executeAt = executeAt;
         this.durability = durability;
     }

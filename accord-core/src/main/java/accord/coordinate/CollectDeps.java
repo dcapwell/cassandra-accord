@@ -66,7 +66,7 @@ public class CollectDeps implements Callback<GetDepsOk>
         CommandStore store = CommandStore.maybeCurrent();
         if (store == null)
             store = node.commandStores().select(route);
-        node.send(collect.tracker.nodes(), to -> new GetDeps(to, topologies, route, txnId, keysOrRanges, executeAt),
+        node.send(collect.tracker.nodes(), to -> new GetDeps(to, node.topology(), topologies, route, txnId, keysOrRanges, executeAt),
                   store, collect);
     }
 

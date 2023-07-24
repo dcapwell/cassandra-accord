@@ -99,7 +99,7 @@ public class RecoverWithRoute extends CheckShards<FullRoute<?>>
     @Override
     public void contact(Id to)
     {
-        node.send(to, new CheckStatus(to, topologies(), txnId, route, sourceEpoch, IncludeInfo.All), this);
+        node.send(to, new CheckStatus(to, node.topology(), topologies(), txnId, route, sourceEpoch, IncludeInfo.All), this);
     }
 
     @Override

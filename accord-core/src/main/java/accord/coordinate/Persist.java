@@ -61,7 +61,7 @@ public class Persist implements Callback<ApplyReply>
     {
         Topologies participates = participates(node, route, txnId, executeAt, executes);
         Persist persist = new Persist(node, executes, txnId, route, txn, executeAt, deps);
-        node.send(participates.nodes(), to -> Apply.applyMinimal(to, participates, executes, txnId, route, txn, executeAt, deps, writes, result), persist);
+        node.send(participates.nodes(), to -> Apply.applyMinimal(to, node.topology(), participates, executes, txnId, route, txn, executeAt, deps, writes, result), persist);
     }
 
     public static void persistMaximal(Node node, TxnId txnId, FullRoute<?> route, Txn txn, Timestamp executeAt, Deps deps, Writes writes, Result result)
@@ -69,7 +69,7 @@ public class Persist implements Callback<ApplyReply>
         Topologies executes = executes(node, route, executeAt);
         Topologies participates = participates(node, route, txnId, executeAt, executes);
         Persist persist = new Persist(node, participates, txnId, route, txn, executeAt, deps);
-        node.send(participates.nodes(), to -> Apply.applyMaximal(to, participates, executes, txnId, route, txn, executeAt, deps, writes, result), persist);
+        node.send(participates.nodes(), to -> Apply.applyMaximal(to, node.topology(), participates, executes, txnId, route, txn, executeAt, deps, writes, result), persist);
     }
 
     private Persist(Node node, Topologies topologies, TxnId txnId, FullRoute<?> route, Txn txn, Timestamp executeAt, Deps deps)
@@ -99,14 +99,14 @@ public class Persist implements Callback<ApplyReply>
                     {
                         isDone = true;
                         Topologies topologies = tracker.topologies();
-                        node.send(topologies.nodes(), to -> new InformDurable(to, topologies, route, txnId, executeAt, Majority));
+                        node.send(topologies.nodes(), to -> new InformDurable(to, node.topology(), topologies, route, txnId, executeAt, Majority));
                     }
                 }
                 break;
             case Insufficient:
                 Topologies topologies = node.topology().preciseEpochs(route, txnId.epoch(), executeAt.epoch());
                 // TODO (easy, cleanup): use static method in Commit
-                node.send(from, new Commit(Maximal, from, topologies.forEpoch(txnId.epoch()), topologies, txnId, txn, route, null, executeAt, deps, false));
+                node.send(from, new Commit(Maximal, from, node.topology(), topologies.forEpoch(txnId.epoch()), topologies, txnId, txn, route, null, executeAt, deps, false));
         }
     }
 

@@ -20,6 +20,7 @@ package accord.messages;
 
 import javax.annotation.Nullable;
 
+import accord.topology.TopologyManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,9 +87,9 @@ public class ReadTxnData extends ReadData implements Command.TransientListener, 
     final ObsoleteTracker obsoleteTracker = new ObsoleteTracker();
     private transient State state = State.PENDING; // TODO (low priority, semantics): respond with the Executed result we have stored?
 
-    public ReadTxnData(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope, Timestamp executeAt)
+    public ReadTxnData(Node.Id to, TopologyManager tm, Topologies topologies, TxnId txnId, Participants<?> readScope, Timestamp executeAt)
     {
-        super(to, topologies, txnId, readScope);
+        super(to, tm, topologies, txnId, readScope);
         this.executeAtEpoch = executeAt.epoch();
     }
 

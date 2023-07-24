@@ -43,6 +43,7 @@ import accord.primitives.TxnId;
 import accord.primitives.Unseekables;
 import accord.primitives.Writes;
 import accord.topology.Topologies;
+import accord.topology.TopologyManager;
 import accord.utils.Invariants;
 import accord.utils.MapReduceConsume;
 import javax.annotation.Nullable;
@@ -109,11 +110,11 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusRep
         return txnId;
     }
 
-    public CheckStatus(Id to, Topologies topologies, TxnId txnId, Unseekables<?> query, long sourceEpoch, IncludeInfo includeInfo)
+    public CheckStatus(Id to, TopologyManager tm, Topologies topologies, TxnId txnId, Unseekables<?> query, long sourceEpoch, IncludeInfo includeInfo)
     {
         super(txnId);
-        if (isRoute(query)) this.query = computeScope(to, topologies, castToRoute(query), 0, Route::slice, PartialRoute::union);
-        else this.query = computeScope(to, topologies, (Unseekables) query, 0, Unseekables::slice, Unseekables::with);
+        if (isRoute(query)) this.query = computeScope(to, tm, topologies, castToRoute(query), 0, Route::slice, PartialRoute::union);
+        else this.query = computeScope(to, tm, topologies, (Unseekables) query, 0, Unseekables::slice, Unseekables::with);
         this.sourceEpoch = sourceEpoch;
         this.includeInfo = includeInfo;
     }

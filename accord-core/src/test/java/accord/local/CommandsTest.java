@@ -83,7 +83,7 @@ class CommandsTest
             FullRoute<?> route = node.computeRoute(txnId, txn.keys());
             ((TestableConfigurationService) node.configService()).reportTopology(updatedTopology);
 
-            PreAccept preAccept = new PreAccept(N1, node.topology().withUnsyncedEpochs(route, txnId.epoch(), updatedTopology.epoch()), txnId, txn, route);
+            PreAccept preAccept = new PreAccept(N1, node.topology(), node.topology().withUnsyncedEpochs(route, txnId.epoch(), updatedTopology.epoch()), txnId, txn, route);
             ReplyContext replyContext = Mockito.mock(ReplyContext.class);
             preAccept.process(node, N1, replyContext);
 
