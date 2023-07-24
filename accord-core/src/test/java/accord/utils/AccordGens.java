@@ -86,6 +86,21 @@ public class AccordGens
         return rs -> IntHashKey.key(rs.nextInt());
     }
 
+    public static Gen<Key> prefixedIntHashKey()
+    {
+        return prefixedIntHashKey(RandomSource::nextInt, RandomSource::nextInt);
+    }
+
+    public static Gen<Key> prefixedIntHashKey(Gen.IntGen prefixGen)
+    {
+        return prefixedIntHashKey(prefixGen, RandomSource::nextInt);
+    }
+
+    public static Gen<Key> prefixedIntHashKey(Gen.IntGen prefixGen, Gen.IntGen valueGen)
+    {
+        return rs -> PrefixedIntHashKey.key(prefixGen.nextInt(rs), valueGen.nextInt(rs));
+    }
+
     public static Gen<KeyDeps> keyDeps(Gen<Key> keyGen)
     {
         return keyDeps(keyGen, txnIds());
