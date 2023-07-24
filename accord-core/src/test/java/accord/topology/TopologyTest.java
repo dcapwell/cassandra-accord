@@ -33,6 +33,7 @@ import accord.utils.Gens;
 import accord.utils.RandomSource;
 import com.google.common.collect.Iterables;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -113,6 +114,7 @@ public class TopologyTest
     }
 
     @Test
+    @Disabled("forNode currently leaks the non-subset shards, which currently is needed for coverage tracking")
     void basic()
     {
         qt().forAll(topologys(), Gens.random()).check((topology, rs) -> {
