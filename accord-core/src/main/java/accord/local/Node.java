@@ -37,6 +37,7 @@ import accord.primitives.*;
 import accord.primitives.Routable.Domain;
 import accord.utils.MapReduceConsume;
 import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncChains;
 import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
 import accord.utils.RandomSource;
@@ -94,6 +95,8 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
             return Integer.toString(id);
         }
     }
+
+    private static final AsyncChain<Void> SUCCESS_VOID = AsyncChains.success(null);
 
     public boolean isCoordinating(TxnId txnId, Ballot promised)
     {
@@ -231,6 +234,33 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
             configService.fetchTopologyForEpoch(epoch);
             return topology.awaitEpoch(epoch).flatMap(ignore -> supplier.get());
         }
+    }
+
+    public AsyncChain<?> awaitEpoch(long epoch)
+    {
+        if (topology.hasEpoch(epoch))
+            return SUCCESS_VOID;
+        CommandStore executingOn = CommandStore.maybeCurrent();
+        configService.fetchTopologyForEpoch(epoch);
+        AsyncChain<Void> chain = topology.awaitEpoch(epoch);
+        if (executingOn != null)
+            chain = chain.withExecutor(executingOn);
+        return chain;
+    }
+
+    public AsyncChain<?> awaitEpoch(@Nullable EpochSupplier epochSupplier)
+    {
+        if (epochSupplier == null)
+            return SUCCESS_VOID;
+        return awaitEpoch(epochSupplier.epoch());
+    }
+
+    @Inline
+    public <T> AsyncChain<T> withEpoch(@Nullable EpochSupplier epochSupplier, Supplier<? extends AsyncChain<T>> supplier)
+    {
+        if (epochSupplier == null)
+            return supplier.get();
+        return withEpoch(epochSupplier.epoch(), supplier);
     }
 
     public TopologyManager topology()
