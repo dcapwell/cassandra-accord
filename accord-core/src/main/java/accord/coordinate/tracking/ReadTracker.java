@@ -57,6 +57,12 @@ public class ReadTracker extends AbstractTracker<ReadTracker.ReadShardTracker>
             super(shard);
         }
 
+        @Override
+        public String toString()
+        {
+            return hasSucceeded() ? "success" : "pending";
+        }
+
         public ShardOutcome<? super ReadTracker> recordInFlightRead(boolean ignore)
         {
             ++contacted;

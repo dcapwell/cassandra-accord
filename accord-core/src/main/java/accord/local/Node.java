@@ -564,6 +564,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
 
         AsyncResult<Outcome> result = withEpoch(txnId.epoch(), () -> {
             RecoverFuture<Outcome> future = new RecoverFuture<>();
+            // TODO (api, now): don't need a custom class, SettableResult has future.settingCallback(), which offers the same thing
             RecoverWithRoute.recover(this, txnId, route, null, future);
             return future;
         }).beginAsResult();

@@ -81,8 +81,8 @@ public class TopologyRandomizer
         SPLIT(TopologyRandomizer::split),
         MERGE(TopologyRandomizer::merge),
         MEMBERSHIP(TopologyRandomizer::updateMembership),
-        FASTPATH(TopologyRandomizer::updateFastPath);
-//        ADD_PREFIX(TopologyRandomizer::addPrefix),
+        FASTPATH(TopologyRandomizer::updateFastPath),
+        ADD_PREFIX(TopologyRandomizer::addPrefix);
 //        REMOVE_PREFIX(TopologyRandomizer::removePrefix);
 
         private final BiFunction<Shard[], RandomSource, Shard[]> function;

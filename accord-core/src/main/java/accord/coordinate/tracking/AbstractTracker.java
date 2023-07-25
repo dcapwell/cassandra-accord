@@ -195,4 +195,12 @@ public abstract class AbstractTracker<ST extends ShardTracker>
     {
         return maxShardsPerEpoch;
     }
+
+    @Override
+    public String toString()
+    {
+        return getClass().getSimpleName() + "{" +
+               "trackers=" + Arrays.toString(trackers) +
+               '}';
+    }
 }
