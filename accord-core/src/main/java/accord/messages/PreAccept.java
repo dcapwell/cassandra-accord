@@ -284,6 +284,8 @@ public class PreAccept extends WithUnsynced<PreAccept.PreAcceptReply> implements
             return false;
 
         List<Shard> originalShards = topologies.get(originalIndex).shards();
+        if (originalShards.isEmpty())
+            throw new AssertionError("original shard is empty: " + topologies);
         if (originalShards.stream().anyMatch(s -> s.sortedNodes.size() > 64))
             return true;
 

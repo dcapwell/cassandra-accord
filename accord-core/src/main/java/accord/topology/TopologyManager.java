@@ -514,7 +514,6 @@ public class TopologyManager
             EpochState epochState = snapshot.epochs[i++];
             Ranges ranges = epochState.global().ranges();
             topologies.add(epochState.global.forSelection(remaining.slice(ranges)));
-            remaining = remaining.subtract(isSufficientFor.apply(epochState));
             remaining = remaining.subtract(epochState.addedRanges);
             unknown = Unseekables.merge((Unseekables<Unseekable>) unknown, (Unseekables<Unseekable>) remaining.subtract(ranges));
             unknown = unknown.subtract(epochState.removedRanges);
