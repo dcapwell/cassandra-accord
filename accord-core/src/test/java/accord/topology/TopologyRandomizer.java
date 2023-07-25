@@ -44,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -54,6 +55,8 @@ import javax.annotation.Nullable;
 public class TopologyRandomizer
 {
     private static final Logger logger = LoggerFactory.getLogger(TopologyRandomizer.class);
+
+    private static final AtomicInteger CURRENT_PREFIX = new AtomicInteger(0);
 
     private final RandomSource random;
     private final List<Topology> epochs = new ArrayList<>();
@@ -276,8 +279,10 @@ public class TopologyRandomizer
 
     private static Shard[] addPrefix(Shard[] shards, RandomSource random)
     {
-        int[] prefixes = prefixes(shards);
-        int prefix = prefixes[prefixes.length - 1] + 1;
+        // TODO (coverage): add support for bringing prefixes back after removal
+        // In implementations (such as Apache Cassandra) its possible that a range exists, gets removed, then added back (CREATE KEYSPACE, DROP KEYSPACE, CREATE KEYSPACE),
+        // in this case the old prefix should be "cleared".
+        int prefix = CURRENT_PREFIX.incrementAndGet();
         Set<Node.Id> joining = new HashSet<>();
         Node.Id[] nodes;
         {
