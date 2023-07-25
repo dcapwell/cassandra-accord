@@ -57,7 +57,7 @@ public class CoordinateShardDurable extends SettableResult<Void> implements Call
 
     private void start()
     {
-        node.send(tracker.nodes(), to -> new WaitUntilApplied(to, node.topology(), tracker.topologies(), exclusiveSyncPoint.syncId, exclusiveSyncPoint.ranges, exclusiveSyncPoint.syncId), this);
+        node.send(tracker.nodes(), to -> new WaitUntilApplied(to, tracker.topologies(), exclusiveSyncPoint.syncId, exclusiveSyncPoint.ranges, exclusiveSyncPoint.syncId), this);
     }
 
     @Override

@@ -27,7 +27,6 @@ import accord.api.Result;
 import accord.topology.Topologies;
 
 import accord.messages.Apply.ApplyReply;
-import accord.topology.TopologyManager;
 
 import static accord.messages.MessageType.APPLY_REQ;
 import static accord.messages.MessageType.APPLY_RSP;
@@ -49,9 +48,9 @@ public class Apply extends TxnRequest<ApplyReply>
     public final Writes writes;
     public final Result result;
 
-    private Apply(Id to, TopologyManager tm, Topologies participates, Topologies executes, TxnId txnId, Route<?> route, Txn txn, Timestamp executeAt, Deps deps, boolean isMaximal, Writes writes, Result result)
+    private Apply(Id to, Topologies participates, Topologies executes, TxnId txnId, Route<?> route, Txn txn, Timestamp executeAt, Deps deps, boolean isMaximal, Writes writes, Result result)
     {
-        super(to, tm, participates, route, txnId);
+        super(to, participates, route, txnId);
         Ranges slice = isMaximal || executes == participates ? scope.covering() : executes.computeRangesForNode(to);
         // TODO (desired): it's wasteful to encode the full set of ranges owned by the recipient node;
         //     often it will be cheaper to include the FullRoute for Deps scope (or come up with some other safety-preserving encoding scheme)
@@ -67,14 +66,14 @@ public class Apply extends TxnRequest<ApplyReply>
     {
         Topologies executes = executes(node, route, executeAt);
         Topologies participates = participates(node, route, txnId, executeAt, executes);
-        node.send(participates.nodes(), to -> applyMaximal(to, node.topology(), participates, executes, txnId, route, txn, executeAt, deps, writes, result));
+        node.send(participates.nodes(), to -> applyMaximal(to, participates, executes, txnId, route, txn, executeAt, deps, writes, result));
     }
 
     public static void sendMaximal(Node node, Id to, TxnId txnId, Route<?> route, Txn txn, Timestamp executeAt, Deps deps, Writes writes, Result result)
     {
         Topologies executes = executes(node, route, executeAt);
         Topologies participates = participates(node, route, txnId, executeAt, executes);
-        node.send(to, applyMaximal(to, node.topology(), participates, executes, txnId, route, txn, executeAt, deps, writes, result));
+        node.send(to, applyMaximal(to, participates, executes, txnId, route, txn, executeAt, deps, writes, result));
     }
 
     public static Topologies executes(Node node, Route<?> route, Timestamp executeAt)
@@ -87,14 +86,14 @@ public class Apply extends TxnRequest<ApplyReply>
         return txnId.epoch() == executeAt.epoch() ? executes : node.topology().preciseEpochs(route, txnId.epoch(), executeAt.epoch());
     }
 
-    public static Apply applyMinimal(Id to, TopologyManager tm, Topologies sendTo, Topologies applyTo, TxnId txnId, Route<?> route, Txn txn, Timestamp executeAt, Deps deps, Writes writes, Result result)
+    public static Apply applyMinimal(Id to, Topologies sendTo, Topologies applyTo, TxnId txnId, Route<?> route, Txn txn, Timestamp executeAt, Deps deps, Writes writes, Result result)
     {
-        return new Apply(to, tm, sendTo, applyTo, txnId, route, txn, executeAt, deps, false, writes, result);
+        return new Apply(to, sendTo, applyTo, txnId, route, txn, executeAt, deps, false, writes, result);
     }
 
-    public static Apply applyMaximal(Id to, TopologyManager tm, Topologies participates, Topologies executes, TxnId txnId, Route<?> route, Txn txn, Timestamp executeAt, Deps deps, Writes writes, Result result)
+    public static Apply applyMaximal(Id to, Topologies participates, Topologies executes, TxnId txnId, Route<?> route, Txn txn, Timestamp executeAt, Deps deps, Writes writes, Result result)
     {
-        return new Apply(to, tm, participates, executes, txnId, route, txn, executeAt, deps, true, writes, result);
+        return new Apply(to, participates, executes, txnId, route, txn, executeAt, deps, true, writes, result);
     }
 
     private Apply(TxnId txnId, PartialRoute<?> route, long waitForEpoch, Seekables<?, ?> keys, Timestamp executeAt, PartialDeps deps, @Nullable PartialTxn txn, Writes writes, Result result)

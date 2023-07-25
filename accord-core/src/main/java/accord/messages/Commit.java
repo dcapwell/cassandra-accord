@@ -28,7 +28,6 @@ import accord.local.Node.Id;
 import accord.topology.Topologies;
 import javax.annotation.Nullable;
 
-import accord.topology.TopologyManager;
 import accord.utils.Invariants;
 
 import accord.topology.Topology;
@@ -62,9 +61,9 @@ public class Commit extends TxnRequest<ReadNack>
 
     // TODO (low priority, clarity): cleanup passing of topologies here - maybe fetch them afresh from Node?
     //                               Or perhaps introduce well-named classes to represent different topology combinations
-    public Commit(Kind kind, Id to, TopologyManager tm, Topology coordinateTopology, Topologies topologies, TxnId txnId, Txn txn, FullRoute<?> route, @Nullable Participants<?> readScope, Timestamp executeAt, Deps deps, boolean read)
+    public Commit(Kind kind, Id to, Topology coordinateTopology, Topologies topologies, TxnId txnId, Txn txn, FullRoute<?> route, @Nullable Participants<?> readScope, Timestamp executeAt, Deps deps, boolean read)
     {
-        super(to, tm, topologies, route, txnId);
+        super(to, topologies, route, txnId);
 
         FullRoute<?> sendRoute = null;
         PartialTxn partialTxn = null;
@@ -88,7 +87,7 @@ public class Commit extends TxnRequest<ReadNack>
         this.partialTxn = partialTxn;
         this.partialDeps = deps.slice(scope.covering());
         this.route = sendRoute;
-        this.read = read ? new ReadTxnData(to, tm, topologies, txnId, readScope, executeAt) : null;
+        this.read = read ? new ReadTxnData(to, topologies, txnId, readScope, executeAt) : null;
     }
 
     Commit(TxnId txnId, PartialRoute<?> scope, long waitForEpoch, Timestamp executeAt, @Nullable PartialTxn partialTxn, PartialDeps partialDeps, @Nullable FullRoute<?> fullRoute, @Nullable ReadTxnData read)
@@ -114,7 +113,7 @@ public class Commit extends TxnRequest<ReadNack>
         for (Node.Id to : executeTopology.nodes())
         {
             boolean read = readSet.contains(to);
-            Commit send = new Commit(Kind.Minimal, to, node.topology(), coordinateTopology, allTopologies, txnId, txn, route, readScope, executeAt, deps, read);
+            Commit send = new Commit(Kind.Minimal, to, coordinateTopology, allTopologies, txnId, txn, route, readScope, executeAt, deps, read);
             if (read) node.send(to, send, callback);
             else node.send(to, send);
         }
@@ -123,7 +122,7 @@ public class Commit extends TxnRequest<ReadNack>
             for (Node.Id to : allTopologies.nodes())
             {
                 if (!executeTopology.contains(to))
-                    node.send(to, new Commit(Kind.Minimal, to, node.topology(), coordinateTopology, allTopologies, txnId, txn, route, readScope, executeAt, deps, false));
+                    node.send(to, new Commit(Kind.Minimal, to, coordinateTopology, allTopologies, txnId, txn, route, readScope, executeAt, deps, false));
             }
         }
     }
@@ -239,7 +238,7 @@ public class Commit extends TxnRequest<ReadNack>
         {
             for (Node.Id to : commitTo.nodes())
             {
-                Invalidate send = new Invalidate(to, node.topology(), commitTo, txnId, inform);
+                Invalidate send = new Invalidate(to, commitTo, txnId, inform);
                 node.send(to, send);
             }
         }
@@ -249,11 +248,11 @@ public class Commit extends TxnRequest<ReadNack>
         public final long waitForEpoch;
         public final long invalidateUntilEpoch;
 
-        Invalidate(Id to, TopologyManager tm, Topologies topologies, TxnId txnId, Unseekables<?> scope)
+        Invalidate(Id to, Topologies topologies, TxnId txnId, Unseekables<?> scope)
         {
             this.txnId = txnId;
             int latestRelevantIndex = latestRelevantEpochIndex(to, topologies, scope);
-            this.scope = computeScope(to, tm, topologies, (Unseekables)scope, latestRelevantIndex, Unseekables::slice, Unseekables::with);
+            this.scope = computeScope(to, topologies, (Unseekables)scope, latestRelevantIndex, Unseekables::slice, Unseekables::with);
             this.waitForEpoch = computeWaitForEpoch(to, topologies, latestRelevantIndex);
             // TODO (expected): make sure we're picking the right upper limit - it can mean future owners that have never witnessed the command are invalidated
             this.invalidateUntilEpoch = topologies.currentEpoch();

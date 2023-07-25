@@ -20,7 +20,6 @@ package accord.messages;
 
 import accord.local.SafeCommandStore;
 import accord.primitives.*;
-import accord.topology.TopologyManager;
 import accord.utils.Invariants;
 
 import accord.local.Node.Id;
@@ -43,9 +42,9 @@ public class GetDeps extends TxnRequest.WithUnsynced<PartialDeps>
     public final Seekables<?, ?> keys;
     public final Timestamp executeAt;
 
-    public GetDeps(Id to, TopologyManager tm, Topologies topologies, FullRoute<?> route, TxnId txnId, Seekables<?, ?> keys, Timestamp executeAt)
+    public GetDeps(Id to, Topologies topologies, FullRoute<?> route, TxnId txnId, Seekables<?, ?> keys, Timestamp executeAt)
     {
-        super(to, tm, topologies, txnId, route);
+        super(to, topologies, txnId, route);
         this.keys = keys.slice(scope.covering());
         this.executeAt = executeAt;
     }

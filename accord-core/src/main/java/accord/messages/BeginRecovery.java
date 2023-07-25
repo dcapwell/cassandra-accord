@@ -28,7 +28,6 @@ import java.util.List;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
-import accord.topology.TopologyManager;
 import accord.utils.Invariants;
 
 import accord.local.Node.Id;
@@ -54,9 +53,9 @@ public class BeginRecovery extends TxnRequest<BeginRecovery.RecoverReply>
     public final Ballot ballot;
     public final FullRoute<?> route;
 
-    public BeginRecovery(Id to, TopologyManager tm, Topologies topologies, TxnId txnId, Txn txn, FullRoute<?> route, Ballot ballot)
+    public BeginRecovery(Id to, Topologies topologies, TxnId txnId, Txn txn, FullRoute<?> route, Ballot ballot)
     {
-        super(to, tm, topologies, route, txnId);
+        super(to, topologies, route, txnId);
         // TODO (expected): only scope.contains(route.homeKey); this affects state eviction and is low priority given size in C*
         this.partialTxn = txn.slice(scope.covering(), true);
         this.ballot = ballot;

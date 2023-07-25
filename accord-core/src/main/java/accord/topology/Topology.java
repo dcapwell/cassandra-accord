@@ -66,19 +66,21 @@ public class Topology
 
         private NodeInfo forSubset(int[] newSubset)
         {
-            IntArrayList matches = new IntArrayList();
-            List<Range> matchedRanges = new ArrayList<>(newSubset.length);
-            for (int index : newSubset)
-            {
-                int idx = Arrays.binarySearch(supersetIndexes, index);
-                if (idx < 0) continue;
-                // found a match
-                matches.add(index);
-                matchedRanges.add(ranges.get(idx));
-            }
-            Ranges ranges = Ranges.ofSortedAndDeoverlapped(Utils.toArray(matchedRanges, Range[]::new));
-            int[] supersetIndexes = matches.toIntArray();
-            return new NodeInfo(ranges, supersetIndexes);
+            // TODO (correctness, now): currently this impacts coverage tracking, so the correct solution disabled to make progress
+            return this;
+//            IntArrayList matches = new IntArrayList();
+//            List<Range> matchedRanges = new ArrayList<>(newSubset.length);
+//            for (int index : newSubset)
+//            {
+//                int idx = Arrays.binarySearch(supersetIndexes, index);
+//                if (idx < 0) continue;
+//                // found a match
+//                matches.add(index);
+//                matchedRanges.add(ranges.get(idx));
+//            }
+//            Ranges ranges = Ranges.ofSortedAndDeoverlapped(Utils.toArray(matchedRanges, Range[]::new));
+//            int[] supersetIndexes = matches.toIntArray();
+//            return new NodeInfo(ranges, supersetIndexes);
         }
 
         @Override

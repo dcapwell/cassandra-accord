@@ -81,7 +81,7 @@ abstract class Propose<R> implements Callback<AcceptReply>
 
     void start()
     {
-        node.send(acceptTracker.nodes(), to -> new Accept(to, node.topology(), acceptTracker.topologies(), ballot, txnId, route, executeAt, txn.keys(), deps), this);
+        node.send(acceptTracker.nodes(), to -> new Accept(to, acceptTracker.topologies(), ballot, txnId, route, executeAt, txn.keys(), deps), this);
     }
 
     @Override

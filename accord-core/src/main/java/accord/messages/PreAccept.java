@@ -32,7 +32,6 @@ import accord.topology.Topologies;
 import javax.annotation.Nullable;
 
 import accord.primitives.*;
-import accord.topology.TopologyManager;
 
 import static accord.local.SafeCommandStore.TestDep.ANY_DEPS;
 import static accord.local.SafeCommandStore.TestTimestamp.STARTED_BEFORE;
@@ -52,9 +51,9 @@ public class PreAccept extends WithUnsynced<PreAccept.PreAcceptReply> implements
     public final FullRoute<?> route;
     public final long maxEpoch;
 
-    public PreAccept(Id to, TopologyManager tm, Topologies topologies, TxnId txnId, Txn txn, FullRoute<?> route)
+    public PreAccept(Id to, Topologies topologies, TxnId txnId, Txn txn, FullRoute<?> route)
     {
-        super(to, tm, topologies, txnId, route);
+        super(to, topologies, txnId, route);
         // TODO (expected): only includeQuery if route.contains(route.homeKey()); this affects state eviction and is low priority given size in C*
         this.partialTxn = txn.slice(scope.covering(), true);
         this.maxEpoch = topologies.currentEpoch();

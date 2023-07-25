@@ -85,7 +85,7 @@ class Execute extends ReadCoordinator<ReadReply>
     @Override
     public void contact(Id to)
     {
-        node.send(to, new ReadTxnData(to, node.topology(), topologies(), txnId, readScope, executeAt), this);
+        node.send(to, new ReadTxnData(to, topologies(), txnId, readScope, executeAt), this);
     }
 
     @Override
@@ -121,7 +121,7 @@ class Execute extends ReadCoordinator<ReadReply>
                 // the replica may be missing the original commit, or the additional commit, so send everything
                 Topologies topology = node.topology().preciseEpochs(route, txnId.epoch(), executeAt.epoch());
                 Topology coordinateTopology = topology.forEpoch(txnId.epoch());
-                node.send(from, new Commit(Maximal, from, node.topology(), coordinateTopology, topology, txnId, txn, route, readScope, executeAt, deps, false));
+                node.send(from, new Commit(Maximal, from, coordinateTopology, topology, txnId, txn, route, readScope, executeAt, deps, false));
                 // also try sending a read command to another replica, in case they're ready to serve a response
                 return Action.TryAlternative;
             case Invalid:

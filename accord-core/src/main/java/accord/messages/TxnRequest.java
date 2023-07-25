@@ -21,7 +21,6 @@ package accord.messages;
 import java.util.function.BiFunction;
 
 import accord.local.SafeCommandStore;
-import accord.topology.TopologyManager;
 import accord.utils.MapReduceConsume;
 import accord.primitives.*;
 import accord.utils.Invariants;
@@ -42,14 +41,14 @@ public abstract class TxnRequest<R> implements Request, PreLoadContext, MapReduc
         public final long minUnsyncedEpoch; // TODO (low priority, clarity): can this just always be TxnId.epoch?
         public final boolean doNotComputeProgressKey;
 
-        public WithUnsynced(Id to, TopologyManager tm, Topologies topologies, TxnId txnId, FullRoute<?> route)
+        public WithUnsynced(Id to, Topologies topologies, TxnId txnId, FullRoute<?> route)
         {
-            this(to, tm, topologies, txnId, route, latestRelevantEpochIndex(to, topologies, route));
+            this(to, topologies, txnId, route, latestRelevantEpochIndex(to, topologies, route));
         }
 
-        private WithUnsynced(Id to, TopologyManager tm, Topologies topologies, TxnId txnId, FullRoute<?> route, int startIndex)
+        private WithUnsynced(Id to, Topologies topologies, TxnId txnId, FullRoute<?> route, int startIndex)
         {
-            super(to, tm, topologies, route, txnId, startIndex);
+            super(to, topologies, route, txnId, startIndex);
             this.minUnsyncedEpoch = topologies.oldestEpoch();
             this.doNotComputeProgressKey = doNotComputeProgressKey(topologies, startIndex, txnId, waitForEpoch());
 
@@ -93,14 +92,14 @@ public abstract class TxnRequest<R> implements Request, PreLoadContext, MapReduc
     protected transient Id replyTo;
     protected transient ReplyContext replyContext;
 
-    public TxnRequest(Node.Id to, TopologyManager tm, Topologies topologies, Route<?> route, TxnId txnId)
+    public TxnRequest(Node.Id to, Topologies topologies, Route<?> route, TxnId txnId)
     {
-        this(to, tm, topologies, route, txnId, latestRelevantEpochIndex(to, topologies, route));
+        this(to, topologies, route, txnId, latestRelevantEpochIndex(to, topologies, route));
     }
 
-    public TxnRequest(Node.Id to, TopologyManager tm, Topologies topologies, Route<?> route, TxnId txnId, int startIndex)
+    public TxnRequest(Node.Id to, Topologies topologies, Route<?> route, TxnId txnId, int startIndex)
     {
-        this(txnId, computeScope(to, tm, topologies, route, startIndex), computeWaitForEpoch(to, topologies, startIndex));
+        this(txnId, computeScope(to, topologies, route, startIndex), computeWaitForEpoch(to, topologies, startIndex));
     }
 
     public TxnRequest(TxnId txnId, PartialRoute<?> scope, long waitForEpoch)
@@ -218,27 +217,25 @@ public abstract class TxnRequest<R> implements Request, PreLoadContext, MapReduc
         return topologies.get(i - 1).epoch();
     }
 
-    public static PartialRoute<?> computeScope(Node.Id node, TopologyManager tm, Topologies topologies, FullRoute<?> fullRoute)
+    public static PartialRoute<?> computeScope(Node.Id node, Topologies topologies, FullRoute<?> fullRoute)
     {
-        return computeScope(node, tm, topologies, fullRoute, latestRelevantEpochIndex(node, topologies, fullRoute));
+        return computeScope(node, topologies, fullRoute, latestRelevantEpochIndex(node, topologies, fullRoute));
     }
 
-    public static PartialRoute<?> computeScope(Node.Id node, TopologyManager tm, Topologies topologies, Route<?> route, int startIndex)
+    public static PartialRoute<?> computeScope(Node.Id node, Topologies topologies, Route<?> route, int startIndex)
     {
-        return computeScope(node, tm, topologies, route, startIndex, Route::slice, PartialRoute::union);
+        return computeScope(node, topologies, route, startIndex, Route::slice, PartialRoute::union);
     }
 
     // TODO (low priority, clarity): move to Topologies
-    public static <I, O> O computeScope(Node.Id node, TopologyManager tm, Topologies topologies, I keys, int startIndex, BiFunction<I, Ranges, O> slice, BiFunction<O, O, O> merge)
+    public static <I, O> O computeScope(Node.Id node, Topologies topologies, I keys, int startIndex, BiFunction<I, Ranges, O> slice, BiFunction<O, O, O> merge)
     {
         Ranges last = null;
         O scope = null;
         for (int i = startIndex, mi = topologies.size() ; i < mi ; ++i)
         {
             Topology topology = topologies.get(i);
-            // TODO (correctness, now): topology.rangesForNode is limited to the subset selected, but coverage tracking needs the full node range... so to make progress the range is pulled from tm
-//            Ranges ranges = topology.rangesForNode(node);
-            Ranges ranges = tm.globalForEpoch(topology.epoch()).rangesForNode(node);
+            Ranges ranges = topology.rangesForNode(node);
             if (ranges != last && !ranges.equals(last))
             {
                 O add = slice.apply(keys, ranges);

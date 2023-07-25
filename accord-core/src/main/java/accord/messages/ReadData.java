@@ -24,7 +24,6 @@ import javax.annotation.Nullable;
 import accord.api.Data;
 import accord.primitives.Participants;
 import accord.topology.Topologies;
-import accord.topology.TopologyManager;
 import accord.utils.Invariants;
 
 import org.slf4j.Logger;
@@ -55,11 +54,11 @@ public abstract class ReadData extends AbstractEpochRequest<ReadData.ReadNack>
     transient int waitingOnCount;
     transient Ranges unavailable;
 
-    public ReadData(Node.Id to, TopologyManager tm, Topologies topologies, TxnId txnId, Participants<?> readScope)
+    public ReadData(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope)
     {
         super(txnId);
         int startIndex = latestRelevantEpochIndex(to, topologies, readScope);
-        this.readScope = TxnRequest.computeScope(to, tm, topologies, readScope, startIndex, Participants::slice, Participants::with);
+        this.readScope = TxnRequest.computeScope(to, topologies, readScope, startIndex, Participants::slice, Participants::with);
         this.waitForEpoch = computeWaitForEpoch(to, topologies, startIndex);
     }
 

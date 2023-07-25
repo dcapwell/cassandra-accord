@@ -152,7 +152,7 @@ abstract class CoordinatePreAccept<T> extends SettableResult<T> implements Callb
         // note that we must send to all replicas of old topology, as electorate may not be reachable
         CommandStore commandStore = CommandStore.maybeCurrent();
         if (commandStore == null) commandStore = node.commandStores().select(route.homeKey());
-        node.send(nodes, to -> new PreAccept(to, node.topology(), topologies, txnId, txn, route), commandStore, callback);
+        node.send(nodes, to -> new PreAccept(to, topologies, txnId, txn, route), commandStore, callback);
     }
 
     @Override

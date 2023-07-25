@@ -183,7 +183,7 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
 
     void start(Set<Id> nodes)
     {
-        node.send(nodes, to -> new BeginRecovery(to, node.topology(), tracker.topologies(), txnId, txn, route, ballot), this);
+        node.send(nodes, to -> new BeginRecovery(to, tracker.topologies(), txnId, txn, route, ballot), this);
     }
 
     @Override

@@ -18,18 +18,13 @@
 
 package accord.messages;
 
-import accord.impl.IntHashKey;
-import accord.impl.TopologyUtils;
-import accord.local.Node;
-import accord.primitives.FullRoute;
+import accord.api.TopologySorter;
 import accord.primitives.Range;
 import accord.primitives.FullKeyRoute;
 import accord.primitives.PartialKeyRoute;
-import accord.primitives.Ranges;
 import accord.topology.Topologies;
 import accord.topology.Topology;
 import accord.primitives.Keys;
-import accord.topology.TopologyManager;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -37,7 +32,6 @@ import static accord.Utils.*;
 import static accord.impl.IntKey.keys;
 import static accord.impl.IntKey.range;
 import static accord.impl.IntKey.scope;
-import static accord.impl.SizeOfIntersectionSorter.SUPPLIER;
 
 public class TxnRequestScopeTest
 {
@@ -49,20 +43,19 @@ public class TxnRequestScopeTest
         Range range = range(100, 200);
         Topology topology1 = topology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
         Topology topology2 = topology(2, shard(range, idList(3, 4, 5), idSet(4, 5)));
-        TopologyManager tm = new TopologyManager(SUPPLIER, new Node.Id(1));
-        tm.onTopologyUpdate(topology1);
-        tm.onTopologyUpdate(topology2);
 
-        Topologies topologies = tm.withUnsyncedEpochs(Ranges.of(range), 1, 2);
+        Topologies.Multi topologies = new Topologies.Multi((TopologySorter.StaticSorter)(a, b, s)->0);
+        topologies.add(topology2);
+        topologies.add(topology1);
 
         // 3 remains a member across both topologies, so can process requests without waiting for latest topology data
-        Assertions.assertEquals(scope(150), ((PartialKeyRoute)TxnRequest.computeScope(id(3), tm, topologies, route)).toParticipants());
+        Assertions.assertEquals(scope(150), ((PartialKeyRoute)TxnRequest.computeScope(id(3), topologies, route)).toParticipants());
         Assertions.assertEquals(1, TxnRequest.computeWaitForEpoch(id(3), topologies, route));
 
         // 1 leaves the shard, and 4 joins, so both need the latest information
-        Assertions.assertEquals(scope(150), ((PartialKeyRoute)TxnRequest.computeScope(id(1), tm, topologies, route)).toParticipants());
+        Assertions.assertEquals(scope(150), ((PartialKeyRoute)TxnRequest.computeScope(id(1), topologies, route)).toParticipants());
         Assertions.assertEquals(2, TxnRequest.computeWaitForEpoch(id(1), topologies, route));
-        Assertions.assertEquals(scope(150), ((PartialKeyRoute)TxnRequest.computeScope(id(4), tm, topologies, route)).toParticipants());
+        Assertions.assertEquals(scope(150), ((PartialKeyRoute)TxnRequest.computeScope(id(4), topologies, route)).toParticipants());
         Assertions.assertEquals(2, TxnRequest.computeWaitForEpoch(id(4), topologies, route));
     }
 
@@ -81,33 +74,14 @@ public class TxnRequestScopeTest
         Topology topology2 = topology(2,
                                       shard(range1, idList(4, 5, 6), idSet(4, 5)),
                                       shard(range2, idList(1, 2, 3), idSet(1, 2)) );
-        TopologyManager tm = new TopologyManager(SUPPLIER, new Node.Id(1));
-        tm.onTopologyUpdate(topology1);
-        tm.onTopologyUpdate(topology2);
 
-        Topologies topologies = tm.withUnsyncedEpochs(Ranges.of(range1, range2), 1, 2);
+        Topologies.Multi topologies = new Topologies.Multi((TopologySorter.StaticSorter)(a,b,s)->0);
+        topologies.add(topology2);
+        topologies.add(topology1);
 
-        Assertions.assertEquals(scope(150, 250), ((PartialKeyRoute)TxnRequest.computeScope(id(1), tm, topologies, route)).toParticipants());
+        Assertions.assertEquals(scope(150, 250), ((PartialKeyRoute)TxnRequest.computeScope(id(1), topologies, route)).toParticipants());
         Assertions.assertEquals(2, TxnRequest.computeWaitForEpoch(id(1), topologies, route));
-        Assertions.assertEquals(scope(150, 250), ((PartialKeyRoute)TxnRequest.computeScope(id(4), tm, topologies, route)).toParticipants());
+        Assertions.assertEquals(scope(150, 250), ((PartialKeyRoute)TxnRequest.computeScope(id(4), topologies, route)).toParticipants());
         Assertions.assertEquals(2, TxnRequest.computeWaitForEpoch(id(4), topologies, route));
-    }
-
-    @Test
-    void emptyTxnFailsToCreateScope()
-    {
-        Node.Id id = new Node.Id(42);
-        TopologyManager tm = new TopologyManager(SUPPLIER, id);
-        Ranges ranges = Ranges.of(IntHashKey.ranges(1));
-        tm.onTopologyUpdate(TopologyUtils.topology(10, new Node.Id[] {id}, ranges, 1));
-        tm.onTopologyUpdate(TopologyUtils.topology(11, new Node.Id[] {id}, ranges, 1));
-        tm.onTopologyUpdate(TopologyUtils.topology(12, new Node.Id[] {id}, ranges, 1));
-        Topologies topologies = tm.withUnsyncedEpochs(Ranges.EMPTY, 10, 12);
-        // txn has [] ranges, so we select a random home key, so the route becomes [] with home key=42
-        FullRoute<?> route = Ranges.EMPTY.toRoute(IntHashKey.forHash(42));
-
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> TxnRequest.computeScope(id, tm, topologies, route))
-                                       .isInstanceOf(IllegalArgumentException.class)
-                                       .hasMessage("No intersection");
     }
 }

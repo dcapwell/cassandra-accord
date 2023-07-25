@@ -27,7 +27,6 @@ import accord.local.Node.Id;
 import accord.topology.Topologies;
 
 import accord.api.RoutingKey;
-import accord.topology.TopologyManager;
 
 import javax.annotation.Nonnull;
 
@@ -52,9 +51,9 @@ public class Accept extends TxnRequest.WithUnsynced<Accept.AcceptReply>
     public final Seekables<?, ?> keys;
     public final PartialDeps partialDeps;
 
-    public Accept(Id to, TopologyManager tm, Topologies topologies, Ballot ballot, TxnId txnId, FullRoute<?> route, Timestamp executeAt, Seekables<?, ?> keys, Deps deps)
+    public Accept(Id to, Topologies topologies, Ballot ballot, TxnId txnId, FullRoute<?> route, Timestamp executeAt, Seekables<?, ?> keys, Deps deps)
     {
-        super(to, tm, topologies, txnId, route);
+        super(to, topologies, txnId, route);
         this.ballot = ballot;
         this.executeAt = executeAt;
         this.keys = keys.slice(scope.covering());
