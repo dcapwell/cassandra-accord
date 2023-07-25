@@ -266,6 +266,8 @@ public class AsyncResults
         }
     }
 
+    public static final AsyncResult<Void> SUCCESS_VOID = success(null);
+
     /**
      * Creates an AsyncResult for the given chain. This calls begin on the supplied chain
      */

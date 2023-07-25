@@ -25,6 +25,7 @@ import accord.local.SafeCommandStore;
 import accord.primitives.Ranges;
 import accord.primitives.SyncPoint;
 import accord.primitives.Timestamp;
+import accord.topology.Topology;
 import accord.utils.async.AsyncResult;
 
 /**
@@ -116,4 +117,9 @@ public interface DataStore
     }
 
     FetchResult fetch(Node node, SafeCommandStore safeStore, Ranges ranges, SyncPoint syncPoint, FetchRanges callback);
+
+    default void onGlobalRangesAddedOrRemoved(Topology topology, Ranges added, Ranges removed)
+    {
+
+    }
 }

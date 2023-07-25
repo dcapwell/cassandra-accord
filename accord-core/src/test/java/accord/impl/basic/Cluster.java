@@ -35,6 +35,9 @@ import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
+import accord.api.ConfigurationService;
+import accord.primitives.Ranges;
+import accord.utils.async.AsyncResults;
 import org.junit.jupiter.api.Assertions;
 
 import accord.api.MessageSink;
@@ -73,6 +76,55 @@ public class Cluster implements Scheduler
 
         public int count() { return count; }
         public String toString() { return Integer.toString(count); }
+    }
+
+    private static class NotifyStoresOfRangeChanges implements ConfigurationService.Listener
+    {
+        private final Node node;
+
+        public NotifyStoresOfRangeChanges(Node node)
+        {
+            this.node = node;
+        }
+
+        @Override
+        public AsyncResult<Void> onTopologyUpdate(Topology topology, boolean startSync)
+        {
+            if (topology.epoch() == 1)
+                return AsyncResults.SUCCESS_VOID;
+            Topology previous = node.topology().globalForEpoch(topology.epoch() - 1);
+            Ranges addedRanges = topology.ranges().subtract(previous.ranges());
+            Ranges removedRanges = previous.ranges().subtract(topology.ranges());
+            if (!addedRanges.isEmpty() || !removedRanges.isEmpty())
+            {
+                return node.commandStores().forEach(safeStore -> safeStore.dataStore().onGlobalRangesAddedOrRemoved(topology, addedRanges, removedRanges)).beginAsResult();
+            }
+            return AsyncResults.SUCCESS_VOID;
+        }
+
+        @Override
+        public void onRemoteSyncComplete(Id node, long epoch)
+        {
+
+        }
+
+        @Override
+        public void truncateTopologyUntil(long epoch)
+        {
+
+        }
+
+        @Override
+        public void onEpochClosed(Ranges ranges, long epoch)
+        {
+
+        }
+
+        @Override
+        public void onEpochRedundant(Ranges ranges, long epoch)
+        {
+
+        }
     }
 
     EnumMap<MessageType, Stats> statsMap = new EnumMap<>(MessageType.class);
@@ -224,15 +276,17 @@ public class Cluster implements Scheduler
             Cluster sinks = new Cluster(queueSupplier, lookup::get, responseSink);
             TopologyUpdates topologyUpdates = new TopologyUpdates(executor);
             TopologyRandomizer configRandomizer = new TopologyRandomizer(randomSupplier, topology, topologyUpdates, lookup::get);
-            for (Id node : nodes)
+            for (Id id : nodes)
             {
-                MessageSink messageSink = sinks.create(node, randomSupplier.get());
-                BurnTestConfigurationService configService = new BurnTestConfigurationService(node, executor, randomSupplier, topology, lookup::get, topologyUpdates);
-                lookup.put(node, new Node(node, messageSink, configService, nowSupplier.get(),
-                                          () -> new ListStore(node), new ShardDistributor.EvenSplit<>(8, ignore -> new PrefixedIntHashKey.Splitter()),
-                                          executor.agent(),
-                                          randomSupplier.get(), sinks, SizeOfIntersectionSorter.SUPPLIER,
-                                          SimpleProgressLog::new, DelayedCommandStores.factory(sinks.pending)));
+                MessageSink messageSink = sinks.create(id, randomSupplier.get());
+                BurnTestConfigurationService configService = new BurnTestConfigurationService(id, executor, randomSupplier, topology, lookup::get, topologyUpdates);
+                Node node = new Node(id, messageSink, configService, nowSupplier.get(),
+                                      () -> new ListStore(id), new ShardDistributor.EvenSplit<>(8, ignore -> new PrefixedIntHashKey.Splitter()),
+                                      executor.agent(),
+                                      randomSupplier.get(), sinks, SizeOfIntersectionSorter.SUPPLIER,
+                                      SimpleProgressLog::new, DelayedCommandStores.factory(sinks.pending));
+                configService.registerListener(new NotifyStoresOfRangeChanges(node));
+                lookup.put(id, node);
             }
 
             // startup

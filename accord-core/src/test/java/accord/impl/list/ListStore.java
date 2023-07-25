@@ -34,6 +34,7 @@ import accord.primitives.Ranges;
 import accord.primitives.RoutableKey;
 import accord.primitives.SyncPoint;
 import accord.primitives.Timestamp;
+import accord.topology.Topology;
 import accord.utils.Timestamped;
 
 public class ListStore implements DataStore
@@ -49,13 +50,13 @@ public class ListStore implements DataStore
         this.node = node;
     }
 
-    public Timestamped<int[]> get(Key key)
+    public synchronized Timestamped<int[]> get(Key key)
     {
         Timestamped<int[]> v = data.get(key);
         return v == null ? EMPTY : v;
     }
 
-    public List<Map.Entry<Key, Timestamped<int[]>>> get(Range range)
+    public synchronized List<Map.Entry<Key, Timestamped<int[]>>> get(Range range)
     {
         return data.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive())
                 .entrySet().stream().map(e -> (Map.Entry<Key, Timestamped<int[]>>)(Map.Entry)e)
@@ -65,6 +66,16 @@ public class ListStore implements DataStore
     public synchronized void write(Key key, Timestamp executeAt, int[] value)
     {
         data.merge(key, new Timestamped<>(executeAt, value), ListStore::merge);
+    }
+
+    @Override
+    public synchronized void onGlobalRangesAddedOrRemoved(Topology topology, Ranges added, Ranges removed)
+    {
+        for (Range range : removed)
+        {
+            NavigableMap<RoutableKey, Timestamped<int[]>> historicData = data.subMap(range.start(), range.startInclusive(), range.end(), range.endInclusive());
+            historicData.clear();
+        }
     }
 
     @Override
