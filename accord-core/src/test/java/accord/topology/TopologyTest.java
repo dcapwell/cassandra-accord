@@ -42,8 +42,9 @@ import java.util.List;
 import java.util.TreeSet;
 import java.util.function.Consumer;
 
-import static accord.impl.TopologyUtils.routingKey;
-import static accord.impl.TopologyUtils.routingKeyOutsideRange;
+import static accord.topology.TopologyUtils.routingKey;
+import static accord.topology.TopologyUtils.routingKeyOutsideRange;
+import static accord.topology.TopologyUtils.withEpoch;
 import static accord.utils.AccordGens.topologys;
 import static org.assertj.core.api.Assertions.assertThat;
 import static accord.utils.ExtendedAssertions.assertThat;
@@ -118,8 +119,8 @@ public class TopologyTest
         qt().forAll(topologys(), Gens.random()).check((topology, rs) -> {
             assertThat(topology)
                     .isNotSubset()
-                    .isEqualTo(topology.withEpoch(topology.epoch))
-                    .hasSameHashCodeAs(topology.withEpoch(topology.epoch));
+                    .isEqualTo(withEpoch(topology, topology.epoch))
+                    .hasSameHashCodeAs(withEpoch(topology, topology.epoch));
 
             checkTopology(topology, rs);
 

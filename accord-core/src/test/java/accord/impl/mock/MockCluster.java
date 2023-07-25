@@ -27,6 +27,7 @@ import accord.local.Node.Id;
 import accord.local.ShardDistributor;
 import accord.messages.SafeCallback;
 import accord.primitives.Ranges;
+import accord.topology.TopologyUtils;
 import accord.utils.DefaultRandom;
 import accord.utils.EpochFunction;
 import accord.utils.RandomSource;

@@ -235,7 +235,7 @@ public abstract class TxnRequest<R> implements Request, PreLoadContext, MapReduc
         for (int i = startIndex, mi = topologies.size() ; i < mi ; ++i)
         {
             Topology topology = topologies.get(i);
-            Ranges ranges = topology.rangesForNode(node);
+            Ranges ranges = topology.global().rangesForNode(node);
             if (ranges != last && !ranges.equals(last))
             {
                 O add = slice.apply(keys, ranges);

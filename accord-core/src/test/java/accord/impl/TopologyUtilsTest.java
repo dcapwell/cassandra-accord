@@ -18,6 +18,7 @@
 
 package accord.impl;
 
+import accord.topology.TopologyUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

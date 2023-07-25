@@ -22,7 +22,7 @@ import accord.Utils;
 import accord.api.Key;
 import accord.api.TestableConfigurationService;
 import accord.impl.PrefixedIntHashKey;
-import accord.impl.TopologyUtils;
+import accord.topology.TopologyUtils;
 import accord.messages.PreAccept;
 import accord.messages.ReplyContext;
 import accord.primitives.FullRoute;

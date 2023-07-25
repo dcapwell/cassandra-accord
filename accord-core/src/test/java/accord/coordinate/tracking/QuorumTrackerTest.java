@@ -18,7 +18,7 @@
 
 package accord.coordinate.tracking;
 
-import accord.impl.TopologyUtils;
+import accord.topology.TopologyUtils;
 import accord.local.Node;
 import accord.primitives.Range;
 import accord.primitives.Ranges;

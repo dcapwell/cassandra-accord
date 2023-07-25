@@ -44,6 +44,7 @@ import static accord.impl.IntKey.routing;
 import static accord.impl.mock.MockCluster.configService;
 import static accord.primitives.Routable.Domain.Key;
 import static accord.primitives.Txn.Kind.Write;
+import static accord.topology.TopologyUtils.withEpoch;
 import static accord.utils.Utils.listOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -248,7 +249,7 @@ public class PreAcceptTest
             Keys keys = Keys.of(key);
             CommandStore commandStore = node.unsafeForKey(key);
 
-            configService(node).reportTopology(node.topology().current().withEpoch(2));
+            configService(node).reportTopology(withEpoch(node.topology().current(), 2));
             messageSink.clearHistory();
 
             TxnId txnId = clock.idForNode(1, ID2);

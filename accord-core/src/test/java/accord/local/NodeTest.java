@@ -24,6 +24,8 @@ import accord.primitives.Timestamp;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import static accord.topology.TopologyUtils.withEpoch;
+
 public class NodeTest
 {
     private static Timestamp ts(long epoch, long hlc, int node)
@@ -67,7 +69,7 @@ public class NodeTest
             Timestamp timestamp1 = node.uniqueNow();
             Assertions.assertEquals(ts(1, 101, 1), timestamp1);
 
-            configService.reportTopology(node.topology().current().withEpoch(2));
+            configService.reportTopology(withEpoch(node.topology().current(), 2));
             Timestamp timestamp2 = node.uniqueNow();
             Assertions.assertEquals(ts(2, 102, 1), timestamp2);
         }

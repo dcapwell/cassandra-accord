@@ -21,7 +21,6 @@ package accord.topology;
 import accord.burn.TopologyUpdates;
 import accord.impl.PrefixedIntHashKey;
 import accord.impl.TestAgent;
-import accord.impl.TopologyUtils;
 import accord.local.AgentExecutor;
 import accord.primitives.Ranges;
 import accord.primitives.Unseekables;

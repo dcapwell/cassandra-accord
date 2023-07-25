@@ -20,7 +20,7 @@ package accord.messages;
 
 import accord.api.TopologySorter;
 import accord.impl.IntHashKey;
-import accord.impl.TopologyUtils;
+import accord.topology.TopologyUtils;
 import accord.local.Node;
 import accord.primitives.FullRoute;
 import accord.primitives.Range;

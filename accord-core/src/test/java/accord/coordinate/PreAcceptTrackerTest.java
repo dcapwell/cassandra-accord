@@ -19,7 +19,7 @@
 package accord.coordinate;
 
 import accord.coordinate.tracking.FastPathTracker;
-import accord.impl.TopologyUtils;
+import accord.topology.TopologyUtils;
 import accord.local.Node;
 import accord.primitives.Ranges;
 import accord.topology.Topology;

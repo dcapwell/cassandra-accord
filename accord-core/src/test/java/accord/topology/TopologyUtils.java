@@ -16,9 +16,11 @@
  * limitations under the License.
  */
 
-package accord.impl;
+package accord.topology;
 
 import accord.api.RoutingKey;
+import accord.impl.IntKey;
+import accord.impl.PrefixedIntHashKey;
 import accord.primitives.Range;
 import accord.local.Node;
 import accord.primitives.Ranges;
@@ -52,6 +54,11 @@ public class TopologyUtils
             ranges[i] = IntKey.range(start, end);
         }
         return Ranges.of(ranges);
+    }
+
+    public static Topology withEpoch(Topology topology, long epoch)
+    {
+        return new Topology(topology.global == null ? null : withEpoch(topology.global, epoch), epoch, topology.shards, topology.ranges, topology.nodeLookup, topology.subsetOfRanges, topology.supersetIndexes);
     }
 
     public static Topology topology(long epoch, List<Node.Id> cluster, Ranges ranges, int rf)
