@@ -99,9 +99,11 @@ public class BurnTest
             Id node = nodes.get(random.nextInt(nodes.size()));
 
             boolean isRangeQuery = random.nextBoolean();
+            String description;
             Function<Node, Txn> gen;
             if (isRangeQuery)
             {
+                description = "range";
                 gen = n -> {
                     int[] prefixes = prefixes(n.topology().current());
 
@@ -110,7 +112,7 @@ public class BurnTest
                     while (--rangeCount >= 0)
                     {
                         int j = 1 + random.nextInt(0xffff), i = Math.max(0, j - (1 + random.nextInt(0x1ffe)));
-                        int prefix = prefixes[random.nextInt(prefixes.length)];
+                        int prefix = random.pickInt(prefixes);
                         requestRanges.add(PrefixedIntHashKey.range(forHash(prefix, i), forHash(prefix, j)));
                     }
                     Ranges ranges = Ranges.of(requestRanges.toArray(new Range[0]));
@@ -121,6 +123,7 @@ public class BurnTest
             }
             else
             {
+                description = "key";
                 gen = n -> {
                     int[] prefixes = prefixes(n.topology().current());
 
@@ -138,7 +141,7 @@ public class BurnTest
                     while (writeCount-- > 0)
                     {
                         int i = randomKeyValue(random, keyCount, writeValues);
-                        int prefix = prefixes[random.nextInt(prefixes.length)];
+                        int prefix = random.pickInt(prefixes);
                         update.put(PrefixedIntHashKey.key(prefix, i), ++next[i]);
                     }
 
@@ -150,7 +153,7 @@ public class BurnTest
                     return new Txn.InMemory(new Keys(requestKeys), read, query, update);
                 };
             }
-            packets.add(new Packet(client, node, count, new ListRequest(gen)));
+            packets.add(new Packet(client, node, count, new ListRequest(description, gen)));
         }
 
         return packets;
@@ -171,7 +174,7 @@ public class BurnTest
 
     private static Key randomKey(RandomSource random, int[] prefixes, int keyCount, Set<Integer> notIn)
     {
-        int prefix = prefixes[random.nextInt(prefixes.length)];
+        int prefix = random.pickInt(prefixes);
         int value = randomKeyValue(random, keyCount, notIn);
         return PrefixedIntHashKey.key(prefix, value);
     }
@@ -358,8 +361,10 @@ public class BurnTest
         {
             for (int i = 0 ; i < requests.length ; ++i)
             {
-                logger.info("{}", requests[i]);
-                logger.info("\t\t" + replies[i]);
+                if (replies[i] == null)
+                {
+                    logger.info("Request: {}\nResponse: {}", requests[i], replies[i]);
+                }
             }
             throw new AssertionError("Incomplete set of responses");
         }

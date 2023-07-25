@@ -179,10 +179,12 @@ public class ListRequest implements Request
         return prefixes;
     }
 
+    private final String description;
     private final Function<Node, Txn> gen;
 
-    public ListRequest(Function<Node, Txn> gen)
+    public ListRequest(String description, Function<Node, Txn> gen)
     {
+        this.description = description;
         this.gen = gen;
     }
 
@@ -202,7 +204,8 @@ public class ListRequest implements Request
     @Override
     public String toString()
     {
-        return gen.toString();
+        return "ListRequest{" +
+               "'" + description + '\'' +
+               '}';
     }
-
 }

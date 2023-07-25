@@ -180,6 +180,28 @@ public interface RandomSource
 
     double nextGaussian();
 
+    default int pickInt(int first, int second, int... rest)
+    {
+        int[] array = new int[rest.length + 2];
+        array[0] = first;
+        array[1] = second;
+        System.arraycopy(rest, 0, array, 2, rest.length);
+        return pickInt(array, 0, array.length);
+    }
+
+    default int pickInt(int[] array)
+    {
+        return pickInt(array, 0, array.length);
+    }
+
+    default int pickInt(int[] array, int offset, int length)
+    {
+        Impl.checkNextArray(array, array.length, offset, length);
+        if (length == 1)
+            return array[offset];
+        return array[nextInt(offset, offset + length)];
+    }
+
     default long pickLong(long first, long second, long... rest)
     {
         long[] array = new long[rest.length + 2];
