@@ -18,7 +18,6 @@
 
 package accord.impl.list;
 
-import java.util.Arrays;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -28,7 +27,6 @@ import accord.coordinate.CheckShards;
 import accord.coordinate.CoordinationFailed;
 import accord.coordinate.Invalidated;
 import accord.coordinate.Truncated;
-import accord.impl.PrefixedIntHashKey;
 import accord.impl.basic.Cluster;
 import accord.impl.basic.Packet;
 import accord.local.Node;
@@ -39,11 +37,9 @@ import accord.messages.CheckStatus.IncludeInfo;
 import accord.messages.MessageType;
 import accord.messages.ReplyContext;
 import accord.primitives.RoutingKeys;
-import accord.primitives.Seekables;
 import accord.primitives.Txn;
 import accord.messages.Request;
 import accord.primitives.TxnId;
-import org.agrona.collections.IntHashSet;
 
 import static accord.local.Status.Phase.Cleanup;
 import static accord.local.Status.PreApplied;
@@ -113,7 +109,6 @@ public class ListRequest implements Request
         public void accept(Result success, Throwable fail)
         {
             // TODO (desired, testing): error handling
-            int[] prefixes = prefixes(txn.keys());
             if (success != null)
             {
                 node.reply(client, replyContext, (ListResult) success);
@@ -154,29 +149,11 @@ public class ListRequest implements Request
                         }));
                 });
             }
-        }
-    }
-
-    private static int[] prefixes(Seekables<?, ?> keys)
-    {
-        IntHashSet uniq = new IntHashSet();
-        keys.forEach(k -> {
-            switch (k.domain())
+            else
             {
-                case Key:
-                    uniq.add(((PrefixedIntHashKey) k).prefix);
-                    break;
-                case Range:
-                    uniq.add(((PrefixedIntHashKey) k.asRange().start()).prefix);
-                    break;
+                node.agent().onUncaughtException(fail);
             }
-        });
-        int[] prefixes = new int[uniq.size()];
-        IntHashSet.IntIterator it = uniq.iterator();
-        for (int i = 0; it.hasNext(); i++)
-            prefixes[i] = it.nextValue();
-        Arrays.sort(prefixes);
-        return prefixes;
+        }
     }
 
     private final String description;
