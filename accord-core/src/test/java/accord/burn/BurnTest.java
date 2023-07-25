@@ -226,6 +226,7 @@ public class BurnTest
         PendingQueue queue = new PropagatingPendingQueue(failures, delayQueue);
         RandomSource retryRandom = random.fork();
         ListAgent agent = new ListAgent(1000L, failures::add, retry -> {
+            // TODO (now): revert once known failing seeds are passing
 //            long delay = retryRandom.nextInt(1, 15);
             long delay = retryRandom.nextInt(60, 300);
             queue.add((PendingRunnable)retry::run, delay, TimeUnit.SECONDS);
