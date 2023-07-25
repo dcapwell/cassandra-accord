@@ -1358,13 +1358,9 @@ public class Commands
             case TrySet:
                 if (adding != null)
                 {
-                    // TODO (correctness, now): partial_txn.covering.containsAll(store.ranges()) doesn't make sense as the txn coverage is only the ranges touched, and not exhaustive
-                    // Benedict told me of an edge case of [], so we would need to look at the Topologies, find all nodes that have intersecting ranges... then some how create empty?  The only case that sounds possible
-                    // are emptyTxn, but even these NEED keys() to be defined else we fail to compute scope...
                     if (!adding.containsAll(existingRanges))
                         return false;
 
-                    // TODO (correctness, now): when new ranges are added (such as CREATE KEYSPACE in Apache Cassandra), the newer epoch may know the new ranges, but the txn's covering was defined in a older epoch, so wouldn't know about those ranges
                     if (additionalRanges != existingRanges && !adding.containsAll(additionalRanges))
                         return false;
 
