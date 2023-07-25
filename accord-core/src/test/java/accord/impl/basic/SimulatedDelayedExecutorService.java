@@ -18,7 +18,11 @@
 
 package accord.impl.basic;
 
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import accord.api.Agent;
 import accord.burn.random.FrequentLargeRange;
@@ -54,6 +58,34 @@ public class SimulatedDelayedExecutorService extends TaskExecutorService
     private static int microToNanos(int value)
     {
         return Math.toIntExact(TimeUnit.MICROSECONDS.toNanos(value));
+    }
+
+    @Override
+    public <T> Task<T> submit(Callable<T> fn)
+    {
+        final Throwable caller = new IllegalStateException("AsyncChain.begin not called");
+        Consumer<Task<T>> onCall = super::submit;
+        Task<T> task = new Task<T>(fn) {
+            private final AtomicBoolean called = new AtomicBoolean(false);
+
+            @Override
+            public void begin(BiConsumer<? super T, Throwable> callback)
+            {
+                if (called.compareAndSet(false, true))
+                {
+                    onCall.accept(this);
+                    addCallback(callback);
+                }
+            }
+
+            @Override
+            protected void finalize()
+            {
+                if (!called.get())
+                    agent.onUncaughtException(caller);
+            }
+        };
+        return task;
     }
 
     @Override

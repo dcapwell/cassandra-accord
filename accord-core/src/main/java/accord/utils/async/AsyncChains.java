@@ -19,10 +19,13 @@
 package accord.utils.async;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import accord.api.VisibleForImplementation;
@@ -242,6 +245,35 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
         }
     }
 
+    private static class DetectLeak extends AsyncChains.Head<Void>
+    {
+        private final AtomicBoolean called = new AtomicBoolean(false);
+        private final Throwable caller = new IllegalStateException("AsyncChain.begin not called");
+        private final Consumer<Throwable> onLeak;
+        private final Runnable onCall;
+
+        private DetectLeak(Consumer<Throwable> onLeak, Runnable onCall)
+        {
+            this.onLeak = Objects.requireNonNull(onLeak);
+            this.onCall = Objects.requireNonNull(onCall);
+        }
+
+        @Override
+        protected void start(BiConsumer<? super Void, Throwable> callback)
+        {
+            called.set(true);
+            onCall.run();
+            callback.accept(null, null);
+        }
+
+        @Override
+        protected void finalize()
+        {
+            if (!called.get())
+                onLeak.accept(caller);
+        }
+    }
+
     // either the thing we start, or the thing we do in follow-up
     BiConsumer<? super V, Throwable> next;
     AsyncChains(Head<?> head)
@@ -291,6 +323,11 @@ public abstract class AsyncChains<V> implements AsyncChain<V>
     {
         Invariants.checkState(next != null, "Begin was called multiple times");
         Invariants.checkState(next instanceof Head<?>, "Next is not an instance of AsyncChains.Head (it is %s); was map/flatMap called on the same object multiple times?", next.getClass());
+    }
+
+    public static AsyncChain<?> detectLeak(Consumer<Throwable> onLeak, Runnable onCall)
+    {
+        return new DetectLeak(onLeak, onCall);
     }
 
     private static <V> Runnable encapsulate(Callable<V> callable, BiConsumer<? super V, Throwable> receiver)

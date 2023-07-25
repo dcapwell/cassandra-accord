@@ -96,7 +96,7 @@ public class AsyncResults
                 @Override
                 protected void start(BiConsumer<? super V, Throwable> callback)
                 {
-                    AbstractResult.this.addCallback(callback);
+                    AbstractResult.this.begin(callback);
                 }
             };
         }

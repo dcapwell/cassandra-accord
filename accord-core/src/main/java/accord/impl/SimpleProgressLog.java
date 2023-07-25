@@ -361,7 +361,7 @@ public class SimpleProgressLog implements ProgressLog.Factory
                                 Invariants.checkState(test.has(success));
                                 record(success);
                             }
-                        });
+                        }).begin(commandStore.agent());
                     };
 
                     node.withEpoch(blockedUntil.fetchEpoch(txnId, executeAt), () -> {
