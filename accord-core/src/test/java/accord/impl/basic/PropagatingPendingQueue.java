@@ -18,6 +18,7 @@
 
 package accord.impl.basic;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -61,7 +62,7 @@ public class PropagatingPendingQueue implements PendingQueue
             if (assertion == null)
                 assertion = new AssertionError("Unexpected exception encountered");
 
-            for (Throwable t : failures)
+            for (Throwable t : new ArrayList<>(failures))
             {
                 if (t != assertion)
                     assertion.addSuppressed(t);
