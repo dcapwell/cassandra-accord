@@ -463,7 +463,7 @@ public class TopologyRandomizer
     {
         Topology current = epochs.get(epochs.size() - 1);
         Shard[] oldShards = current.unsafeGetShards().clone();
-        int remainingMutations = random.nextInt(current.size());
+        int remainingMutations = random.nextInt(Math.min(current.size(), 10));
         int rejectedMutations = 0;
         logger.debug("Updating topology with {} mutations", remainingMutations);
         Shard[] newShards = oldShards;
