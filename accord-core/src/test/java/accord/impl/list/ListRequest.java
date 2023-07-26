@@ -28,6 +28,7 @@ import accord.coordinate.CoordinationFailed;
 import accord.coordinate.Invalidated;
 import accord.coordinate.Truncated;
 import accord.impl.basic.Cluster;
+import accord.impl.basic.NodeSink;
 import accord.impl.basic.Packet;
 import accord.local.Node;
 import accord.local.Node.Id;
@@ -95,13 +96,15 @@ public class ListRequest implements Request
         final Node node;
         final Id client;
         final ReplyContext replyContext;
+        final TxnId id;
         final Txn txn;
 
-        ResultCallback(Node node, Id client, ReplyContext replyContext, Txn txn)
+        ResultCallback(Node node, Id client, ReplyContext replyContext, TxnId id, Txn txn)
         {
             this.node = node;
             this.client = client;
             this.replyContext = replyContext;
+            this.id = id;
             this.txn = txn;
         }
 
@@ -111,10 +114,12 @@ public class ListRequest implements Request
             // TODO (desired, testing): error handling
             if (success != null)
             {
+                ((NodeSink) node.messageSink()).debugClient(id, success, NodeSink.ClientAction.SUCCESS);
                 node.reply(client, replyContext, (ListResult) success);
             }
             else if (fail instanceof CoordinationFailed)
             {
+                ((NodeSink) node.messageSink()).debugClient(id, fail, NodeSink.ClientAction.FAILURE);
                 RoutingKey homeKey = ((CoordinationFailed) fail).homeKey();
                 TxnId txnId = ((CoordinationFailed) fail).txnId();
                 if (fail instanceof Invalidated)
@@ -151,6 +156,7 @@ public class ListRequest implements Request
             }
             else
             {
+                ((NodeSink) node.messageSink()).debugClient(id, fail, NodeSink.ClientAction.FAILURE);
                 node.agent().onUncaughtException(fail);
             }
         }
@@ -169,7 +175,9 @@ public class ListRequest implements Request
     public void process(Node node, Id client, ReplyContext replyContext)
     {
         Txn txn = gen.apply(node);
-        node.coordinate(txn).addCallback(new ResultCallback(node, client, replyContext, txn));
+        TxnId id = node.nextTxnId(txn.kind(), txn.keys().domain());
+        ((NodeSink) node.messageSink()).debugClient(id, txn, NodeSink.ClientAction.SUBMIT);
+        node.coordinate(id, txn).addCallback(new ResultCallback(node, client, replyContext, id, txn));
     }
 
     @Override

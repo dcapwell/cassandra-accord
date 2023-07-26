@@ -212,6 +212,8 @@ public class Cluster implements Scheduler
                              || !partitionSet.contains(deliver.src) && !partitionSet.contains(deliver.dst));
             if (drop)
             {
+                // CASSANDRA-18451 moves this to NodeSink which makes this easier to work with
+                ((NodeSink) on.messageSink()).debug(deliver.dst, deliver.requestId, deliver.message, NodeSink.Action.DROP_PARTITIONED);
                 if (trace.isTraceEnabled())
                     trace.trace("{} DROP[{}] {}", clock++, on.epoch(), deliver);
                 return;
