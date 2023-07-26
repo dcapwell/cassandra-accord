@@ -116,7 +116,13 @@ public class DelayedCommandStores extends InMemoryCommandStores.SingleThread
         @Override
         public <T> AsyncChain<T> submit(Callable<T> fn)
         {
-            Task<T> task = new Task<>(() -> this.unsafeRunIn(fn));
+            Task<T> task = new Task<T>(fn) {
+                @Override
+                public void run()
+                {
+                    unsafeRunIn(super::run);
+                }
+            };
             return AsyncChains.detectLeak(agent::onUncaughtException, () -> {
                 boolean wasEmpty = pending.isEmpty();
                 pending.add(task);
