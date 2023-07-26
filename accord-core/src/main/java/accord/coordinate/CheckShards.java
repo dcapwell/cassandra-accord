@@ -43,6 +43,7 @@ public abstract class CheckShards<U extends Unseekables<?>> extends ReadCoordina
     final IncludeInfo includeInfo;
 
     protected CheckStatusOk merged;
+    private final CheckStatusOk[] mergedPerShard;
     protected boolean truncated;
 
     // srcEpoch is either txnId.epoch() or executeAt.epoch()
@@ -57,6 +58,7 @@ public abstract class CheckShards<U extends Unseekables<?>> extends ReadCoordina
         this.sourceEpoch = srcEpoch;
         this.route = route;
         this.includeInfo = includeInfo;
+        this.mergedPerShard = new CheckStatusOk[this.trackers.length];
     }
 
     private static Topologies topologyFor(Node node, TxnId txnId, Unseekables<?> contact, long epoch)
@@ -94,6 +96,18 @@ public abstract class CheckShards<U extends Unseekables<?>> extends ReadCoordina
             CheckStatusOk ok = (CheckStatusOk) reply;
             if (merged == null) merged = ok;
             else merged = merged.merge(ok);
+            int maxShards = maxShardsPerEpoch();
+            for (int i = 0, limit = topologies().size(); i < limit; i++)
+            {
+                topologies().get(i).mapReduceOn(from, i * maxShards, (p1, p2, p3, index) -> {
+                    CheckStatusOk current = mergedPerShard[index];
+                    CheckStatusOk update;
+                    if (current == null) update = ok;
+                    else                 update = current.merge(ok);
+                    mergedPerShard[index] = update;
+                    return null;
+                }, null, null, null, (a, b) -> null, null);
+            }
             return checkSufficient(from, ok);
         }
         else

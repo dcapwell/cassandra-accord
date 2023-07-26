@@ -404,7 +404,9 @@ public class BurnTest
     @Test
     public void testOne()
     {
-        run(-7298724863821330058L, 1000);
+//        run(-7298724863821330058L, 1000);
+//        run(-2947131555687401977L, 1000);
+        run(2600920836954616876L, 1000);
 //        while (true)
 //        run(ThreadLocalRandom.current().nextLong(), 1000);
     }
