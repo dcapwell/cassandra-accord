@@ -27,6 +27,7 @@ import accord.local.Node;
 import accord.local.PreLoadContext;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
+import accord.local.SaveStatus;
 import accord.local.Status;
 import accord.local.Status.Known;
 import accord.local.Status.Phase;
@@ -351,7 +352,7 @@ public class FetchData extends CheckShards<Route<?>>
             SafeCommand safeCommand = safeStore.get(txnId, this, route);
             Command command = safeCommand.current();
             if (command.saveStatus().phase.compareTo(Phase.Persist) >= 0)
-                return null;
+                return maybeSetDurability(safeStore, safeCommand);
 
             Status propagate = achieved.propagate();
             if (command.hasBeen(propagate))
@@ -418,7 +419,11 @@ public class FetchData extends CheckShards<Route<?>>
                     break;
             }
 
+            return maybeSetDurability(safeStore, safeCommand);
+        }
 
+        private Void maybeSetDurability(SafeCommandStore safeStore, SafeCommand safeCommand)
+        {
             RoutingKey homeKey = full.homeKey;
             if (!full.durability.isDurable() || homeKey == null)
                 return null;
