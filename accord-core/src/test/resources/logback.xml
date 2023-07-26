@@ -26,7 +26,7 @@
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%-5level %d{yyyy-MM-dd-HH:mm:ss} %F:%L - %msg%n</pattern>
+            <pattern>%-5level %d{yyyy-MM-ddTHH:mm:ss} %F:%L - %msg%n</pattern>
         </encoder>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>INFO</level>
