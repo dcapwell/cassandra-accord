@@ -268,6 +268,7 @@ public class SimpleProgressLog implements ProgressLog.Factory
                                     AsyncResult<? extends Outcome> recover = node.maybeRecover(txnId, route, token);
                                     recover.addCallback((success, fail) -> {
                                         // TODO (expected): callback should be on safeStore, and should provide safeStore as a parameter
+                                        // TODO (performance, now): addCallback(callback, executor) can make sure the callback runs in the command store, and would be cheaper as we don't need to load the txn
                                         commandStore.execute(contextFor(txnId), safeStore0 -> {
                                             if (status.isAtMostReadyToExecute() && progress() == Investigating)
                                             {
