@@ -277,6 +277,13 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusRep
             return this.saveStatus.compareTo(that.saveStatus) >= 0;
         }
 
+        public static CheckStatusOk mergeNullSafe(CheckStatusOk a, CheckStatusOk b)
+        {
+            if (a == null) return b;
+            if (b == null) return a;
+            return a.merge(b);
+        }
+
         public CheckStatusOk merge(CheckStatusOk that)
         {
             if (!preferSelf(that))

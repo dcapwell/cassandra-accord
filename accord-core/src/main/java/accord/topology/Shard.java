@@ -19,6 +19,7 @@
 package accord.topology;
 
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -60,6 +61,12 @@ public class Shard
         this.recoveryFastPathSize = (maxFailures+1)/2;
         this.slowPathQuorumSize = slowPathQuorumSize(nodes.size());
         this.fastPathQuorumSize = fastPathQuorumSize(nodes.size(), e, maxFailures);
+    }
+
+    @VisibleForTesting
+    public Shard(Range range, List<Id> nodes)
+    {
+        this(range, nodes, new HashSet<>(nodes));
     }
 
     public Shard(Range range, List<Id> nodes, Set<Id> fastPathElectorate)

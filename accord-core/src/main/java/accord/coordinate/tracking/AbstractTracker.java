@@ -21,7 +21,7 @@ package accord.coordinate.tracking;
 import accord.local.Node.Id;
 import accord.topology.Shard;
 import accord.topology.Topologies;
-import accord.topology.Topology;
+import accord.topology.ShardsArray;
 
 import accord.utils.Invariants;
 import com.google.common.annotations.VisibleForTesting;
@@ -31,6 +31,7 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.function.Predicate;
+import java.util.stream.IntStream;
 
 import static accord.coordinate.tracking.AbstractTracker.ShardOutcomes.NoChange;
 
@@ -81,7 +82,7 @@ public abstract class AbstractTracker<ST extends ShardTracker>
     }
 
     final Topologies topologies;
-    protected final ST[] trackers;
+    protected final ShardsArray<ST> trackers;
     protected final int maxShardsPerEpoch;
     protected int waitingOnShards;
 
@@ -92,31 +93,10 @@ public abstract class AbstractTracker<ST extends ShardTracker>
     AbstractTracker(Topologies topologies, IntFunction<ST[]> arrayFactory, ShardFactory<ST> trackerFactory)
     {
         Invariants.checkArgument(topologies.totalShards() > 0);
-        int topologyCount = topologies.size();
-        int maxShardsPerEpoch = topologies.get(0).size();
-        int shardCount = maxShardsPerEpoch;
-        for (int i = 1 ; i < topologyCount ; ++i)
-        {
-            int size = topologies.get(i).size();
-            maxShardsPerEpoch = Math.max(maxShardsPerEpoch, size);
-            shardCount += size;
-        }
+        this.trackers = new ShardsArray(topologies, arrayFactory, (epochIndex, ignore, shard) -> trackerFactory.apply(epochIndex, shard));
         this.topologies = topologies;
-        this.trackers = arrayFactory.apply(topologyCount * maxShardsPerEpoch);
-        for (int i = 0 ; i < topologyCount ; ++i)
-        {
-            Topology topology = topologies.get(i);
-            int size = topology.size();
-            for (int j = 0; j < size; ++j)
-                trackers[i * maxShardsPerEpoch + j] = trackerFactory.apply(i, topology.get(j));
-        }
-        this.maxShardsPerEpoch = maxShardsPerEpoch;
-        this.waitingOnShards = shardCount;
-    }
-
-    protected int topologyOffset(int topologyIdx)
-    {
-        return topologyIdx * maxShardsPerEpoch();
+        this.maxShardsPerEpoch = IntStream.range(0, topologies.size()).map(i -> topologies.get(i).size()).max().orElse(0);
+        this.waitingOnShards = trackers.size();
     }
 
     public Topologies topologies()
@@ -137,19 +117,13 @@ public abstract class AbstractTracker<ST extends ShardTracker>
     {
         Invariants.checkState(self == this); // we just accept self as parameter for type safety
         ShardOutcomes status = NoChange;
-        int maxShards = maxShardsPerEpoch();
-        for (int i = 0; i < topologyLimit && !status.isTerminalState() ; ++i)
-        {
-            status = topologies.get(i).mapReduceOn(node, i * maxShards, AbstractTracker::apply, self, function, param, ShardOutcomes::min, status);
-        }
+        status = trackers.mapReduce(0, topologyLimit, node,
+                                    (value, index) -> function.apply(value, param).apply(self, index),
+                                    ShardOutcomes::min,
+                                    status,
+                                    ShardOutcomes::isTerminalState);
 
         return status.toRequestStatus(this);
-    }
-
-    static <ST extends ShardTracker, P, T extends AbstractTracker<ST>>
-    ShardOutcomes apply(T tracker, BiFunction<? super ST, P, ? extends ShardOutcome<? super T>> function, P param, int trackerIndex)
-    {
-        return function.apply(tracker.trackers[trackerIndex], param).apply(tracker, trackerIndex);
     }
 
     public boolean any(Predicate<ST> test)
@@ -179,16 +153,13 @@ public abstract class AbstractTracker<ST extends ShardTracker>
 
     public ST get(int shardIndex)
     {
-        int maxShardsPerEpoch = maxShardsPerEpoch();
-        return get(shardIndex / maxShardsPerEpoch, shardIndex % maxShardsPerEpoch);
+        return trackers.get(shardIndex);
     }
 
     @VisibleForTesting
     public ST get(int topologyIdx, int shardIdx)
     {
-        if (shardIdx >= maxShardsPerEpoch())
-            throw new IndexOutOfBoundsException();
-        return trackers[topologyOffset(topologyIdx) + shardIdx];
+        return trackers.get(topologyIdx, shardIdx);
     }
 
     protected int maxShardsPerEpoch()
@@ -200,7 +171,7 @@ public abstract class AbstractTracker<ST extends ShardTracker>
     public String toString()
     {
         return getClass().getSimpleName() + "{" +
-               "trackers=" + Arrays.toString(trackers) +
+               "trackers=" + trackers +
                '}';
     }
 }

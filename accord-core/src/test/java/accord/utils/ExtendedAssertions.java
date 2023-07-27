@@ -20,6 +20,9 @@ package accord.utils;
 
 import accord.api.RoutingKey;
 import accord.local.Node;
+import accord.messages.Reply;
+import accord.messages.ReplyContext;
+import accord.messages.TxnRequest;
 import accord.primitives.Range;
 import accord.primitives.Ranges;
 import accord.primitives.Unseekables;
@@ -28,10 +31,14 @@ import accord.topology.Topologies;
 import accord.topology.Topology;
 import org.agrona.collections.LongArrayList;
 import org.assertj.core.api.AbstractAssert;
+import org.assertj.core.api.Assertions;
+import org.assertj.core.api.ObjectAssert;
 import org.assertj.core.error.BasicErrorMessageFactory;
 import org.assertj.core.error.ShouldBeEmpty;
 import org.assertj.core.error.ShouldHaveSize;
 import org.assertj.core.error.ShouldNotBeEmpty;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -220,6 +227,15 @@ public class ExtendedAssertions
             fn.accept(assertThat(actual.forEpoch(epoch)));
             return myself;
         }
+    }
+
+    public static <T extends Reply> ObjectAssert<T> process(TxnRequest<T> request, Node on, Node.Id replyTo, Class<T> replyType)
+    {
+        ReplyContext replyContext = Mockito.mock(ReplyContext.class);
+        request.process(on, replyTo, replyContext);
+        ArgumentCaptor<T> reply = ArgumentCaptor.forClass(replyType);
+        Mockito.verify(on.messageSink()).reply(Mockito.eq(replyTo), Mockito.eq(replyContext), reply.capture());
+        return Assertions.assertThat(reply.getValue());
     }
 
     public static ShardAssert assertThat(Shard shard)

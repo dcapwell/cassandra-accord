@@ -406,9 +406,10 @@ public class BurnTest
     {
 //        run(-7298724863821330058L, 1000);
 //        run(-2947131555687401977L, 1000);
-        run(2600920836954616876L, 1000);
-//        while (true)
-//        run(ThreadLocalRandom.current().nextLong(), 1000);
+        run(2600920836954616876L, 1000); // TODO fix the edge case where a shard is truncated and the rest are applied
+//        run(-1886725606490583501L, 1000); //TODO delete
+        while (true)
+        run(ThreadLocalRandom.current().nextLong(), 1000);
     }
 
     private static void run(long seed, int operations)

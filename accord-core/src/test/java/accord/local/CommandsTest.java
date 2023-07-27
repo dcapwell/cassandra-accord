@@ -34,8 +34,13 @@ import accord.primitives.Txn;
 import accord.primitives.TxnId;
 import accord.topology.Topology;
 import accord.utils.AccordGens;
+import accord.utils.ExtendedAssertions;
 import accord.utils.Gen;
 import accord.utils.Gens;
+import org.assertj.core.api.Assertions;
+import org.assertj.core.api.Condition;
+import org.assertj.core.api.InstanceOfAssertFactories;
+import org.assertj.core.api.InstanceOfAssertFactory;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
@@ -84,16 +89,12 @@ class CommandsTest
             ((TestableConfigurationService) node.configService()).reportTopology(updatedTopology);
 
             PreAccept preAccept = new PreAccept(N1, node.topology().withUnsyncedEpochs(route, txnId.epoch(), updatedTopology.epoch()), txnId, txn, route);
-            ReplyContext replyContext = Mockito.mock(ReplyContext.class);
-            preAccept.process(node, N1, replyContext);
-
-            ArgumentCaptor<PreAccept.PreAcceptOk> reply = ArgumentCaptor.forClass(PreAccept.PreAcceptOk.class);
-            Mockito.verify(node.messageSink()).reply(Mockito.eq(N1), Mockito.eq(replyContext), reply.capture());
-
-            PreAccept.PreAcceptOk result = reply.getValue();
-            assertThat(result.txnId).isEqualTo(txnId);
-            assertThat(result.witnessedAt.epoch()).isEqualTo(updatedTopology.epoch());
-            assertThat(result.deps.isEmpty()).isTrue();
+            ExtendedAssertions.process(preAccept, node, N1, PreAccept.PreAcceptReply.class)
+                    .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat))
+                    .extracting(r -> r.txnId,
+                                r -> r.witnessedAt.epoch(),
+                                r -> r.deps.isEmpty())
+                    .containsExactly(txnId, updatedTopology.epoch(), true);
         });
     }
 }

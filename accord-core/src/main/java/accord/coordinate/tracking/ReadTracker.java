@@ -293,9 +293,9 @@ public class ReadTracker extends AbstractTracker<ReadTracker.ReadShardTracker>
         ShardSelection toRead;
         {
             ShardSelection tmp = null;
-            for (int i = 0 ; i < trackers.length ; ++i)
+            for (int i = 0 ; i < trackers.size() ; ++i)
             {
-                ReadShardTracker tracker = trackers[i];
+                ReadShardTracker tracker = trackers.get(i);
                 if (tracker == null || !tracker.shouldRead() || !tracker.canRead())
                     continue;
 
@@ -318,7 +318,7 @@ public class ReadTracker extends AbstractTracker<ReadTracker.ReadShardTracker>
         {
             Id candidate = candidates.get(i);
             topologies().forEach((topology, ti) -> {
-                int offset = topologyOffset(ti);
+                int offset = trackers.offset(ti);
                 topology.forEachOn(candidate, (s, si) -> toRead.clear(offset + si));
             });
 

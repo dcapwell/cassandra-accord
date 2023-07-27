@@ -54,6 +54,9 @@ import com.google.common.collect.Sets;
 import org.mockito.Mockito;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -174,10 +177,29 @@ public class Utils
         TopologySorter.Supplier topologySorter = SizeOfIntersectionSorter.SUPPLIER;
         Function<Node, ProgressLog.Factory> progressLogFactory = SimpleProgressLog::new;
         CommandStores.Factory factory = InMemoryCommandStores.Synchronized::new;
+        List<Topology> topologies = Collections.emptyList();
 
         public NodeBuilder(Node.Id id)
         {
             this.id = id;
+        }
+
+        public NodeBuilder withTopologies(Topology... topologies)
+        {
+            this.topologies = Arrays.asList(topologies);
+            this.topologies.sort(Comparator.comparingLong(Topology::epoch));
+            return this;
+        }
+
+        public NodeBuilder withProgressLog(ProgressLog.Factory factory)
+        {
+            return withProgressLog((Function<Node, ProgressLog.Factory>) ignore -> factory);
+        }
+
+        public NodeBuilder withProgressLog(Function<Node, ProgressLog.Factory> fn)
+        {
+            this.progressLogFactory = fn;
+            return this;
         }
 
         public NodeBuilder withMessageSink(MessageSink messageSink)
@@ -215,6 +237,8 @@ public class Utils
         {
             Node node = build();
             awaitUninterruptibly(node.start());
+            for (Topology t : topologies)
+                ((TestableConfigurationService) node.configService()).reportTopology(t);
             return node;
         }
     }

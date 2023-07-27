@@ -26,6 +26,7 @@ import accord.messages.CheckStatus.CheckStatusReply;
 import accord.messages.CheckStatus.IncludeInfo;
 import accord.primitives.*;
 import accord.topology.Topologies;
+import accord.topology.ShardsArray;
 
 /**
  * A result of null indicates the transaction is globally persistent
@@ -43,7 +44,7 @@ public abstract class CheckShards<U extends Unseekables<?>> extends ReadCoordina
     final IncludeInfo includeInfo;
 
     protected CheckStatusOk merged;
-    private final CheckStatusOk[] mergedPerShard;
+    private final ShardsArray<CheckStatusOk> mergedPerShard;
     protected boolean truncated;
 
     // srcEpoch is either txnId.epoch() or executeAt.epoch()
@@ -58,7 +59,7 @@ public abstract class CheckShards<U extends Unseekables<?>> extends ReadCoordina
         this.sourceEpoch = srcEpoch;
         this.route = route;
         this.includeInfo = includeInfo;
-        this.mergedPerShard = new CheckStatusOk[this.trackers.length];
+        this.mergedPerShard = new ShardsArray<>(topologies(), CheckStatusOk[]::new);
     }
 
     private static Topologies topologyFor(Node node, TxnId txnId, Unseekables<?> contact, long epoch)
@@ -96,18 +97,23 @@ public abstract class CheckShards<U extends Unseekables<?>> extends ReadCoordina
             CheckStatusOk ok = (CheckStatusOk) reply;
             if (merged == null) merged = ok;
             else merged = merged.merge(ok);
-            int maxShards = maxShardsPerEpoch();
-            for (int i = 0, limit = topologies().size(); i < limit; i++)
-            {
-                topologies().get(i).mapReduceOn(from, i * maxShards, (p1, p2, p3, index) -> {
-                    CheckStatusOk current = mergedPerShard[index];
-                    CheckStatusOk update;
-                    if (current == null) update = ok;
-                    else                 update = current.merge(ok);
-                    mergedPerShard[index] = update;
-                    return null;
-                }, null, null, null, (a, b) -> null, null);
-            }
+            mergedPerShard.mapReduce(from, (current, index) -> {
+                CheckStatusOk update = current == null ? ok : current.merge(ok);
+                mergedPerShard.set(index, update);
+                return update;
+            }, CheckStatusOk::mergeNullSafe, null);
+//            int maxShards = maxShardsPerEpoch();
+//            for (int i = 0, limit = topologies().size(); i < limit; i++)
+//            {
+//                topologies().get(i).mapReduceOn(from, i * maxShards, (p1, p2, p3, index) -> {
+//                    CheckStatusOk current = mergedPerShard[index];
+//                    CheckStatusOk update;
+//                    if (current == null) update = ok;
+//                    else                 update = current.merge(ok);
+//                    mergedPerShard[index] = update;
+//                    return null;
+//                }, null, null, null, (a, b) -> null, null);
+//            }
             return checkSufficient(from, ok);
         }
         else

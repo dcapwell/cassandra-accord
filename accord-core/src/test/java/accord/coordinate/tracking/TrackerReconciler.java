@@ -58,7 +58,7 @@ public abstract class TrackerReconciler<ST extends ShardTracker, T extends Abstr
         this.events = events.getEnumConstants();
         this.tracker = tracker;
         this.inflight = inflight;
-        this.counts = new EnumMap[tracker.trackers.length];
+        this.counts = new EnumMap[tracker.trackers.size()];
         for (int i = 0 ; i < counts.length ; ++i)
         {
             counts[i] = new EnumMap<>(events);
