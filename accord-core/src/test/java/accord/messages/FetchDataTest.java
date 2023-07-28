@@ -19,19 +19,22 @@
 package accord.messages;
 
 import accord.Utils;
+import accord.api.Key;
 import accord.api.MessageSink;
 import accord.api.Result;
+import accord.api.TopologySorter;
 import accord.coordinate.FetchData;
 import accord.impl.IntKey;
 import accord.impl.NoopProgressLog;
+import accord.impl.basic.SimpleSinks;
+import accord.local.Command;
 import accord.local.Node;
+import accord.local.PreLoadContext;
 import accord.local.SaveStatus;
 import accord.local.Status;
 import accord.primitives.Deps;
 import accord.primitives.FullRoute;
 import accord.primitives.Keys;
-import accord.primitives.Range;
-import accord.primitives.Ranges;
 import accord.primitives.Routable;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
@@ -39,7 +42,6 @@ import accord.primitives.Writes;
 import accord.topology.Shard;
 import accord.topology.Topologies;
 import accord.topology.Topology;
-import accord.topology.TopologyUtils;
 import accord.utils.ExtendedAssertions;
 import accord.utils.async.AsyncChains;
 import accord.utils.async.AsyncResult;
@@ -51,11 +53,7 @@ import org.mockito.Mockito;
 
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static accord.Utils.writeTxn;
 
@@ -67,28 +65,53 @@ public class FetchDataTest
     @Test
     void oneShardAcceptedOtherPreAcceptFastPath() throws ExecutionException
     {
-//        Topology topology = TopologyUtils.topology(1, Arrays.asList(N1, N2), Ranges.of(ranges), 1);
         Topology topology = new Topology(1,
                                          new Shard(IntKey.range(0, 100), Collections.singletonList(N1)),
-                                         new Shard(IntKey.range(100, 200), Arrays.asList(N1, N2)));
-        Txn txn = writeTxn(Keys.of(IntKey.key(42), IntKey.key(150)));
+                                         new Shard(IntKey.range(100, 200), Arrays.asList(N2, N1)));
 
+        SimpleSinks sinks = new SimpleSinks();
+        sinks.outboundFilter(r -> r instanceof TxnRequest); // ignore topology messages; easier while in a debugger
+        TopologySorter byNodeId = (a, b, shards) -> a.compareTo(b);
+        TopologySorter.Supplier byNodeIdSupplier = new TopologySorter.Supplier()
+        {
+            @Override
+            public TopologySorter get(Topology topologies)
+            {
+                return byNodeId;
+            }
+
+            @Override
+            public TopologySorter get(Topologies topologies)
+            {
+                return byNodeId;
+            }
+        };
         Node n1 = new Utils.NodeBuilder(N1)
                 .withShardDistributorFromSplitter(ignore -> new IntKey.Splitter())
                 .withProgressLog(NoopProgressLog.INSTANCE)
                 .withTopologies(topology)
+                .withSink(sinks.mockedSinkFor(N1))
+                .withTopologySorter(byNodeIdSupplier)
                 .buildAndStart();
         Node n2 = new Utils.NodeBuilder(N2)
                 .withShardDistributorFromSplitter(ignore -> new IntKey.Splitter())
                 .withProgressLog(NoopProgressLog.INSTANCE)
                 .withTopologies(topology)
+                .withSink(sinks.mockedSinkFor(N2))
+                .withTopologySorter(byNodeIdSupplier)
                 .buildAndStart();
+        sinks.register(n1, n2);
 
         TxnId txnId = n1.nextTxnId(Txn.Kind.Write, Routable.Domain.Key);
+        IntKey.Raw shardOneKey = IntKey.key(42);
+        IntKey.Raw shardTwoKey = IntKey.key(150);
+        Txn txn = writeTxn(Keys.of(shardOneKey, shardTwoKey));
         FullRoute<?> route = n1.computeRoute(txnId, txn.keys());
         Topologies topologies = n1.topology().withUnsyncedEpochs(route, txnId.epoch(), txnId.epoch());
 
         Node.Id replyTo = new Node.Id(-42);
+
+        // TODO deps is 'unknown' as they were not committed!
 
         ExtendedAssertions.process(new PreAccept(N1, topologies, txnId, txn, route), n1, replyTo, PreAccept.PreAcceptReply.class)
                           .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat));
@@ -104,90 +127,66 @@ public class FetchDataTest
                           .isEqualTo(Apply.ApplyReply.Applied);
 
         // TODO (now): slow path
-        registerSinks(n1, n2);
-        // TODO (now): recoverWithRoute
+        Arrays.asList(n1, n2).forEach(FetchDataTest::allowMessages);
+        // the first time pushes the state from PreAccepted -> PreCommittedWithDefinition (if n2 is seen first)
+        // the following times no-op
+        for (int i = 0; i < 10; i++)
+        {
+            if (i % 2 == 0) sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
+            else            sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
+
+            Assertions.assertThat(fetch(n1, txnId, route, shardOneKey))
+                      .extracting(k -> k.definition,
+                                  k -> k.executeAt,
+                                  k -> k.deps,
+                                  k -> k.outcome)
+                      .containsExactly(Status.Definition.DefinitionKnown,
+                                       Status.KnownExecuteAt.ExecuteAtKnown,
+                                       Status.KnownDeps.DepsUnknown,
+                                       i % 2 == 0 ? Status.Outcome.Apply : Status.Outcome.Unknown);
+
+            Assertions.assertThat(currentStatus(n1, txnId, shardOneKey)).isEqualTo(SaveStatus.PreCommittedWithDefinition);
+        }
+
+        ExtendedAssertions.process(Apply.applyMaximal(N1, topologies, topologies, txnId, route, txn, txnId, deps, writes, result), n1, replyTo, Apply.ApplyReply.class)
+                          .isEqualTo(Apply.ApplyReply.Applied);
+
+        Assertions.assertThat(currentStatus(n1, txnId, shardOneKey)).isEqualTo(SaveStatus.Applied);
+        Assertions.assertThat(currentStatus(n1, txnId, shardTwoKey)).isEqualTo(SaveStatus.Applied);
+        Assertions.assertThat(currentStatus(n2, txnId, shardTwoKey)).isEqualTo(SaveStatus.Applied);
+    }
+
+    private static Status.Known fetch(Node node, TxnId txnId, FullRoute<?> route, Key key) throws ExecutionException
+    {
         AsyncResult.Settable<Status.Known> fetched = AsyncResults.settable();
-        n1.commandStores().unsafeForKey(IntKey.key(42)).execute(() -> {
+        node.commandStores().unsafeForKey(key).execute(() -> {
             try
             {
-                FetchData.fetch(SaveStatus.PreAccepted.known, n1, txnId, route, fetched.settingCallback());
+                FetchData.fetch(SaveStatus.PreAccepted.known, node, txnId, route, fetched.settingCallback());
             }
             catch (Throwable t)
             {
                 fetched.tryFailure(t);
             }
         });
-        Status.Known known = AsyncChains.getUninterruptibly(fetched);
-        System.out.println();
+        return AsyncChains.getUninterruptibly(fetched);
     }
 
-    private static class MsgState
+    private static SaveStatus currentStatus(Node node, TxnId txnId, Key key) throws ExecutionException
     {
-        final Node node;
-        AtomicInteger msgIds = new AtomicInteger();
-        Map<Long, SafeCallback> callbacks = new ConcurrentHashMap<>();
-
-        private MsgState(Node node)
-        {
-            this.node = node;
-        }
+        AsyncResult.Settable<SaveStatus> minStatus = AsyncResults.settable();
+        node.commandStores().unsafeForKey(key).submit(PreLoadContext.contextFor(txnId), safe -> {
+            Command command = safe.get(txnId, key.toUnseekable()).current();
+            return command == null ? null : command.saveStatus();
+        }).begin(minStatus.settingCallback());
+        return AsyncChains.getUninterruptibly(minStatus);
     }
 
-    private static class ExpectedReply implements ReplyContext
+    private static void allowMessages(Node node)
     {
-        final Node to;
-        final long id;
-
-        private ExpectedReply(Node to, long id)
-        {
-            this.to = to;
-            this.id = id;
-        }
-    }
-
-    private static void registerSinks(Node... ns)
-    {
-        Map<Node.Id, Node> nodes = new HashMap<>();
-        Map<Node, MsgState> sinks = new HashMap<>();
-        for (Node n : ns)
-        {
-            nodes.put(n.id(), n);
-            sinks.put(n, new MsgState(n));
-        }
-        for (Node n : ns)
-            registerSinks(nodes, sinks, n);
-    }
-
-    private static void registerSinks(Map<Node.Id, Node> nodes, Map<Node, MsgState> sinks, Node on)
-    {
-        MsgState onState = sinks.computeIfAbsent(on, MsgState::new);
-        MessageSink sink = on.messageSink();
-        Mockito.doAnswer(args -> {
-                   Node to = nodes.get(args.getArgument(0));
-                   to.receive(args.getArgument(1), on.id(), Mockito.mock(ReplyContext.class));
-                   return null;
-               })
-               .when(sink).send(Mockito.any(), Mockito.any());
-
-        Mockito.doAnswer(args -> {
-                   Node to = nodes.get(args.getArgument(0));
-                   long msgId = onState.msgIds.incrementAndGet();
-                   onState.callbacks.put(msgId, new SafeCallback(args.getArgument(2), args.getArgument(3)));
-                   to.receive(args.getArgument(1), on.id(), new ExpectedReply(on, msgId));
-                   return null;
-               })
-               .when(sink).send(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
-
-        Mockito.doAnswer(args -> {
-                   ExpectedReply replyContext = args.getArgument(1);
-                   MsgState state = sinks.get(replyContext.to);
-                   Map<Long, SafeCallback> callbacks = state.callbacks;
-                   Reply reply = args.getArgument(2);
-                   SafeCallback callback = reply.isFinal() ? callbacks.remove(replyContext.id) : callbacks.get(replyContext.id);
-                   if (callback != null)
-                       callback.success(on.id(), reply);
-                   return null;
-               })
-               .when(sink).reply(Mockito.any(), Mockito.any(), Mockito.any());
+        MessageSink sink = node.messageSink();
+        Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).send(Mockito.any(), Mockito.any());
+        Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).send(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
+        Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).reply(Mockito.any(), Mockito.any(), Mockito.any());
     }
 }

@@ -34,6 +34,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -869,7 +870,7 @@ public abstract class InMemoryCommandStore extends CommandStore
 
     public static class Synchronized extends InMemoryCommandStore
     {
-        Runnable active = null;
+        private final AtomicBoolean running = new AtomicBoolean(false);
         final Queue<Runnable> queue = new ConcurrentLinkedQueue<>();
 
         public Synchronized(int id, NodeTimeService time, Agent agent, DataStore store, ProgressLog.Factory progressLogFactory, EpochUpdateHolder epochUpdateHolder)
@@ -877,25 +878,32 @@ public abstract class InMemoryCommandStore extends CommandStore
             super(id, time, agent, store, progressLogFactory, epochUpdateHolder);
         }
 
-        private synchronized void maybeRun()
+        private void maybeRun()
         {
-            if (active != null)
+            if (!running.compareAndSet(false, true))
                 return;
-
-            active = queue.poll();
-            while (active != null)
+            try
             {
-                this.unsafeRunIn(() -> {
-                    try
-                    {
-                        active.run();
-                    }
-                    catch (Throwable t)
-                    {
-                        logger.error("Uncaught exception", t);
-                    }
-                });
-                active = queue.poll();
+                Runnable active = queue.poll();
+                while (active != null)
+                {
+                    Runnable finalActive = active;
+                    this.unsafeRunIn(() -> {
+                        try
+                        {
+                            finalActive.run();
+                        }
+                        catch (Throwable t)
+                        {
+                            logger.error("Uncaught exception", t);
+                        }
+                    });
+                    active = queue.poll();
+                }
+            }
+            finally
+            {
+                running.set(false);
             }
         }
 

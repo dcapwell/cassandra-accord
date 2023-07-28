@@ -176,12 +176,25 @@ public class Utils
         Scheduler scheduler = new ThreadPoolScheduler();
         TopologySorter.Supplier topologySorter = SizeOfIntersectionSorter.SUPPLIER;
         Function<Node, ProgressLog.Factory> progressLogFactory = SimpleProgressLog::new;
+        // TODO (thread safety, now): Synchronized.maybeRun can deadlock when node.mapReduceLocal is called
         CommandStores.Factory factory = InMemoryCommandStores.Synchronized::new;
         List<Topology> topologies = Collections.emptyList();
 
         public NodeBuilder(Node.Id id)
         {
             this.id = id;
+        }
+
+        public NodeBuilder withTopologySorter(TopologySorter.Supplier s)
+        {
+            this.topologySorter = s;
+            return this;
+        }
+
+        public NodeBuilder withSink(MessageSink sink)
+        {
+            this.messageSink = sink;
+            return this;
         }
 
         public NodeBuilder withTopologies(Topology... topologies)
