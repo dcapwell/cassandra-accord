@@ -22,16 +22,12 @@ import accord.api.Data;
 import accord.api.Key;
 import accord.api.MessageSink;
 import accord.api.Result;
-import accord.api.TopologySorter;
 import accord.coordinate.FetchData;
 import accord.impl.IntKey;
 import accord.impl.NoopProgressLog;
 import accord.impl.basic.KeyType;
 import accord.impl.basic.MockableCluster;
-import accord.impl.basic.NodeBuilder;
 import accord.impl.basic.NodeIdSorter;
-import accord.impl.basic.SimpleSinks;
-import accord.impl.list.ListAgent;
 import accord.impl.list.ListData;
 import accord.impl.list.ListQuery;
 import accord.impl.list.ListRead;
@@ -52,7 +48,6 @@ import accord.primitives.Writes;
 import accord.topology.Shard;
 import accord.topology.Topologies;
 import accord.topology.Topology;
-import accord.utils.ExtendedAssertions;
 import accord.utils.Timestamped;
 import accord.utils.async.AsyncChains;
 import accord.utils.async.AsyncResult;
@@ -61,15 +56,10 @@ import com.google.common.collect.ImmutableMap;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.api.InstanceOfAssertFactory;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 
@@ -105,13 +95,9 @@ public class FetchDataTest
 
             Node.Id replyTo = new Node.Id(-42);
 
-            // TODO deps is 'unknown' as they were not committed!
-
-            ExtendedAssertions.process(new PreAccept(N1, topologies, txnId, txn, route), n1, replyTo, PreAccept.PreAcceptReply.class)
-                              .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat));
-
-            ExtendedAssertions.process(new PreAccept(N2, topologies, txnId, txn, route), n2, replyTo, PreAccept.PreAcceptReply.class)
-                              .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat));
+            Arrays.asList(n1, n2)
+                  .forEach(node -> Assertions.assertThat(cluster.process(node, replyTo, PreAccept.PreAcceptReply.class, id -> new PreAccept(id, topologies, txnId, txn, route)))
+                                             .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat)));
 
             cluster.checkFailures();
 
@@ -119,9 +105,8 @@ public class FetchDataTest
 
             Result result = txn.result(txnId, txnId, data);
             Writes writes = txn.execute(txnId, txnId, data);
-            Deps deps = Deps.NONE;
-            ExtendedAssertions.process(Apply.applyMaximal(N2, topologies, topologies, txnId, route, txn, txnId, deps, writes, result), n2, replyTo, Apply.ApplyReply.class)
-                              .isEqualTo(Apply.ApplyReply.Applied);
+            Assertions.assertThat(cluster.process(n2, replyTo, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
+                      .isEqualTo(Apply.ApplyReply.Applied);
 
             cluster.checkFailures();
 
@@ -151,8 +136,8 @@ public class FetchDataTest
                 cluster.checkFailures();
             }
 
-            ExtendedAssertions.process(Apply.applyMaximal(N1, topologies, topologies, txnId, route, txn, txnId, deps, writes, result), n1, replyTo, Apply.ApplyReply.class)
-                              .isEqualTo(Apply.ApplyReply.Applied);
+            Assertions.assertThat(cluster.process(n1, replyTo, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
+                      .isEqualTo(Apply.ApplyReply.Applied);
 
             cluster.checkFailures();
 
@@ -197,19 +182,14 @@ public class FetchDataTest
 
             Node.Id replyTo = new Node.Id(-42);
 
-            // TODO deps is 'unknown' as they were not committed!
-
-            ExtendedAssertions.process(new PreAccept(N1, topologies, txnId, txn, route), n1, replyTo, PreAccept.PreAcceptReply.class)
-                              .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat));
-
-            ExtendedAssertions.process(new PreAccept(N2, topologies, txnId, txn, route), n2, replyTo, PreAccept.PreAcceptReply.class)
-                              .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat));
+            Arrays.asList(n1, n2)
+                  .forEach(node -> Assertions.assertThat(cluster.process(node, replyTo, PreAccept.PreAcceptReply.class, id -> new PreAccept(id, topologies, txnId, txn, route)))
+                                             .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat)));
 
             cluster.checkFailures();
 
             // Commit.commitMinimalAndRead
-            Data n2Data = process(new Commit(Commit.Kind.Minimal, N2, topology, topologies, txnId, txn, route, txn.keys()
-                                                                                                                  .toParticipants(), txnId, Deps.NONE, true), n2, replyTo, ReadData.ReadOk.class).data;
+            Data n2Data = cluster.process(n2, replyTo, ReadData.ReadOk.class, id -> new Commit(Commit.Kind.Minimal, id, topology, topologies, txnId, txn, route, txn.keys().toParticipants(), txnId, Deps.NONE, true)).data;
 
             Arrays.asList(n1, n2).forEach(FetchDataTest::allowMessages);
             // the first time pushes the state from PreAccepted -> PreCommittedWithDefinition (if n2 is seen first)
@@ -236,16 +216,15 @@ public class FetchDataTest
                 cluster.checkFailures();
             }
 
-            Data n1Data = process(new Commit(Commit.Kind.Minimal, N1, topology, topologies, txnId, txn, route, txn.keys()
-                                                                                                                  .toParticipants(), txnId, Deps.NONE, true), n1, replyTo, ReadData.ReadOk.class).data;
+            Data n1Data = cluster.process(n1, replyTo, ReadData.ReadOk.class, id -> new Commit(Commit.Kind.Minimal, id, topology, topologies, txnId, txn, route, txn.keys().toParticipants(), txnId, Deps.NONE, true)).data;
             Data data = n1Data.merge(n2Data);
 
             cluster.checkFailures();
 
             Result result = txn.result(txnId, txnId, data);
             Writes writes = txn.execute(txnId, txnId, data);
-            ExtendedAssertions.process(Apply.applyMaximal(N2, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result), n2, replyTo, Apply.ApplyReply.class)
-                              .isEqualTo(Apply.ApplyReply.Applied);
+            Assertions.assertThat(cluster.process(n2, replyTo, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
+                      .isEqualTo(Apply.ApplyReply.Applied);
 
             cluster.checkFailures();
 
@@ -272,8 +251,8 @@ public class FetchDataTest
             }
 
 
-            ExtendedAssertions.process(Apply.applyMaximal(N1, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result), n1, replyTo, Apply.ApplyReply.class)
-                              .isEqualTo(Apply.ApplyReply.Redundant);
+            Assertions.assertThat(cluster.process(n1, replyTo, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
+                      .isEqualTo(Apply.ApplyReply.Redundant);
 
             cluster.checkFailures();
 
@@ -345,14 +324,5 @@ public class FetchDataTest
                .when(sink)
                .send(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
         Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).reply(Mockito.any(), Mockito.any(), Mockito.any());
-    }
-
-    public static <T extends Reply> T process(TxnRequest<?> request, Node on, Node.Id replyTo, Class<T> replyType)
-    {
-        ReplyContext replyContext = Mockito.mock(ReplyContext.class);
-        request.process(on, replyTo, replyContext);
-        ArgumentCaptor<T> reply = ArgumentCaptor.forClass(replyType);
-        Mockito.verify(on.messageSink()).reply(Mockito.eq(replyTo), Mockito.eq(replyContext), reply.capture());
-        return reply.getValue();
     }
 }

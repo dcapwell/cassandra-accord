@@ -22,12 +22,17 @@ import accord.api.TestableConfigurationService;
 import accord.impl.list.ListAgent;
 import accord.impl.list.ListStore;
 import accord.local.Node;
+import accord.messages.Reply;
+import accord.messages.ReplyContext;
+import accord.messages.TxnRequest;
 import accord.topology.Topology;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
 import org.assertj.core.api.Assertions;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -37,6 +42,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Function;
 
 public class MockableCluster implements AutoCloseable
 {
@@ -69,10 +75,24 @@ public class MockableCluster implements AutoCloseable
         Assertions.assertThat(failures).isEmpty();
     }
 
+    public <T extends Reply> T process(Node on, Node.Id replyTo, Class<T> replyType, Function<Node.Id, TxnRequest<?>> creator)
+    {
+        TxnRequest<?> request = creator.apply(on.id());
+        ReplyContext replyContext = Mockito.mock(ReplyContext.class);
+        // process is normally an async operation, but MockableCluster tends to use a blocking CommandStore, making this a sync operation
+        // for this reason, the reply is expected after this method returns; if the author overrides this behavior, then this may become
+        // async again and this method will fail as reply was not called.
+        request.process(on, replyTo, replyContext);
+        ArgumentCaptor<T> reply = ArgumentCaptor.forClass(replyType);
+        Mockito.verify(on.messageSink()).reply(Mockito.eq(replyTo), Mockito.eq(replyContext), reply.capture());
+        return reply.getValue();
+    }
+
     @Override
     public void close()
     {
-
+        for (Node n : nodes.values())
+            n.shutdown();
     }
 
     public static class Builder extends AbstractBuilder<Builder>
