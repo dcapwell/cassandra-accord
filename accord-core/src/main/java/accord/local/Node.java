@@ -444,6 +444,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
 
     public void reply(Id replyingToNode, ReplyContext replyContext, Reply send)
     {
+        // TODO (usability, now): add Throwable as an argument so the error check is here, every single message gets this wrong causing a NPE here
         if (send == null)
         {
             NullPointerException e = new NullPointerException();
