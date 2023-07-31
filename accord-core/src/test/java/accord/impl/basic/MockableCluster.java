@@ -21,6 +21,8 @@ package accord.impl.basic;
 import accord.api.Key;
 import accord.api.MessageSink;
 import accord.api.TestableConfigurationService;
+import accord.coordinate.CoordinateShardDurable;
+import accord.coordinate.CoordinateSyncPoint;
 import accord.coordinate.FetchData;
 import accord.impl.list.ListAgent;
 import accord.impl.list.ListData;
@@ -38,7 +40,9 @@ import accord.messages.ReplyContext;
 import accord.messages.TxnRequest;
 import accord.primitives.FullRoute;
 import accord.primitives.Keys;
+import accord.primitives.Ranges;
 import accord.primitives.RoutableKey;
+import accord.primitives.SyncPoint;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
 import accord.topology.Topology;
@@ -202,6 +206,19 @@ public class MockableCluster implements AutoCloseable
     public Status.Known fetchBlocking(Node.Id nodeId, TxnId txnId, FullRoute<?> route, RoutableKey key) throws ExecutionException, InterruptedException
     {
         return AsyncChains.getBlocking(fetch(nodeId, txnId, route, key));
+    }
+
+    public AsyncChain<SyncPoint> markRangeDurable(Node.Id nodeId, Ranges ranges)
+    {
+        Node node = node(nodeId);
+        return CoordinateSyncPoint.exclusive(node, ranges)
+                                  .flatMap(syncPoint -> CoordinateShardDurable.coordinate(node, syncPoint)
+                                                                              .map(ignore -> syncPoint));
+    }
+
+    public SyncPoint markRangeDurableBlocking(Node.Id nodeId, Ranges ranges) throws ExecutionException, InterruptedException
+    {
+        return AsyncChains.getBlocking(markRangeDurable(nodeId, ranges));
     }
 
     @Override
