@@ -20,6 +20,8 @@ package accord.utils;
 
 import accord.api.RoutingKey;
 import accord.local.Node;
+import accord.messages.Apply;
+import accord.messages.PreAccept;
 import accord.messages.Reply;
 import accord.messages.ReplyContext;
 import accord.messages.TxnRequest;
@@ -229,6 +231,22 @@ public class ExtendedAssertions
         }
     }
 
+    public static class PreAcceptReplyAssert extends AbstractAssert<PreAcceptReplyAssert, PreAccept.PreAcceptReply>
+    {
+        public PreAcceptReplyAssert(PreAccept.PreAcceptReply preAcceptReply)
+        {
+            super(preAcceptReply, PreAcceptReplyAssert.class);
+        }
+
+        public ObjectAssert<PreAccept.PreAcceptReply> isOk()
+        {
+            isNotNull();
+            if (!actual.isOk())
+                throwAssertionError(new BasicErrorMessageFactory("Expected Ok but was not: given %s", actual));
+            return Assertions.assertThat(actual);
+        }
+    }
+
     public static <T extends Reply> ObjectAssert<T> process(TxnRequest<?> request, Node on, Node.Id replyTo, Class<T> replyType)
     {
         ReplyContext replyContext = Mockito.mock(ReplyContext.class);
@@ -236,6 +254,11 @@ public class ExtendedAssertions
         ArgumentCaptor<T> reply = ArgumentCaptor.forClass(replyType);
         Mockito.verify(on.messageSink()).reply(Mockito.eq(replyTo), Mockito.eq(replyContext), reply.capture());
         return Assertions.assertThat(reply.getValue());
+    }
+
+    public static PreAcceptReplyAssert assertThat(PreAccept.PreAcceptReply reply)
+    {
+        return new PreAcceptReplyAssert(reply);
     }
 
     public static ShardAssert assertThat(Shard shard)

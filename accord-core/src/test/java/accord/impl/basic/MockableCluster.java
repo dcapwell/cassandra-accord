@@ -18,13 +18,19 @@
 
 package accord.impl.basic;
 
+import accord.api.Key;
 import accord.api.TestableConfigurationService;
 import accord.impl.list.ListAgent;
+import accord.impl.list.ListQuery;
+import accord.impl.list.ListRead;
 import accord.impl.list.ListStore;
+import accord.impl.list.ListUpdate;
 import accord.local.Node;
 import accord.messages.Reply;
 import accord.messages.ReplyContext;
 import accord.messages.TxnRequest;
+import accord.primitives.Keys;
+import accord.primitives.Txn;
 import accord.topology.Topology;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
@@ -42,6 +48,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 public class MockableCluster implements AutoCloseable
@@ -51,6 +58,7 @@ public class MockableCluster implements AutoCloseable
     public final ListAgent agent;
     public final Map<Node.Id, ListStore> stores;
     public final Map<Node.Id, Node> nodes;
+    private final AtomicInteger txnCounter = new AtomicInteger(0);
 
     public MockableCluster(SimpleSinks sinks,
                            List<Throwable> failures,
@@ -89,6 +97,21 @@ public class MockableCluster implements AutoCloseable
         return reply.getValue();
     }
 
+    public Txn txn(Keys reads, Keys writes)
+    {
+        Keys keys = reads.with(writes);
+        ListRead read = new ListRead(Function.identity(), reads, keys);
+        ListUpdate update = writes.isEmpty() ? null : new ListUpdate(Function.identity());
+        if (update != null)
+        {
+            int eventId = txnCounter.incrementAndGet();
+            for (Key k : writes)
+                update.put(k, eventId);
+        }
+        ListQuery query = new ListQuery(new Node.Id(-1), 0);
+        return new Txn.InMemory(keys, read, query, update);
+    }
+
     @Override
     public void close()
     {
@@ -99,6 +122,13 @@ public class MockableCluster implements AutoCloseable
     public static class Builder extends AbstractBuilder<Builder>
     {
         final Set<Node.Id> nodeIds;
+        SimpleSinks.MockType mockType = SimpleSinks.MockType.CALL_REAL;
+
+        public Builder withSinkMockType(SimpleSinks.MockType mockType)
+        {
+            this.mockType = mockType;
+            return this;
+        }
 
         public Builder(Node.Id first, Node.Id... rest)
         {
@@ -123,7 +153,7 @@ public class MockableCluster implements AutoCloseable
                 stores.put(id, store);
 
                 Node node = new NodeBuilder(this, id)
-                        .withSink(sinks.mockedSinkFor(id))
+                        .withSink(sinks.mockedSinkFor(mockType, id))
                         .withDataSupplier(() -> store)
                         .withAgent(agent)
                         .build();

@@ -60,10 +60,18 @@ public class SimpleSinks
         return new Sink(id);
     }
 
-    public MessageSink mockedSinkFor(Node.Id id)
+    public MessageSink mockedSinkFor(MockType type, Node.Id id)
     {
         MessageSink sink = sinkFor(id);
-        return Mockito.mock(Sink.class, Mockito.withSettings().spiedInstance(sink));
+        switch (type)
+        {
+            case NO_OP:
+                return Mockito.mock(Sink.class, Mockito.withSettings().spiedInstance(sink));
+            case CALL_REAL:
+                return Mockito.spy(sink);
+            default:
+                throw new IllegalArgumentException("Unknown type: " + type);
+        }
     }
 
     private Node node(Node.Id id)
@@ -156,6 +164,8 @@ public class SimpleSinks
                 outboundReplyFilters.getOrDefault(id, Collections.emptySet()).remove(this);
         }
     }
+
+    public enum MockType { CALL_REAL, NO_OP }
 
     public interface Releaser extends AutoCloseable
     {
