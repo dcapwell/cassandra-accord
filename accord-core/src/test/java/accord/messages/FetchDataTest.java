@@ -195,7 +195,6 @@ public class FetchDataTest
 
     private void readWriteTxn(boolean fastPath) throws ExecutionException, InterruptedException
     {
-        // PreAccept -> Commit -> Apply
         Topology topology = new Topology(1,
                                          new Shard(IntKey.range(0, 100), Collections.singletonList(N1)),
                                          new Shard(IntKey.range(100, 200), Arrays.asList(N2, N1)));
