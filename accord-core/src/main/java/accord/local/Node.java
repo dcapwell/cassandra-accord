@@ -540,6 +540,8 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         // TODO (expected): should we try to pick keys in the same Keyspace in C*? Might want to adapt this to an Agent behaviour
         if (ranges.isEmpty()) // should not really happen, but pick some other replica to serve as home key
             ranges = topology().globalForEpoch(txnId.epoch()).ranges();
+        if (ranges.isEmpty())
+            throw new IllegalStateException("Unable to select a HomeKey as the topology does not have any ranges for epoch " + txnId.epoch());
         Range range = ranges.get(random.nextInt(ranges.size()));
         return range.someIntersectingRoutingKey(null);
     }
