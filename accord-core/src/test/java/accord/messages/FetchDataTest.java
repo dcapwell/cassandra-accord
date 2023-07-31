@@ -19,9 +19,7 @@
 package accord.messages;
 
 import accord.api.Data;
-import accord.api.Key;
 import accord.api.Result;
-import accord.coordinate.FetchData;
 import accord.impl.IntKey;
 import accord.impl.NoopProgressLog;
 import accord.impl.basic.KeyType;
@@ -43,9 +41,6 @@ import accord.topology.Shard;
 import accord.topology.Topologies;
 import accord.topology.Topology;
 import accord.utils.Timestamped;
-import accord.utils.async.AsyncChains;
-import accord.utils.async.AsyncResult;
-import accord.utils.async.AsyncResults;
 import com.google.common.collect.ImmutableMap;
 import org.junit.jupiter.api.Test;
 
@@ -111,7 +106,7 @@ public class FetchDataTest
                     cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
                 else cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
 
-                assertThat(fetch(n1, txnId, route, shardOneKey))
+                assertThat(cluster.fetchBlocking(N1, txnId, route, shardOneKey))
                           .extracting(k -> k.definition,
                                       k -> k.executeAt,
                                       k -> k.deps,
@@ -189,7 +184,7 @@ public class FetchDataTest
                     cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
                 else cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
 
-                assertThat(fetch(n1, txnId, route, shardOneWriteKey))
+                assertThat(cluster.fetchBlocking(N1, txnId, route, shardOneWriteKey))
                           .extracting(k -> k.definition,
                                       k -> k.executeAt,
                                       k -> k.deps,
@@ -224,7 +219,7 @@ public class FetchDataTest
                     cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
                 else cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
 
-                assertThat(fetch(n1, txnId, route, shardOneWriteKey))
+                assertThat(cluster.fetchBlocking(N1, txnId, route, shardOneWriteKey))
                           .extracting(k -> k.definition,
                                       k -> k.executeAt,
                                       k -> k.deps,
@@ -255,21 +250,5 @@ public class FetchDataTest
             assertThat(cluster.stores.get(N2).data())
                       .isEqualTo(ImmutableMap.of(shardTwoWriteKey, new Timestamped<>(txnId, new int[]{1})));
         }
-    }
-
-    private static Status.Known fetch(Node node, TxnId txnId, FullRoute<?> route, Key key) throws ExecutionException
-    {
-        AsyncResult.Settable<Status.Known> fetched = AsyncResults.settable();
-        node.commandStores().unsafeForKey(key).execute(() -> {
-            try
-            {
-                FetchData.fetch(SaveStatus.PreAccepted.known, node, txnId, route, fetched.settingCallback());
-            }
-            catch (Throwable t)
-            {
-                fetched.tryFailure(t);
-            }
-        });
-        return AsyncChains.getUninterruptibly(fetched);
     }
 }

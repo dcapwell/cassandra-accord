@@ -21,6 +21,7 @@ package accord.impl.basic;
 import accord.api.Key;
 import accord.api.MessageSink;
 import accord.api.TestableConfigurationService;
+import accord.coordinate.FetchData;
 import accord.impl.list.ListAgent;
 import accord.impl.list.ListData;
 import accord.impl.list.ListQuery;
@@ -31,9 +32,11 @@ import accord.local.Command;
 import accord.local.Node;
 import accord.local.PreLoadContext;
 import accord.local.SaveStatus;
+import accord.local.Status;
 import accord.messages.Reply;
 import accord.messages.ReplyContext;
 import accord.messages.TxnRequest;
+import accord.primitives.FullRoute;
 import accord.primitives.Keys;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
@@ -171,6 +174,33 @@ public class MockableCluster implements AutoCloseable
     public SaveStatus currentStatusBlocking(Node.Id nodeId, TxnId txnId, Key key) throws ExecutionException, InterruptedException
     {
         return AsyncChains.getBlocking(currentStatus(nodeId, txnId, key));
+    }
+
+    public AsyncChain<Status.Known> fetch(Node.Id nodeId, TxnId txnId, FullRoute<?> route, Key key)
+    {
+        Node node = node(nodeId);
+        return new AsyncChains.Head<Status.Known>()
+        {
+            @Override
+            protected void start(BiConsumer<? super Status.Known, Throwable> callback)
+            {
+                node.commandStores().unsafeForKey(key).execute(() -> {
+                    try
+                    {
+                        FetchData.fetch(SaveStatus.PreAccepted.known, node, txnId, route, callback);
+                    }
+                    catch (Throwable t)
+                    {
+                        callback.accept(null, t);
+                    }
+                });
+            }
+        };
+    }
+
+    public Status.Known fetchBlocking(Node.Id nodeId, TxnId txnId, FullRoute<?> route, Key key) throws ExecutionException, InterruptedException
+    {
+        return AsyncChains.getBlocking(fetch(nodeId, txnId, route, key));
     }
 
     @Override
