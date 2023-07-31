@@ -22,16 +22,21 @@ import accord.api.Key;
 import accord.api.MessageSink;
 import accord.api.TestableConfigurationService;
 import accord.impl.list.ListAgent;
+import accord.impl.list.ListData;
 import accord.impl.list.ListQuery;
 import accord.impl.list.ListRead;
 import accord.impl.list.ListStore;
 import accord.impl.list.ListUpdate;
+import accord.local.Command;
 import accord.local.Node;
+import accord.local.PreLoadContext;
+import accord.local.SaveStatus;
 import accord.messages.Reply;
 import accord.messages.ReplyContext;
 import accord.messages.TxnRequest;
 import accord.primitives.Keys;
 import accord.primitives.Txn;
+import accord.primitives.TxnId;
 import accord.topology.Topology;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
@@ -51,6 +56,7 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 
 public class MockableCluster implements AutoCloseable
@@ -83,6 +89,11 @@ public class MockableCluster implements AutoCloseable
     public void checkFailures()
     {
         Assertions.assertThat(failures).isEmpty();
+    }
+
+    public <T extends Reply> T process(Node on, Class<T> replyType, Function<Node.Id, TxnRequest<?>> creator)
+    {
+        return process(on, new Node.Id(-42), replyType, creator);
     }
 
     public <T extends Reply> T process(Node on, Node.Id replyTo, Class<T> replyType, Function<Node.Id, TxnRequest<?>> creator)
@@ -131,6 +142,35 @@ public class MockableCluster implements AutoCloseable
                .when(sink)
                .send(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
         Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).reply(Mockito.any(), Mockito.any(), Mockito.any());
+    }
+
+    public ListData emptyData(Keys keys)
+    {
+        ListData data = new ListData();
+        for (Key key : keys)
+            data.put(key, ListStore.EMPTY);
+        return data;
+    }
+
+    public AsyncChain<SaveStatus> currentStatus(Node.Id nodeId, TxnId txnId, Key key)
+    {
+        Node node = node(nodeId);
+        return new AsyncChains.Head<SaveStatus>()
+        {
+            @Override
+            protected void start(BiConsumer<? super SaveStatus, Throwable> callback)
+            {
+                node.commandStores().unsafeForKey(key).submit(PreLoadContext.contextFor(txnId), safe -> {
+                    Command command = safe.get(txnId, key.toUnseekable()).current();
+                    return command == null ? null : command.saveStatus();
+                }).begin(callback);
+            }
+        };
+    }
+
+    public SaveStatus currentStatusBlocking(Node.Id nodeId, TxnId txnId, Key key) throws ExecutionException, InterruptedException
+    {
+        return AsyncChains.getBlocking(currentStatus(nodeId, txnId, key));
     }
 
     @Override

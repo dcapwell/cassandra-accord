@@ -29,10 +29,7 @@ import accord.impl.basic.MockableCluster;
 import accord.impl.basic.NodeIdSorter;
 import accord.impl.basic.SimpleSinks;
 import accord.impl.list.ListData;
-import accord.impl.list.ListStore;
-import accord.local.Command;
 import accord.local.Node;
-import accord.local.PreLoadContext;
 import accord.local.SaveStatus;
 import accord.local.Status;
 import accord.primitives.Deps;
@@ -65,7 +62,7 @@ public class FetchDataTest
     private static final Node.Id N2 = new Node.Id(2);
 
     @Test
-    void writeOnlyTxnFastPath() throws ExecutionException
+    void writeOnlyTxnFastPath() throws ExecutionException, InterruptedException
     {
         Topology topology = new Topology(1,
                                          new Shard(IntKey.range(0, 100), Collections.singletonList(N1)),
@@ -90,18 +87,16 @@ public class FetchDataTest
             FullRoute<?> route = n1.computeRoute(txnId, txn.keys());
             Topologies topologies = n1.topology().withUnsyncedEpochs(route, txnId.epoch(), txnId.epoch());
 
-            Node.Id replyTo = new Node.Id(-42);
-
             Arrays.asList(n1, n2)
-                  .forEach(node -> assertThat(cluster.process(node, replyTo, PreAccept.PreAcceptReply.class, id -> new PreAccept(id, topologies, txnId, txn, route))).isOk());
+                  .forEach(node -> assertThat(cluster.process(node, PreAccept.PreAcceptReply.class, id -> new PreAccept(id, topologies, txnId, txn, route))).isOk());
 
             cluster.checkFailures();
 
-            ListData data = emptyData(readKeys);
+            ListData data = cluster.emptyData(readKeys);
 
             Result result = txn.result(txnId, txnId, data);
             Writes writes = txn.execute(txnId, txnId, data);
-            assertThat(cluster.process(n2, replyTo, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
+            assertThat(cluster.process(n2, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
                       .isEqualTo(Apply.ApplyReply.Applied);
 
             cluster.checkFailures();
@@ -126,20 +121,20 @@ public class FetchDataTest
                                            Status.KnownDeps.DepsUnknown,
                                            i % 2 == 0 ? Status.Outcome.Apply : Status.Outcome.Unknown);
 
-                assertThat(currentStatus(n1, txnId, shardOneKey))
+                assertThat(cluster.currentStatusBlocking(N1, txnId, shardOneKey))
                           .isEqualTo(SaveStatus.PreCommittedWithDefinition);
 
                 cluster.checkFailures();
             }
 
-            assertThat(cluster.process(n1, replyTo, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
+            assertThat(cluster.process(n1, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
                       .isEqualTo(Apply.ApplyReply.Applied);
 
             cluster.checkFailures();
 
-            assertThat(currentStatus(n1, txnId, shardOneKey)).isEqualTo(SaveStatus.Applied);
-            assertThat(currentStatus(n1, txnId, shardTwoKey)).isEqualTo(SaveStatus.Applied);
-            assertThat(currentStatus(n2, txnId, shardTwoKey)).isEqualTo(SaveStatus.Applied);
+            assertThat(cluster.currentStatusBlocking(N1, txnId, shardOneKey)).isEqualTo(SaveStatus.Applied);
+            assertThat(cluster.currentStatusBlocking(N1, txnId, shardTwoKey)).isEqualTo(SaveStatus.Applied);
+            assertThat(cluster.currentStatusBlocking(N2, txnId, shardTwoKey)).isEqualTo(SaveStatus.Applied);
 
             assertThat(cluster.stores.get(N1).data())
                       .isEqualTo(ImmutableMap.of(shardOneKey, new Timestamped<>(txnId, new int[]{1}),
@@ -150,7 +145,7 @@ public class FetchDataTest
     }
 
     @Test
-    void readWriteTxnFastPath() throws ExecutionException
+    void readWriteTxnFastPath() throws ExecutionException, InterruptedException
     {
         Topology topology = new Topology(1,
                                          new Shard(IntKey.range(0, 100), Collections.singletonList(N1)),
@@ -177,15 +172,13 @@ public class FetchDataTest
             FullRoute<?> route = n1.computeRoute(txnId, txn.keys());
             Topologies topologies = n1.topology().withUnsyncedEpochs(route, txnId.epoch(), txnId.epoch());
 
-            Node.Id replyTo = new Node.Id(-42);
-
             Arrays.asList(n1, n2)
-                  .forEach(node -> assertThat(cluster.process(node, replyTo, PreAccept.PreAcceptReply.class, id -> new PreAccept(id, topologies, txnId, txn, route))).isOk());
+                  .forEach(node -> assertThat(cluster.process(node, PreAccept.PreAcceptReply.class, id -> new PreAccept(id, topologies, txnId, txn, route))).isOk());
 
             cluster.checkFailures();
 
             // Commit.commitMinimalAndRead
-            Data n2Data = cluster.process(n2, replyTo, ReadData.ReadOk.class, id -> new Commit(Commit.Kind.Minimal, id, topology, topologies, txnId, txn, route, txn.keys().toParticipants(), txnId, Deps.NONE, true)).data;
+            Data n2Data = cluster.process(n2, ReadData.ReadOk.class, id -> new Commit(Commit.Kind.Minimal, id, topology, topologies, txnId, txn, route, txn.keys().toParticipants(), txnId, Deps.NONE, true)).data;
 
             cluster.allowMessages();
             // the first time pushes the state from PreAccepted -> PreCommittedWithDefinition (if n2 is seen first)
@@ -206,20 +199,20 @@ public class FetchDataTest
                                            Status.KnownDeps.DepsUnknown,
                                            Status.Outcome.Unknown);
 
-                assertThat(currentStatus(n1, txnId, shardOneWriteKey))
+                assertThat(cluster.currentStatusBlocking(N1, txnId, shardOneWriteKey))
                           .isEqualTo(SaveStatus.PreCommittedWithDefinition);
 
                 cluster.checkFailures();
             }
 
-            Data n1Data = cluster.process(n1, replyTo, ReadData.ReadOk.class, id -> new Commit(Commit.Kind.Minimal, id, topology, topologies, txnId, txn, route, txn.keys().toParticipants(), txnId, Deps.NONE, true)).data;
+            Data n1Data = cluster.process(n1, ReadData.ReadOk.class, id -> new Commit(Commit.Kind.Minimal, id, topology, topologies, txnId, txn, route, txn.keys().toParticipants(), txnId, Deps.NONE, true)).data;
             Data data = n1Data.merge(n2Data);
 
             cluster.checkFailures();
 
             Result result = txn.result(txnId, txnId, data);
             Writes writes = txn.execute(txnId, txnId, data);
-            assertThat(cluster.process(n2, replyTo, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
+            assertThat(cluster.process(n2, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
                       .isEqualTo(Apply.ApplyReply.Applied);
 
             cluster.checkFailures();
@@ -241,20 +234,20 @@ public class FetchDataTest
                                            Status.KnownDeps.DepsKnown,
                                            Status.Outcome.Apply);
 
-                assertThat(currentStatus(n1, txnId, shardOneWriteKey)).isEqualTo(SaveStatus.Applied);
+                assertThat(cluster.currentStatusBlocking(N1, txnId, shardOneWriteKey)).isEqualTo(SaveStatus.Applied);
 
                 cluster.checkFailures();
             }
 
 
-            assertThat(cluster.process(n1, replyTo, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
+            assertThat(cluster.process(n1, Apply.ApplyReply.class, id -> Apply.applyMaximal(id, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result)))
                       .isEqualTo(Apply.ApplyReply.Redundant);
 
             cluster.checkFailures();
 
-            assertThat(currentStatus(n1, txnId, shardOneWriteKey)).isEqualTo(SaveStatus.Applied);
-            assertThat(currentStatus(n1, txnId, shardTwoWriteKey)).isEqualTo(SaveStatus.Applied);
-            assertThat(currentStatus(n2, txnId, shardTwoWriteKey)).isEqualTo(SaveStatus.Applied);
+            assertThat(cluster.currentStatusBlocking(N1, txnId, shardOneWriteKey)).isEqualTo(SaveStatus.Applied);
+            assertThat(cluster.currentStatusBlocking(N1, txnId, shardTwoWriteKey)).isEqualTo(SaveStatus.Applied);
+            assertThat(cluster.currentStatusBlocking(N2, txnId, shardTwoWriteKey)).isEqualTo(SaveStatus.Applied);
 
             assertThat(cluster.stores.get(N1).data())
                       .isEqualTo(ImmutableMap.of(shardOneWriteKey, new Timestamped<>(txnId, new int[]{1}),
@@ -262,14 +255,6 @@ public class FetchDataTest
             assertThat(cluster.stores.get(N2).data())
                       .isEqualTo(ImmutableMap.of(shardTwoWriteKey, new Timestamped<>(txnId, new int[]{1})));
         }
-    }
-
-    private static ListData emptyData(Keys keys)
-    {
-        ListData data = new ListData();
-        for (Key key : keys)
-            data.put(key, ListStore.EMPTY);
-        return data;
     }
 
     private static Status.Known fetch(Node node, TxnId txnId, FullRoute<?> route, Key key) throws ExecutionException
@@ -286,15 +271,5 @@ public class FetchDataTest
             }
         });
         return AsyncChains.getUninterruptibly(fetched);
-    }
-
-    private static SaveStatus currentStatus(Node node, TxnId txnId, Key key) throws ExecutionException
-    {
-        AsyncResult.Settable<SaveStatus> minStatus = AsyncResults.settable();
-        node.commandStores().unsafeForKey(key).submit(PreLoadContext.contextFor(txnId), safe -> {
-            Command command = safe.get(txnId, key.toUnseekable()).current();
-            return command == null ? null : command.saveStatus();
-        }).begin(minStatus.settingCallback());
-        return AsyncChains.getUninterruptibly(minStatus);
     }
 }
