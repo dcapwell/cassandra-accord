@@ -39,7 +39,7 @@ import accord.utils.Timestamped;
 
 public class ListStore implements DataStore
 {
-    static final Timestamped<int[]> EMPTY = new Timestamped<>(Timestamp.NONE, new int[0]);
+    public static final Timestamped<int[]> EMPTY = new Timestamped<>(Timestamp.NONE, new int[0]);
     final NavigableMap<RoutableKey, Timestamped<int[]>> data = new TreeMap<>();
 
     // adding here to help trace burn test queries
@@ -84,6 +84,20 @@ public class ListStore implements DataStore
         ListFetchCoordinator coordinator = new ListFetchCoordinator(node, ranges, syncPoint, callback, safeStore.commandStore(), this);
         coordinator.start();
         return coordinator.result();
+    }
+
+    public NavigableMap<RoutableKey, Timestamped<int[]>> data()
+    {
+        return data;
+    }
+
+    @Override
+    public String toString()
+    {
+        return "ListStore{" +
+               "node=" + node +
+               ", data=" + data +
+               '}';
     }
 
     static Timestamped<int[]> merge(Timestamped<int[]> a, Timestamped<int[]> b)

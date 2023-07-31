@@ -224,7 +224,8 @@ public class SimpleSinks
         public void reply(Node.Id replyingToNode, ReplyContext replyContext, Reply reply)
         {
             if (!maySend(replyingToNode, replyContext, reply)) return;
-            ((Context) replyContext).reply(src, replyingToNode, reply);
+            if (replyContext instanceof Context)
+                ((Context) replyContext).reply(src, replyingToNode, reply);
         }
 
         private class Context implements ReplyContext

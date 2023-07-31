@@ -18,13 +18,12 @@
 
 package accord.local;
 
-import accord.Utils;
 import accord.api.Key;
 import accord.api.TestableConfigurationService;
 import accord.impl.PrefixedIntHashKey;
+import accord.impl.basic.NodeBuilder;
 import accord.topology.TopologyUtils;
 import accord.messages.PreAccept;
-import accord.messages.ReplyContext;
 import accord.primitives.FullRoute;
 import accord.primitives.Keys;
 import accord.primitives.Range;
@@ -38,12 +37,8 @@ import accord.utils.ExtendedAssertions;
 import accord.utils.Gen;
 import accord.utils.Gens;
 import org.assertj.core.api.Assertions;
-import org.assertj.core.api.Condition;
-import org.assertj.core.api.InstanceOfAssertFactories;
 import org.assertj.core.api.InstanceOfAssertFactory;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mockito;
 
 import java.util.Comparator;
 import java.util.List;
@@ -51,7 +46,6 @@ import java.util.List;
 import static accord.Utils.writeTxn;
 import static accord.utils.Property.qt;
 import static accord.utils.Utils.addAll;
-import static org.assertj.core.api.Assertions.assertThat;
 
 class CommandsTest
 {
@@ -73,7 +67,7 @@ class CommandsTest
             Topology initialTopology = TopologyUtils.topology(1, nodes, Ranges.of(add ? ranges : allRanges), rf);
             Topology updatedTopology = TopologyUtils.topology(2, nodes, Ranges.of(add ? allRanges : ranges), rf);
 
-            Node node = new Utils.NodeBuilder(N1)
+            Node node = new NodeBuilder(N1)
                     .withShardDistributorFromSplitter(ignore -> new PrefixedIntHashKey.Splitter())
                     .buildAndStart();
 

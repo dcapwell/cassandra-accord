@@ -18,23 +18,10 @@
 
 package accord;
 
-import accord.api.Agent;
-import accord.api.ConfigurationService;
-import accord.api.DataStore;
 import accord.api.MessageSink;
-import accord.api.ProgressLog;
-import accord.api.Scheduler;
-import accord.api.TestableConfigurationService;
-import accord.api.TopologySorter;
-import accord.impl.InMemoryCommandStores;
-import accord.impl.IntKey;
-import accord.impl.SimpleProgressLog;
 import accord.impl.SizeOfIntersectionSorter;
-import accord.impl.TestAgent;
+import accord.impl.basic.NodeBuilder;
 import accord.impl.mock.MockCluster;
-import accord.impl.mock.MockConfigurationService;
-import accord.local.CommandStores;
-import accord.local.ShardDistributor;
 import accord.primitives.Range;
 import accord.local.Node;
 import accord.impl.mock.MockStore;
@@ -44,27 +31,13 @@ import accord.topology.Topologies;
 import accord.topology.Topology;
 import accord.primitives.Txn;
 import accord.primitives.Keys;
-import accord.utils.DefaultRandom;
-import accord.utils.EpochFunction;
 import accord.utils.Invariants;
-import accord.utils.RandomSource;
-import accord.utils.ThreadPoolScheduler;
 
 import com.google.common.collect.Sets;
-import org.mockito.Mockito;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
-import java.util.function.LongSupplier;
-import java.util.function.Supplier;
-
-import static accord.utils.async.AsyncChains.awaitUninterruptibly;
 
 public class Utils
 {
@@ -154,105 +127,8 @@ public class Utils
         Node node = new NodeBuilder(nodeId)
                 .withMessageSink(messageSink)
                 .withClock(clock)
+                .withTopologies(topology)
                 .buildAndStart();
-        ((TestableConfigurationService) node.configService()).reportTopology(topology);
         return node;
-    }
-
-    public static class NodeBuilder
-    {
-        final Node.Id id;
-        MessageSink messageSink = Mockito.mock(MessageSink.class);
-        ConfigurationService configService;
-        LongSupplier nowSupplier = new MockCluster.Clock(100);
-        Supplier<DataStore> dataSupplier;
-        {
-            MockStore store = new MockStore();
-            dataSupplier = () -> store;
-        }
-        ShardDistributor shardDistributor = new ShardDistributor.EvenSplit(8, ignore -> new IntKey.Splitter());
-        Agent agent = new TestAgent();
-        RandomSource random = new DefaultRandom(42);
-        Scheduler scheduler = new ThreadPoolScheduler();
-        TopologySorter.Supplier topologySorter = SizeOfIntersectionSorter.SUPPLIER;
-        Function<Node, ProgressLog.Factory> progressLogFactory = SimpleProgressLog::new;
-        // TODO (thread safety, now): Synchronized.maybeRun can deadlock when node.mapReduceLocal is called
-        CommandStores.Factory factory = InMemoryCommandStores.Synchronized::new;
-        List<Topology> topologies = Collections.emptyList();
-
-        public NodeBuilder(Node.Id id)
-        {
-            this.id = id;
-        }
-
-        public NodeBuilder withTopologySorter(TopologySorter.Supplier s)
-        {
-            this.topologySorter = s;
-            return this;
-        }
-
-        public NodeBuilder withSink(MessageSink sink)
-        {
-            this.messageSink = sink;
-            return this;
-        }
-
-        public NodeBuilder withTopologies(Topology... topologies)
-        {
-            this.topologies = Arrays.asList(topologies);
-            this.topologies.sort(Comparator.comparingLong(Topology::epoch));
-            return this;
-        }
-
-        public NodeBuilder withProgressLog(ProgressLog.Factory factory)
-        {
-            return withProgressLog((Function<Node, ProgressLog.Factory>) ignore -> factory);
-        }
-
-        public NodeBuilder withProgressLog(Function<Node, ProgressLog.Factory> fn)
-        {
-            this.progressLogFactory = fn;
-            return this;
-        }
-
-        public NodeBuilder withMessageSink(MessageSink messageSink)
-        {
-            this.messageSink = Objects.requireNonNull(messageSink);
-            return this;
-        }
-
-        public NodeBuilder withClock(LongSupplier clock)
-        {
-            this.nowSupplier = clock;
-            return this;
-        }
-
-        public NodeBuilder withShardDistributor(ShardDistributor shardDistributor)
-        {
-            this.shardDistributor = shardDistributor;
-            return this;
-        }
-
-        public <T> NodeBuilder withShardDistributorFromSplitter(Function<Ranges, ? extends ShardDistributor.EvenSplit.Splitter<T>> splitter)
-        {
-            return withShardDistributor(new ShardDistributor.EvenSplit(8, splitter));
-        }
-
-        public Node build()
-        {
-            ConfigurationService configService = this.configService;
-            if (configService == null)
-                configService = new MockConfigurationService(messageSink, EpochFunction.noop());
-            return new Node(id, messageSink, configService, nowSupplier, dataSupplier, shardDistributor, agent, random, scheduler, topologySorter, progressLogFactory, factory);
-        }
-
-        public Node buildAndStart()
-        {
-            Node node = build();
-            awaitUninterruptibly(node.start());
-            for (Topology t : topologies)
-                ((TestableConfigurationService) node.configService()).reportTopology(t);
-            return node;
-        }
     }
 }

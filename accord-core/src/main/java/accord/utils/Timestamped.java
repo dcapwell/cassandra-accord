@@ -18,6 +18,8 @@
 
 package accord.utils;
 
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.function.BiPredicate;
 
 import accord.primitives.Timestamp;
@@ -66,8 +68,44 @@ public class Timestamped<T>
     }
 
     @Override
+    public boolean equals(Object o)
+    {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Timestamped<?> that = (Timestamped<?>) o;
+        return Objects.equals(timestamp, that.timestamp) && equals(data, that.data);
+    }
+
+    private boolean equals(T a, Object b)
+    {
+        if (!Objects.equals(a, b))
+        {
+            if (a != null && b != null)
+            {
+                if (a.getClass().isArray() && a.getClass().equals(b.getClass()))
+                {
+                    if (a instanceof int[]) return Arrays.equals((int[]) a, (int[]) b);
+                }
+            }
+            return false;
+        }
+        return true;
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return Objects.hash(timestamp, data);
+    }
+
+    @Override
     public String toString()
     {
+        if (data.getClass().isArray())
+        {
+            if (data instanceof int[]) return Arrays.toString((int[]) data);
+            // TODO fill this out
+        }
         return data.toString();
     }
 }
