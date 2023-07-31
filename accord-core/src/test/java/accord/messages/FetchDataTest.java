@@ -29,6 +29,7 @@ import accord.impl.NoopProgressLog;
 import accord.impl.basic.KeyType;
 import accord.impl.basic.MockableCluster;
 import accord.impl.basic.NodeBuilder;
+import accord.impl.basic.NodeIdSorter;
 import accord.impl.basic.SimpleSinks;
 import accord.impl.list.ListAgent;
 import accord.impl.list.ListData;
@@ -83,26 +84,11 @@ public class FetchDataTest
         Topology topology = new Topology(1,
                                          new Shard(IntKey.range(0, 100), Collections.singletonList(N1)),
                                          new Shard(IntKey.range(100, 200), Arrays.asList(N2, N1)));
-        TopologySorter byNodeId = (a, b, shards) -> a.compareTo(b);
-        TopologySorter.Supplier byNodeIdSupplier = new TopologySorter.Supplier()
-        {
-            @Override
-            public TopologySorter get(Topology topologies)
-            {
-                return byNodeId;
-            }
-
-            @Override
-            public TopologySorter get(Topologies topologies)
-            {
-                return byNodeId;
-            }
-        };
         try (MockableCluster cluster = new MockableCluster.Builder(N1, N2)
                 .withKeyType(KeyType.INT)
                 .withProgressLog(NoopProgressLog.INSTANCE)
                 .withTopologies(topology)
-                .withTopologySorter(byNodeIdSupplier)
+                .withTopologySorter(NodeIdSorter.SUPPLIER)
                 .buildAndStart())
         {
             Node n1 = cluster.node(N1);
@@ -129,10 +115,7 @@ public class FetchDataTest
 
             cluster.checkFailures();
 
-            // TODO this is when read.isEmpty()
-            ListData data = new ListData();
-            for (Key key : readKeys)
-                data.put(key, ListStore.EMPTY);
+            ListData data = emptyData(readKeys);
 
             Result result = txn.result(txnId, txnId, data);
             Writes writes = txn.execute(txnId, txnId, data);
@@ -148,8 +131,9 @@ public class FetchDataTest
             // the following times no-op
             for (int i = 0; i < 10; i++)
             {
-                if (i % 2 == 0) cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
-                else            cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
+                if (i % 2 == 0)
+                    cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
+                else cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
 
                 Assertions.assertThat(fetch(n1, txnId, route, shardOneKey))
                           .extracting(k -> k.definition,
@@ -161,7 +145,8 @@ public class FetchDataTest
                                            Status.KnownDeps.DepsUnknown,
                                            i % 2 == 0 ? Status.Outcome.Apply : Status.Outcome.Unknown);
 
-                Assertions.assertThat(currentStatus(n1, txnId, shardOneKey)).isEqualTo(SaveStatus.PreCommittedWithDefinition);
+                Assertions.assertThat(currentStatus(n1, txnId, shardOneKey))
+                          .isEqualTo(SaveStatus.PreCommittedWithDefinition);
 
                 cluster.checkFailures();
             }
@@ -175,9 +160,11 @@ public class FetchDataTest
             Assertions.assertThat(currentStatus(n1, txnId, shardTwoKey)).isEqualTo(SaveStatus.Applied);
             Assertions.assertThat(currentStatus(n2, txnId, shardTwoKey)).isEqualTo(SaveStatus.Applied);
 
-            Assertions.assertThat(cluster.stores.get(N1).data()).isEqualTo(ImmutableMap.of(shardOneKey, new Timestamped<>(txnId, new int[] {1}),
-                                                                                   shardTwoKey, new Timestamped<>(txnId, new int[] {1})));
-            Assertions.assertThat(cluster.stores.get(N2).data()).isEqualTo(ImmutableMap.of(shardTwoKey, new Timestamped<>(txnId, new int[] {1})));
+            Assertions.assertThat(cluster.stores.get(N1).data())
+                      .isEqualTo(ImmutableMap.of(shardOneKey, new Timestamped<>(txnId, new int[]{1}),
+                                                 shardTwoKey, new Timestamped<>(txnId, new int[]{1})));
+            Assertions.assertThat(cluster.stores.get(N2).data())
+                      .isEqualTo(ImmutableMap.of(shardTwoKey, new Timestamped<>(txnId, new int[]{1})));
         }
     }
 
@@ -190,21 +177,6 @@ public class FetchDataTest
 
         SimpleSinks sinks = new SimpleSinks();
         sinks.outboundFilter(r -> r instanceof TxnRequest); // ignore topology messages; easier while in a debugger
-        TopologySorter byNodeId = (a, b, shards) -> a.compareTo(b);
-        TopologySorter.Supplier byNodeIdSupplier = new TopologySorter.Supplier()
-        {
-            @Override
-            public TopologySorter get(Topology topologies)
-            {
-                return byNodeId;
-            }
-
-            @Override
-            public TopologySorter get(Topologies topologies)
-            {
-                return byNodeId;
-            }
-        };
         Map<Node.Id, ListStore> stores = new HashMap<>();
         stores.put(N1, new ListStore(N1));
         stores.put(N2, new ListStore(N2));
@@ -215,7 +187,7 @@ public class FetchDataTest
                 .withProgressLog(NoopProgressLog.INSTANCE)
                 .withTopologies(topology)
                 .withSink(sinks.mockedSinkFor(N1))
-                .withTopologySorter(byNodeIdSupplier)
+                .withTopologySorter(NodeIdSorter.SUPPLIER)
                 .withDataSupplier(() -> stores.get(N1))
                 .withAgent(agent)
                 .buildAndStart();
@@ -224,7 +196,7 @@ public class FetchDataTest
                 .withProgressLog(NoopProgressLog.INSTANCE)
                 .withTopologies(topology)
                 .withSink(sinks.mockedSinkFor(N2))
-                .withTopologySorter(byNodeIdSupplier)
+                .withTopologySorter(NodeIdSorter.SUPPLIER)
                 .withDataSupplier(() -> stores.get(N2))
                 .withAgent(agent)
                 .buildAndStart();
@@ -254,15 +226,17 @@ public class FetchDataTest
         Assertions.assertThat(failures).isEmpty();
 
         // Commit.commitMinimalAndRead
-        Data n2Data = process(new Commit(Commit.Kind.Minimal, N2, topology, topologies, txnId, txn, route, txn.keys().toParticipants(), txnId, Deps.NONE, true), n2, replyTo, ReadData.ReadOk.class).data;
+        Data n2Data = process(new Commit(Commit.Kind.Minimal, N2, topology, topologies, txnId, txn, route, txn.keys()
+                                                                                                              .toParticipants(), txnId, Deps.NONE, true), n2, replyTo, ReadData.ReadOk.class).data;
 
         Arrays.asList(n1, n2).forEach(FetchDataTest::allowMessages);
         // the first time pushes the state from PreAccepted -> PreCommittedWithDefinition (if n2 is seen first)
         // the following times no-op
         for (int i = 0; i < 10; i++)
         {
-            if (i % 2 == 0) sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
-            else            sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
+            if (i % 2 == 0)
+                sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
+            else sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
 
             Assertions.assertThat(fetch(n1, txnId, route, shardOneWriteKey))
                       .extracting(k -> k.definition,
@@ -274,12 +248,14 @@ public class FetchDataTest
                                        Status.KnownDeps.DepsUnknown,
                                        Status.Outcome.Unknown);
 
-            Assertions.assertThat(currentStatus(n1, txnId, shardOneWriteKey)).isEqualTo(SaveStatus.PreCommittedWithDefinition);
+            Assertions.assertThat(currentStatus(n1, txnId, shardOneWriteKey))
+                      .isEqualTo(SaveStatus.PreCommittedWithDefinition);
 
             Assertions.assertThat(failures).isEmpty();
         }
 
-        Data n1Data = process(new Commit(Commit.Kind.Minimal, N1, topology, topologies, txnId, txn, route, txn.keys().toParticipants(), txnId, Deps.NONE, true), n1, replyTo, ReadData.ReadOk.class).data;
+        Data n1Data = process(new Commit(Commit.Kind.Minimal, N1, topology, topologies, txnId, txn, route, txn.keys()
+                                                                                                              .toParticipants(), txnId, Deps.NONE, true), n1, replyTo, ReadData.ReadOk.class).data;
         Data data = n1Data.merge(n2Data);
 
         Assertions.assertThat(failures).isEmpty();
@@ -294,8 +270,9 @@ public class FetchDataTest
         // TODO (now): slow path
         for (int i = 0; i < 10; i++)
         {
-            if (i % 2 == 0) sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
-            else            sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
+            if (i % 2 == 0)
+                sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
+            else sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
 
             Assertions.assertThat(fetch(n1, txnId, route, shardOneWriteKey))
                       .extracting(k -> k.definition,
@@ -322,9 +299,11 @@ public class FetchDataTest
         Assertions.assertThat(currentStatus(n1, txnId, shardTwoWriteKey)).isEqualTo(SaveStatus.Applied);
         Assertions.assertThat(currentStatus(n2, txnId, shardTwoWriteKey)).isEqualTo(SaveStatus.Applied);
 
-        Assertions.assertThat(stores.get(N1).data()).isEqualTo(ImmutableMap.of(shardOneWriteKey, new Timestamped<>(txnId, new int[] {1}),
-                                                                               shardTwoWriteKey, new Timestamped<>(txnId, new int[] {1})));
-        Assertions.assertThat(stores.get(N2).data()).isEqualTo(ImmutableMap.of(shardTwoWriteKey, new Timestamped<>(txnId, new int[] {1})));
+        Assertions.assertThat(stores.get(N1).data())
+                  .isEqualTo(ImmutableMap.of(shardOneWriteKey, new Timestamped<>(txnId, new int[]{1}),
+                                             shardTwoWriteKey, new Timestamped<>(txnId, new int[]{1})));
+        Assertions.assertThat(stores.get(N2).data())
+                  .isEqualTo(ImmutableMap.of(shardTwoWriteKey, new Timestamped<>(txnId, new int[]{1})));
     }
 
     private static ListData emptyData(Keys keys)
@@ -379,7 +358,9 @@ public class FetchDataTest
     {
         MessageSink sink = node.messageSink();
         Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).send(Mockito.any(), Mockito.any());
-        Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).send(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
+        Mockito.doAnswer(Mockito.CALLS_REAL_METHODS)
+               .when(sink)
+               .send(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
         Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).reply(Mockito.any(), Mockito.any(), Mockito.any());
     }
 
