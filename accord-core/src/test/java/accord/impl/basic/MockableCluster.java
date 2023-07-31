@@ -82,6 +82,7 @@ public class MockableCluster implements AutoCloseable
         // process is normally an async operation, but MockableCluster tends to use a blocking CommandStore, making this a sync operation
         // for this reason, the reply is expected after this method returns; if the author overrides this behavior, then this may become
         // async again and this method will fail as reply was not called.
+        // It is possible to hand async, as we know that the MessageSink used is from this.sinks, so could always add a listener
         request.process(on, replyTo, replyContext);
         ArgumentCaptor<T> reply = ArgumentCaptor.forClass(replyType);
         Mockito.verify(on.messageSink()).reply(Mockito.eq(replyTo), Mockito.eq(replyContext), reply.capture());
