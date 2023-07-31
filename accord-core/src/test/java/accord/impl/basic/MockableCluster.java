@@ -38,6 +38,7 @@ import accord.messages.ReplyContext;
 import accord.messages.TxnRequest;
 import accord.primitives.FullRoute;
 import accord.primitives.Keys;
+import accord.primitives.RoutableKey;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
 import accord.topology.Topology;
@@ -155,7 +156,7 @@ public class MockableCluster implements AutoCloseable
         return data;
     }
 
-    public AsyncChain<SaveStatus> currentStatus(Node.Id nodeId, TxnId txnId, Key key)
+    public AsyncChain<SaveStatus> currentStatus(Node.Id nodeId, TxnId txnId, RoutableKey key)
     {
         Node node = node(nodeId);
         return new AsyncChains.Head<SaveStatus>()
@@ -171,12 +172,12 @@ public class MockableCluster implements AutoCloseable
         };
     }
 
-    public SaveStatus currentStatusBlocking(Node.Id nodeId, TxnId txnId, Key key) throws ExecutionException, InterruptedException
+    public SaveStatus currentStatusBlocking(Node.Id nodeId, TxnId txnId, RoutableKey key) throws ExecutionException, InterruptedException
     {
         return AsyncChains.getBlocking(currentStatus(nodeId, txnId, key));
     }
 
-    public AsyncChain<Status.Known> fetch(Node.Id nodeId, TxnId txnId, FullRoute<?> route, Key key)
+    public AsyncChain<Status.Known> fetch(Node.Id nodeId, TxnId txnId, FullRoute<?> route, RoutableKey key)
     {
         Node node = node(nodeId);
         return new AsyncChains.Head<Status.Known>()
@@ -198,7 +199,7 @@ public class MockableCluster implements AutoCloseable
         };
     }
 
-    public Status.Known fetchBlocking(Node.Id nodeId, TxnId txnId, FullRoute<?> route, Key key) throws ExecutionException, InterruptedException
+    public Status.Known fetchBlocking(Node.Id nodeId, TxnId txnId, FullRoute<?> route, RoutableKey key) throws ExecutionException, InterruptedException
     {
         return AsyncChains.getBlocking(fetch(nodeId, txnId, route, key));
     }

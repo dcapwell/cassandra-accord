@@ -595,7 +595,7 @@ public abstract class CommandStores
     }
 
     @VisibleForTesting
-    public CommandStore unsafeForKey(Key key)
+    public CommandStore unsafeForKey(RoutableKey key)
     {
         ShardHolder[] shards = current.shards;
         for (ShardHolder shard : shards)
