@@ -20,7 +20,6 @@ package accord.messages;
 
 import accord.api.Data;
 import accord.api.Key;
-import accord.api.MessageSink;
 import accord.api.Result;
 import accord.coordinate.FetchData;
 import accord.impl.IntKey;
@@ -52,7 +51,6 @@ import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
 import com.google.common.collect.ImmutableMap;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -109,7 +107,7 @@ public class FetchDataTest
             cluster.checkFailures();
 
             // TODO (now): slow path
-            Arrays.asList(n1, n2).forEach(FetchDataTest::allowMessages);
+            cluster.allowMessages();
             // the first time pushes the state from PreAccepted -> PreCommittedWithDefinition (if n2 is seen first)
             // the following times no-op
             for (int i = 0; i < 10; i++)
@@ -189,7 +187,7 @@ public class FetchDataTest
             // Commit.commitMinimalAndRead
             Data n2Data = cluster.process(n2, replyTo, ReadData.ReadOk.class, id -> new Commit(Commit.Kind.Minimal, id, topology, topologies, txnId, txn, route, txn.keys().toParticipants(), txnId, Deps.NONE, true)).data;
 
-            Arrays.asList(n1, n2).forEach(FetchDataTest::allowMessages);
+            cluster.allowMessages();
             // the first time pushes the state from PreAccepted -> PreCommittedWithDefinition (if n2 is seen first)
             // the following times no-op
             for (int i = 0; i < 10; i++)
@@ -298,15 +296,5 @@ public class FetchDataTest
             return command == null ? null : command.saveStatus();
         }).begin(minStatus.settingCallback());
         return AsyncChains.getUninterruptibly(minStatus);
-    }
-
-    private static void allowMessages(Node node)
-    {
-        MessageSink sink = node.messageSink();
-        Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).send(Mockito.any(), Mockito.any());
-        Mockito.doAnswer(Mockito.CALLS_REAL_METHODS)
-               .when(sink)
-               .send(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
-        Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).reply(Mockito.any(), Mockito.any(), Mockito.any());
     }
 }

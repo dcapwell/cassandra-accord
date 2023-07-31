@@ -19,6 +19,7 @@
 package accord.impl.basic;
 
 import accord.api.Key;
+import accord.api.MessageSink;
 import accord.api.TestableConfigurationService;
 import accord.impl.list.ListAgent;
 import accord.impl.list.ListQuery;
@@ -42,6 +43,7 @@ import org.mockito.Mockito;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -110,6 +112,25 @@ public class MockableCluster implements AutoCloseable
         }
         ListQuery query = new ListQuery(new Node.Id(-1), 0);
         return new Txn.InMemory(keys, read, query, update);
+    }
+
+    public void allowMessages(Node.Id... ids)
+    {
+        Collection<Node.Id> array = Arrays.asList(ids);
+        if (array.isEmpty())
+            array = nodes.keySet();
+        for (Node.Id id : array)
+            allowMessages(node(id));
+    }
+
+    private static void allowMessages(Node node)
+    {
+        MessageSink sink = node.messageSink();
+        Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).send(Mockito.any(), Mockito.any());
+        Mockito.doAnswer(Mockito.CALLS_REAL_METHODS)
+               .when(sink)
+               .send(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
+        Mockito.doAnswer(Mockito.CALLS_REAL_METHODS).when(sink).reply(Mockito.any(), Mockito.any(), Mockito.any());
     }
 
     @Override
