@@ -174,136 +174,119 @@ public class FetchDataTest
         Topology topology = new Topology(1,
                                          new Shard(IntKey.range(0, 100), Collections.singletonList(N1)),
                                          new Shard(IntKey.range(100, 200), Arrays.asList(N2, N1)));
-
-        SimpleSinks sinks = new SimpleSinks();
-        sinks.outboundFilter(r -> r instanceof TxnRequest); // ignore topology messages; easier while in a debugger
-        Map<Node.Id, ListStore> stores = new HashMap<>();
-        stores.put(N1, new ListStore(N1));
-        stores.put(N2, new ListStore(N2));
-        List<Throwable> failures = new CopyOnWriteArrayList<>();
-        ListAgent agent = new ListAgent(0, failures::add, ignore -> {});
-        Node n1 = new NodeBuilder(N1)
-                .withShardDistributorFromSplitter(ignore -> new IntKey.Splitter())
+        try (MockableCluster cluster = new MockableCluster.Builder(N1, N2)
+                .withKeyType(KeyType.INT)
                 .withProgressLog(NoopProgressLog.INSTANCE)
                 .withTopologies(topology)
-                .withSink(sinks.mockedSinkFor(N1))
                 .withTopologySorter(NodeIdSorter.SUPPLIER)
-                .withDataSupplier(() -> stores.get(N1))
-                .withAgent(agent)
-                .buildAndStart();
-        Node n2 = new NodeBuilder(N2)
-                .withShardDistributorFromSplitter(ignore -> new IntKey.Splitter())
-                .withProgressLog(NoopProgressLog.INSTANCE)
-                .withTopologies(topology)
-                .withSink(sinks.mockedSinkFor(N2))
-                .withTopologySorter(NodeIdSorter.SUPPLIER)
-                .withDataSupplier(() -> stores.get(N2))
-                .withAgent(agent)
-                .buildAndStart();
-        sinks.register(n1, n2);
-
-        TxnId txnId = n1.nextTxnId(Txn.Kind.Write, Routable.Domain.Key);
-        IntKey.Raw shardOneReadKey = IntKey.key(40);
-        IntKey.Raw shardOneWriteKey = IntKey.key(42);
-        IntKey.Raw shardTwoReadKey = IntKey.key(120);
-        IntKey.Raw shardTwoWriteKey = IntKey.key(150);
-        Keys writeKeys = Keys.of(shardOneWriteKey, shardTwoWriteKey);
-        Keys readKeys = Keys.of(shardOneReadKey, shardTwoReadKey).with(writeKeys);
-        Txn txn = txn(readKeys, writeKeys);
-        FullRoute<?> route = n1.computeRoute(txnId, txn.keys());
-        Topologies topologies = n1.topology().withUnsyncedEpochs(route, txnId.epoch(), txnId.epoch());
-
-        Node.Id replyTo = new Node.Id(-42);
-
-        // TODO deps is 'unknown' as they were not committed!
-
-        ExtendedAssertions.process(new PreAccept(N1, topologies, txnId, txn, route), n1, replyTo, PreAccept.PreAcceptReply.class)
-                          .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat));
-
-        ExtendedAssertions.process(new PreAccept(N2, topologies, txnId, txn, route), n2, replyTo, PreAccept.PreAcceptReply.class)
-                          .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat));
-
-        Assertions.assertThat(failures).isEmpty();
-
-        // Commit.commitMinimalAndRead
-        Data n2Data = process(new Commit(Commit.Kind.Minimal, N2, topology, topologies, txnId, txn, route, txn.keys()
-                                                                                                              .toParticipants(), txnId, Deps.NONE, true), n2, replyTo, ReadData.ReadOk.class).data;
-
-        Arrays.asList(n1, n2).forEach(FetchDataTest::allowMessages);
-        // the first time pushes the state from PreAccepted -> PreCommittedWithDefinition (if n2 is seen first)
-        // the following times no-op
-        for (int i = 0; i < 10; i++)
+                .buildAndStart())
         {
-            if (i % 2 == 0)
-                sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
-            else sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
+            Node n1 = cluster.node(N1);
+            Node n2 = cluster.node(N2);
 
-            Assertions.assertThat(fetch(n1, txnId, route, shardOneWriteKey))
-                      .extracting(k -> k.definition,
-                                  k -> k.executeAt,
-                                  k -> k.deps,
-                                  k -> k.outcome)
-                      .containsExactly(Status.Definition.DefinitionKnown,
-                                       Status.KnownExecuteAt.ExecuteAtKnown,
-                                       Status.KnownDeps.DepsUnknown,
-                                       Status.Outcome.Unknown);
+            TxnId txnId = n1.nextTxnId(Txn.Kind.Write, Routable.Domain.Key);
+            IntKey.Raw shardOneReadKey = IntKey.key(40);
+            IntKey.Raw shardOneWriteKey = IntKey.key(42);
+            IntKey.Raw shardTwoReadKey = IntKey.key(120);
+            IntKey.Raw shardTwoWriteKey = IntKey.key(150);
+            Keys writeKeys = Keys.of(shardOneWriteKey, shardTwoWriteKey);
+            Keys readKeys = Keys.of(shardOneReadKey, shardTwoReadKey).with(writeKeys);
+            Txn txn = txn(readKeys, writeKeys);
+            FullRoute<?> route = n1.computeRoute(txnId, txn.keys());
+            Topologies topologies = n1.topology().withUnsyncedEpochs(route, txnId.epoch(), txnId.epoch());
 
-            Assertions.assertThat(currentStatus(n1, txnId, shardOneWriteKey))
-                      .isEqualTo(SaveStatus.PreCommittedWithDefinition);
+            Node.Id replyTo = new Node.Id(-42);
 
-            Assertions.assertThat(failures).isEmpty();
-        }
+            // TODO deps is 'unknown' as they were not committed!
 
-        Data n1Data = process(new Commit(Commit.Kind.Minimal, N1, topology, topologies, txnId, txn, route, txn.keys()
-                                                                                                              .toParticipants(), txnId, Deps.NONE, true), n1, replyTo, ReadData.ReadOk.class).data;
-        Data data = n1Data.merge(n2Data);
+            ExtendedAssertions.process(new PreAccept(N1, topologies, txnId, txn, route), n1, replyTo, PreAccept.PreAcceptReply.class)
+                              .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat));
 
-        Assertions.assertThat(failures).isEmpty();
+            ExtendedAssertions.process(new PreAccept(N2, topologies, txnId, txn, route), n2, replyTo, PreAccept.PreAcceptReply.class)
+                              .asInstanceOf(new InstanceOfAssertFactory<>(PreAccept.PreAcceptOk.class, Assertions::assertThat));
 
-        Result result = txn.result(txnId, txnId, data);
-        Writes writes = txn.execute(txnId, txnId, data);
-        ExtendedAssertions.process(Apply.applyMaximal(N2, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result), n2, replyTo, Apply.ApplyReply.class)
-                          .isEqualTo(Apply.ApplyReply.Applied);
+            cluster.checkFailures();
 
-        Assertions.assertThat(failures).isEmpty();
+            // Commit.commitMinimalAndRead
+            Data n2Data = process(new Commit(Commit.Kind.Minimal, N2, topology, topologies, txnId, txn, route, txn.keys()
+                                                                                                                  .toParticipants(), txnId, Deps.NONE, true), n2, replyTo, ReadData.ReadOk.class).data;
 
-        // TODO (now): slow path
-        for (int i = 0; i < 10; i++)
-        {
-            if (i % 2 == 0)
-                sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
-            else sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
+            Arrays.asList(n1, n2).forEach(FetchDataTest::allowMessages);
+            // the first time pushes the state from PreAccepted -> PreCommittedWithDefinition (if n2 is seen first)
+            // the following times no-op
+            for (int i = 0; i < 10; i++)
+            {
+                if (i % 2 == 0)
+                    cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
+                else cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
 
-            Assertions.assertThat(fetch(n1, txnId, route, shardOneWriteKey))
-                      .extracting(k -> k.definition,
-                                  k -> k.executeAt,
-                                  k -> k.deps,
-                                  k -> k.outcome)
-                      .containsExactly(Status.Definition.DefinitionKnown,
-                                       Status.KnownExecuteAt.ExecuteAtKnown,
-                                       Status.KnownDeps.DepsKnown,
-                                       Status.Outcome.Apply);
+                Assertions.assertThat(fetch(n1, txnId, route, shardOneWriteKey))
+                          .extracting(k -> k.definition,
+                                      k -> k.executeAt,
+                                      k -> k.deps,
+                                      k -> k.outcome)
+                          .containsExactly(Status.Definition.DefinitionKnown,
+                                           Status.KnownExecuteAt.ExecuteAtKnown,
+                                           Status.KnownDeps.DepsUnknown,
+                                           Status.Outcome.Unknown);
+
+                Assertions.assertThat(currentStatus(n1, txnId, shardOneWriteKey))
+                          .isEqualTo(SaveStatus.PreCommittedWithDefinition);
+
+                cluster.checkFailures();
+            }
+
+            Data n1Data = process(new Commit(Commit.Kind.Minimal, N1, topology, topologies, txnId, txn, route, txn.keys()
+                                                                                                                  .toParticipants(), txnId, Deps.NONE, true), n1, replyTo, ReadData.ReadOk.class).data;
+            Data data = n1Data.merge(n2Data);
+
+            cluster.checkFailures();
+
+            Result result = txn.result(txnId, txnId, data);
+            Writes writes = txn.execute(txnId, txnId, data);
+            ExtendedAssertions.process(Apply.applyMaximal(N2, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result), n2, replyTo, Apply.ApplyReply.class)
+                              .isEqualTo(Apply.ApplyReply.Applied);
+
+            cluster.checkFailures();
+
+            // TODO (now): slow path
+            for (int i = 0; i < 10; i++)
+            {
+                if (i % 2 == 0)
+                    cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N2, N1); // includes i=0, which is needed to make sure we push forward the first time
+                else cluster.sinks.replyOrdering(N1, CheckStatus.CheckStatusReply.class, N1, N2);
+
+                Assertions.assertThat(fetch(n1, txnId, route, shardOneWriteKey))
+                          .extracting(k -> k.definition,
+                                      k -> k.executeAt,
+                                      k -> k.deps,
+                                      k -> k.outcome)
+                          .containsExactly(Status.Definition.DefinitionKnown,
+                                           Status.KnownExecuteAt.ExecuteAtKnown,
+                                           Status.KnownDeps.DepsKnown,
+                                           Status.Outcome.Apply);
+
+                Assertions.assertThat(currentStatus(n1, txnId, shardOneWriteKey)).isEqualTo(SaveStatus.Applied);
+
+                cluster.checkFailures();
+            }
+
+
+            ExtendedAssertions.process(Apply.applyMaximal(N1, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result), n1, replyTo, Apply.ApplyReply.class)
+                              .isEqualTo(Apply.ApplyReply.Redundant);
+
+            cluster.checkFailures();
 
             Assertions.assertThat(currentStatus(n1, txnId, shardOneWriteKey)).isEqualTo(SaveStatus.Applied);
+            Assertions.assertThat(currentStatus(n1, txnId, shardTwoWriteKey)).isEqualTo(SaveStatus.Applied);
+            Assertions.assertThat(currentStatus(n2, txnId, shardTwoWriteKey)).isEqualTo(SaveStatus.Applied);
 
-            Assertions.assertThat(failures).isEmpty();
+            Assertions.assertThat(cluster.stores.get(N1).data())
+                      .isEqualTo(ImmutableMap.of(shardOneWriteKey, new Timestamped<>(txnId, new int[]{1}),
+                                                 shardTwoWriteKey, new Timestamped<>(txnId, new int[]{1})));
+            Assertions.assertThat(cluster.stores.get(N2).data())
+                      .isEqualTo(ImmutableMap.of(shardTwoWriteKey, new Timestamped<>(txnId, new int[]{1})));
         }
-
-
-        ExtendedAssertions.process(Apply.applyMaximal(N1, topologies, topologies, txnId, route, txn, txnId, Deps.NONE, writes, result), n1, replyTo, Apply.ApplyReply.class)
-                          .isEqualTo(Apply.ApplyReply.Redundant);
-
-        Assertions.assertThat(failures).isEmpty();
-
-        Assertions.assertThat(currentStatus(n1, txnId, shardOneWriteKey)).isEqualTo(SaveStatus.Applied);
-        Assertions.assertThat(currentStatus(n1, txnId, shardTwoWriteKey)).isEqualTo(SaveStatus.Applied);
-        Assertions.assertThat(currentStatus(n2, txnId, shardTwoWriteKey)).isEqualTo(SaveStatus.Applied);
-
-        Assertions.assertThat(stores.get(N1).data())
-                  .isEqualTo(ImmutableMap.of(shardOneWriteKey, new Timestamped<>(txnId, new int[]{1}),
-                                             shardTwoWriteKey, new Timestamped<>(txnId, new int[]{1})));
-        Assertions.assertThat(stores.get(N2).data())
-                  .isEqualTo(ImmutableMap.of(shardTwoWriteKey, new Timestamped<>(txnId, new int[]{1})));
     }
 
     private static ListData emptyData(Keys keys)
