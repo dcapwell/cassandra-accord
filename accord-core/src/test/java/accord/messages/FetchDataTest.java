@@ -80,7 +80,6 @@ public class FetchDataTest
 
     private void writeOnlyTxn(boolean fastPath) throws ExecutionException, InterruptedException
     {
-        // PreAccept -> Apply
         Topology topology = new Topology(1,
                                          new Shard(IntKey.range(0, 100), Collections.singletonList(N1)),
                                          new Shard(IntKey.range(100, 200), Arrays.asList(N2, N1)));
@@ -289,7 +288,8 @@ public class FetchDataTest
                 if (i == 1 && !fastPath)
                 {
                     // not possible in fast-path as we need to be committed to know deps
-                    cluster.markRangeDurableBlocking(N2, n2.topology().currentLocal().ranges());
+//                    cluster.markRangeDurableBlocking(N2, n2.topology().currentLocal().ranges());
+                    cluster.markRangeDurableBlocking(N2, Ranges.of(IntKey.range(100, 122)));
 
                     cluster.checkFailures();
                 }
