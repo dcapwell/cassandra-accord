@@ -18,14 +18,6 @@
 
 package accord.utils.async;
 
-import com.google.common.collect.Lists;
-import com.google.common.util.concurrent.MoreExecutors;
-import org.assertj.core.api.AbstractThrowableAssert;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mockito;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -35,6 +27,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
+
+import com.google.common.collect.Lists;
+import com.google.common.util.concurrent.MoreExecutors;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
+import org.assertj.core.api.AbstractThrowableAssert;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -305,7 +306,7 @@ public class AsyncChainsTest
 
     }
 
-    private static <T> AbstractThrowableAssert<?, Throwable> assertWillSeeFailure(AsyncChain<T> chain)
+    private static <T> AbstractThrowableAssert<?, ? extends Throwable> assertWillSeeFailure(AsyncChain<T> chain)
     {
         BiConsumer<? super T, Throwable> mock = Mockito.mock(BiConsumer.class);
         ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
