@@ -64,7 +64,7 @@ public class AbstractConfigurationServiceTest
             if (topologies.put(topology.epoch(), topology) != null)
                 Assertions.fail("Received topology twice for epoch " + topology.epoch());
             if (ackTopologies)
-                parent.acknowledgeEpoch(EpochReady.done(topology.epoch()));
+                parent.acknowledgeEpoch(EpochReady.done(topology.epoch()), true);
             return AsyncResults.success(null);
         }
 
@@ -141,7 +141,7 @@ public class AbstractConfigurationServiceTest
         }
 
         @Override
-        protected void localSyncComplete(Topology topology)
+        protected void localSyncComplete(Topology topology, boolean startSync)
         {
             if (!syncStarted.add(topology.epoch()))
                 Assertions.fail("Sync started multiple times for " + topology.epoch());
@@ -150,7 +150,7 @@ public class AbstractConfigurationServiceTest
         @Override
         protected void topologyUpdatePostListenerNotify(Topology topology)
         {
-            acknowledgeEpoch(EpochReady.done(topology.epoch()));
+            acknowledgeEpoch(EpochReady.done(topology.epoch()), true);
         }
 
         @Override
