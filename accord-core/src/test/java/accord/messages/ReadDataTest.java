@@ -150,7 +150,7 @@ class ReadDataTest
                 CheckedCommands.accept(safe, state.txnId, Ballot.ZERO, state.partialRoute, state.partialTxn.keys(), state.progressKey, state.executeAt, state.deps);
 
                 SafeCommand safeCommand = safe.ifInitialised(state.txnId);
-                safeCommand.commit(safeCommand.current(), Ballot.ZERO, state.executeAt);
+                safeCommand.commit(safe, safeCommand.current(), Ballot.ZERO, state.executeAt);
             })));
 
             ReplyContext replyContext = state.process();
@@ -184,7 +184,7 @@ class ReadDataTest
             store = stores.get(1);
             check(store.execute(PreLoadContext.contextFor(state.txnId, state.keys), safe -> {
                 SafeCommand command = safe.get(state.txnId, state.txnId, state.route);
-                command.commitInvalidated();
+                command.commitInvalidated(safe);
             }));
 
             ReplyContext replyContext = state.process();
@@ -200,7 +200,7 @@ class ReadDataTest
             List<CommandStore> stores = stores(state);
             stores.forEach(store -> check(store.execute(PreLoadContext.contextFor(state.txnId, state.keys), safe -> {
                 SafeCommand command = safe.get(state.txnId, state.txnId, state.route);
-                command.commitInvalidated();
+                command.commitInvalidated(safe);
             })));
             ReplyContext replyContext = state.process();
 

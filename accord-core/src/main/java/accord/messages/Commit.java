@@ -21,6 +21,7 @@ import java.util.function.BiPredicate;
 import javax.annotation.Nullable;
 
 import accord.local.Commands;
+import accord.local.KeyHistory;
 import accord.local.Node;
 import accord.local.Node.Id;
 import accord.local.PreLoadContext;
@@ -32,7 +33,6 @@ import accord.messages.ReadData.ReadReply;
 import accord.primitives.Ballot;
 import accord.primitives.Deps;
 import accord.primitives.FullRoute;
-import accord.primitives.Keys;
 import accord.primitives.PartialDeps;
 import accord.primitives.PartialRoute;
 import accord.primitives.PartialTxn;
@@ -64,15 +64,17 @@ public class Commit extends TxnRequest<CommitOrReadNack>
 {
     public static class SerializerSupport
     {
-        public static Commit create(TxnId txnId, PartialRoute<?> scope, long waitForEpoch, Kind kind, Ballot ballot, Timestamp executeAt, @Nullable PartialTxn partialTxn, PartialDeps partialDeps, @Nullable FullRoute<?> fullRoute, @Nullable ReadData readData)
+        public static Commit create(TxnId txnId, PartialRoute<?> scope, long waitForEpoch, Kind kind, Ballot ballot, Timestamp executeAt, Seekables<?, ?> keys, @Nullable PartialTxn partialTxn, PartialDeps partialDeps, @Nullable FullRoute<?> fullRoute, @Nullable ReadData readData)
         {
-            return new Commit(kind, txnId, scope, waitForEpoch, ballot, executeAt, partialTxn, partialDeps, fullRoute, readData);
+            return new Commit(kind, txnId, scope, waitForEpoch, ballot, executeAt, keys, partialTxn, partialDeps, fullRoute, readData);
         }
     }
 
     public final Kind kind;
     public final Ballot ballot;
     public final Timestamp executeAt;
+    public final Seekables<?, ?> keys;
+    // TODO (expected): share keys with partialTxn and partialDeps - in memory and on wire
     public final @Nullable PartialTxn partialTxn;
     public final @Nullable PartialDeps partialDeps;
     public final @Nullable FullRoute<?> route;
@@ -139,18 +141,20 @@ public class Commit extends TxnRequest<CommitOrReadNack>
 
         this.kind = kind;
         this.executeAt = executeAt;
+        this.keys = txn.keys().slice(scope.covering());
         this.partialTxn = partialTxn;
         this.partialDeps = deps.slice(scope.covering());
         this.route = sendRoute;
         this.readData = toExecuteFactory == null ? null : toExecuteFactory.apply(partialTxn != null ? partialTxn : txn, scope, partialDeps);
     }
 
-    protected Commit(Kind kind, TxnId txnId, PartialRoute<?> scope, long waitForEpoch, Ballot ballot, Timestamp executeAt, @Nullable PartialTxn partialTxn, PartialDeps partialDeps, @Nullable FullRoute<?> fullRoute, @Nullable ReadData readData)
+    protected Commit(Kind kind, TxnId txnId, PartialRoute<?> scope, long waitForEpoch, Ballot ballot, Timestamp executeAt, Seekables<?, ?> keys, @Nullable PartialTxn partialTxn, PartialDeps partialDeps, @Nullable FullRoute<?> fullRoute, @Nullable ReadData readData)
     {
         super(txnId, scope, waitForEpoch);
         this.kind = kind;
         this.ballot = ballot;
         this.executeAt = executeAt;
+        this.keys = keys;
         this.partialTxn = partialTxn;
         this.partialDeps = partialDeps;
         this.route = fullRoute;
@@ -248,7 +252,13 @@ public class Commit extends TxnRequest<CommitOrReadNack>
     @Override
     public Seekables<?, ?> keys()
     {
-        return partialTxn != null ? partialTxn.keys() : Keys.EMPTY;
+        return keys;
+    }
+
+    @Override
+    public KeyHistory keyHistory()
+    {
+        return KeyHistory.COMMANDS;
     }
 
     @Override

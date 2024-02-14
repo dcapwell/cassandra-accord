@@ -37,14 +37,12 @@ import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
 import accord.local.SaveStatus;
 import accord.local.Status;
-import accord.primitives.AbstractKeys;
 import accord.primitives.Ballot;
 import accord.primitives.EpochSupplier;
 import accord.primitives.PartialDeps;
 import accord.primitives.PartialRoute;
 import accord.primitives.PartialTxn;
 import accord.primitives.ProgressToken;
-import accord.primitives.Range;
 import accord.primitives.Ranges;
 import accord.primitives.Routables;
 import accord.primitives.Route;
@@ -329,33 +327,7 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusRep
             if (keysOrRanges.isEmpty())
                 return new FoundKnownMap();
 
-            switch (keysOrRanges.domain())
-            {
-                default: throw new AssertionError("Unhandled domain type: " + keysOrRanges.domain());
-                case Range:
-                {
-                    Ranges ranges = (Ranges)keysOrRanges;
-                    Builder builder = new Builder(ranges.get(0).endInclusive(), 2 * ranges.size());
-                    for (Range range : ranges)
-                    {
-                        builder.append(range.start(), known, FoundKnown::atLeast);
-                        builder.append(range.end(), null, FoundKnown::atLeast);
-                    }
-                    return builder.build();
-                }
-                case Key:
-                {
-                    AbstractKeys<RoutingKey> keys = (AbstractKeys<RoutingKey>) keysOrRanges;
-                    Builder builder = new Builder(keys.get(0).asRange().endInclusive(), 2 * keys.size());
-                    for (RoutingKey key : keys)
-                    {
-                        Range range = key.asRange();
-                        builder.append(range.start(), known, FoundKnown::atLeast);
-                        builder.append(range.end(), null, FoundKnown::atLeast);
-                    }
-                    return builder.build();
-                }
-            }
+            return create(keysOrRanges, known, Builder::new);
         }
 
         public static FoundKnownMap merge(FoundKnownMap a, FoundKnownMap b)

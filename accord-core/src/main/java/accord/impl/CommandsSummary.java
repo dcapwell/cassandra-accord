@@ -18,9 +18,24 @@
 
 package accord.impl;
 
+import accord.local.SafeCommandStore.CommandFunction;
+import accord.local.SafeCommandStore.TestDep;
+import accord.local.SafeCommandStore.TestStartedAt;
+import accord.local.SafeCommandStore.TestStatus;
 import accord.primitives.Timestamp;
+import accord.primitives.Txn.Kind.Kinds;
+import accord.primitives.TxnId;
 
-public interface DomainTimestamps
+public interface CommandsSummary
 {
-    Timestamp max();
+    <P1, T> T mapReduceFull(TxnId testTxnId,
+                            Kinds testKind,
+                            TestStartedAt testStartedAt,
+                            TestDep testDep,
+                            TestStatus testStatus,
+                            CommandFunction<P1, T, T> map, P1 p1, T initialValue);
+
+    <P1, T> T mapReduceActive(Timestamp startedBefore,
+                              Kinds testKind,
+                              CommandFunction<P1, T, T> map, P1 p1, T initialValue);
 }

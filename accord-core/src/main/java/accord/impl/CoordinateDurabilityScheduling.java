@@ -29,6 +29,7 @@ import com.google.common.primitives.Ints;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import accord.api.Scheduler;
 import accord.coordinate.CoordinateGloballyDurable;
 import accord.coordinate.CoordinateShardDurable;
 import accord.coordinate.CoordinateSyncPoint;
@@ -78,6 +79,7 @@ public class CoordinateDurabilityScheduling
     private static final Logger logger = LoggerFactory.getLogger(CoordinateDurabilityScheduling.class);
 
     private final Node node;
+    private Scheduler.Scheduled scheduled;
 
     /*
      * In each round at each node wait this amount of time between initiating new CoordinateShardDurable
@@ -156,24 +158,20 @@ public class CoordinateDurabilityScheduling
     /**
      * Schedule regular invocations of CoordinateShardDurable and CoordinateGloballyDurable
      */
-    public void start()
+    public synchronized void start()
     {
         Invariants.checkState(!stop); // cannot currently restart safely
         long nowMicros = node.unix(MICROSECONDS);
         prevShardSyncTimeMicros = nowMicros;
         setNextGlobalSyncTime(nowMicros);
-        requeue();
+        scheduled = node.scheduler().recurring(this::run, frequencyMicros, MICROSECONDS);
     }
 
     public void stop()
     {
+        if (scheduled != null)
+            scheduled.cancel();
         stop = true;
-    }
-
-    private void requeue()
-    {
-        if (!stop)
-            node.scheduler().once(this::run, frequencyMicros, MICROSECONDS);
     }
 
     /**
@@ -185,35 +183,28 @@ public class CoordinateDurabilityScheduling
         if (stop)
             return;
 
-        try
+        updateTopology();
+        if (currentGlobalTopology == null || currentGlobalTopology.size() == 0)
+            return;
+
+        long nowMicros = node.unix(MICROSECONDS);
+        if (nextGlobalSyncTimeMicros <= nowMicros)
         {
-            updateTopology();
-            if (currentGlobalTopology.size() == 0)
-                return;
-
-            long nowMicros = node.unix(MICROSECONDS);
-            if (nextGlobalSyncTimeMicros <= nowMicros)
-            {
-                startGlobalSync();
-                setNextGlobalSyncTime(nowMicros);
-            }
-
-            List<Ranges> coordinate = rangesToShardSync(nowMicros);
-            prevShardSyncTimeMicros = nowMicros;
-            if (coordinate.isEmpty())
-            {
-                logger.trace("Nothing pending in schedule for time slot at {}", nowMicros);
-                return;
-            }
-
-            logger.trace("Scheduling CoordinateShardDurable for {} at {}", coordinate, nowMicros);
-            for (Ranges ranges : coordinate)
-                startShardSync(ranges);
+            startGlobalSync();
+            setNextGlobalSyncTime(nowMicros);
         }
-        finally
+
+        List<Ranges> coordinate = rangesToShardSync(nowMicros);
+        prevShardSyncTimeMicros = nowMicros;
+        if (coordinate.isEmpty())
         {
-            requeue();
+            logger.trace("Nothing pending in schedule for time slot at {}", nowMicros);
+            return;
         }
+
+        logger.trace("Scheduling CoordinateShardDurable for {} at {}", coordinate, nowMicros);
+        for (Ranges ranges : coordinate)
+            startShardSync(ranges);
     }
 
     /**
@@ -309,7 +300,6 @@ public class CoordinateDurabilityScheduling
             return;
 
         currentGlobalTopology = latestGlobal;
-
         List<Node.Id> ids = new ArrayList<>(latestGlobal.nodes());
         Collections.sort(ids);
         globalIndex = ids.indexOf(node.id());

@@ -155,7 +155,7 @@ public class Accept extends TxnRequest.WithUnsynced<Accept.AcceptReply>
     @Override
     public KeyHistory keyHistory()
     {
-        return KeyHistory.DEPS;
+        return KeyHistory.COMMANDS;
     }
 
     @Override

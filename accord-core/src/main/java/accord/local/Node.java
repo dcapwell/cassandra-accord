@@ -557,6 +557,9 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         messageSink.reply(replyingToNode, replyContext, send);
     }
 
+    /**
+     * TODO (required): Make sure we cannot re-issue the same txnid on startup
+     */
     public TxnId nextTxnId(Txn.Kind rw, Domain domain)
     {
         return new TxnId(uniqueNow(), rw, domain);
@@ -615,16 +618,21 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
 
     public FullRoute<?> computeRoute(TxnId txnId, Seekables<?, ?> keysOrRanges)
     {
-        RoutingKey homeKey = trySelectHomeKey(txnId, keysOrRanges);
+        return computeRoute(txnId.epoch(), keysOrRanges);
+    }
+
+    public FullRoute<?> computeRoute(long epoch, Seekables<?, ?> keysOrRanges)
+    {
+        RoutingKey homeKey = trySelectHomeKey(epoch, keysOrRanges);
         if (homeKey == null)
-            homeKey = selectRandomHomeKey(txnId);
+            homeKey = selectRandomHomeKey(epoch);
 
         return keysOrRanges.toRoute(homeKey);
     }
 
-    private @Nullable RoutingKey trySelectHomeKey(TxnId txnId, Seekables<?, ?> keysOrRanges)
+    private @Nullable RoutingKey trySelectHomeKey(long epoch, Seekables<?, ?> keysOrRanges)
     {
-        Ranges owned = topology().localForEpoch(txnId.epoch()).ranges();
+        Ranges owned = topology().localForEpoch(epoch).ranges();
         int i = (int)keysOrRanges.findNextIntersection(0, owned, 0);
         return i >= 0 ? keysOrRanges.get(i).someIntersectingRoutingKey(owned) : null;
     }
@@ -670,12 +678,17 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
 
     public RoutingKey selectRandomHomeKey(TxnId txnId)
     {
-        Ranges ranges = topology().localForEpoch(txnId.epoch()).ranges();
+        return selectRandomHomeKey(txnId.epoch());
+    }
+
+    public RoutingKey selectRandomHomeKey(long epoch)
+    {
+        Ranges ranges = topology().localForEpoch(epoch).ranges();
         // TODO (expected): should we try to pick keys in the same Keyspace in C*? Might want to adapt this to an Agent behaviour
         if (ranges.isEmpty()) // should not really happen, but pick some other replica to serve as home key
-            ranges = topology().globalForEpoch(txnId.epoch()).ranges();
+            ranges = topology().globalForEpoch(epoch).ranges();
         if (ranges.isEmpty())
-            throw illegalState("Unable to select a HomeKey as the topology does not have any ranges for epoch " + txnId.epoch());
+            throw illegalState("Unable to select a HomeKey as the topology does not have any ranges for epoch " + epoch);
         Range range = ranges.get(random.nextInt(ranges.size()));
         return range.someIntersectingRoutingKey(null);
     }

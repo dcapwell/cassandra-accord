@@ -128,12 +128,6 @@ public abstract class Command implements CommonAttributes
         }
     }
 
-    static PreLoadContext contextForCommand(Command command)
-    {
-        Invariants.checkState(command.hasBeen(Status.PreAccepted) && command.partialTxn() != null);
-        return command instanceof PreLoadContext ? (PreLoadContext) command : PreLoadContext.contextFor(command.txnId(), command.partialTxn().keys());
-    }
-
     private static Durability durability(Durability durability, SaveStatus status)
     {
         if (status.compareTo(SaveStatus.PreApplied) >= 0 && !status.hasBeen(Invalidated) && durability == NotDurable)
@@ -410,7 +404,7 @@ public abstract class Command implements CommonAttributes
                 case CleaningUp:
                     break;
                 case ReadyToExclude:
-                    Invariants.checkState(!validate.saveStatus().hasBeen(Status.Committed) || validate.asCommitted().waitingOn == null);
+                    Invariants.checkState(validate.saveStatus() != SaveStatus.Committed || validate.asCommitted().waitingOn == null);
                     break;
                 case WaitingToExecute:
                 case ReadyToExecute:
@@ -500,11 +494,6 @@ public abstract class Command implements CommonAttributes
     {
         if (!isSameClass(command, klass))
             throw new IllegalArgumentException(errorMsg + format(" expected %s got %s", klass.getSimpleName(), command.getClass().getSimpleName()));
-    }
-
-    public PreLoadContext contextForSelf()
-    {
-        return contextForCommand(this);
     }
 
     public abstract Timestamp executeAt();

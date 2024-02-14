@@ -54,7 +54,6 @@ public class Invariants
         throw new IllegalArgumentException(msg);
     }
 
-
     private static void illegalArgument()
     {
         illegalArgument(null);

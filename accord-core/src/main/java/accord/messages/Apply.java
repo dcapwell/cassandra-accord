@@ -23,13 +23,13 @@ import javax.annotation.Nullable;
 import accord.api.Result;
 import accord.api.RoutingKey;
 import accord.local.Commands;
+import accord.local.KeyHistory;
 import accord.local.Node;
 import accord.local.Node.Id;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
 import accord.messages.Apply.ApplyReply;
 import accord.primitives.Deps;
-import accord.primitives.Keys;
 import accord.primitives.PartialDeps;
 import accord.primitives.PartialRoute;
 import accord.primitives.PartialTxn;
@@ -187,8 +187,13 @@ public class Apply extends TxnRequest<ApplyReply>
     @Override
     public Seekables<?, ?> keys()
     {
-        if (txn == null) return Keys.EMPTY;
-        return txn.keys();
+        return keys;
+    }
+
+    @Override
+    public KeyHistory keyHistory()
+    {
+        return KeyHistory.COMMANDS;
     }
 
     @Override
