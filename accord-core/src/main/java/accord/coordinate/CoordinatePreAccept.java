@@ -128,6 +128,10 @@ abstract class CoordinatePreAccept<T> extends AbstractCoordinatePreAccept<T, Pre
     @Override
     void onNewEpochTopologyMismatch(TopologyMismatch mismatch)
     {
+        /**
+         * We cannot execute the transaction because the execution epoch's topology no longer contains all of the
+         * participating keys/ranges, so we propose that the transaction is invalidated in its coordination epoch
+         */
         Propose.Invalidate.proposeInvalidate(node, new Ballot(node.uniqueNow()), txnId, route.someParticipatingKey(), (outcome, failure) -> {
             if (failure != null)
                 mismatch.addSuppressed(failure);

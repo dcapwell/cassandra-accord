@@ -40,6 +40,19 @@ import accord.utils.async.AsyncResults;
 import static accord.coordinate.tracking.RequestStatus.Failed;
 import static accord.coordinate.tracking.RequestStatus.Success;
 
+/**
+ * An Ephemeral Read is a single-key linearizable read, that is invisible to other transactions so can be non-durable.
+ * We do not need to agree any execution timestamp, we just fetch execution dependencies that represent any
+ * commands that _might_ have finished before we started, and we wait for those commands to execute before executing our read.
+ *
+ * Being non-durable, we do not need to be recovered and so no Accept or Commit rounds are necessary.
+ *
+ * We must still settle on an "execution epoch" where the replicas represent an active quorum so that our dependencies
+ * are accurately computed. We then may later execute in an even later epoch, if one of our dependencies agrees an execution
+ * time in that later epoch.
+ *
+ * For single-key reads this is strict-serializable, and for multi-key or range-reads this is per-key linearizable.
+ */
 public class CoordinateEphemeralRead extends AbstractCoordinatePreAccept<Result, GetEphemeralReadDepsOk>
 {
     public static AsyncResult<Result> coordinate(Node node, FullRoute<?> route, TxnId txnId, Txn txn)
