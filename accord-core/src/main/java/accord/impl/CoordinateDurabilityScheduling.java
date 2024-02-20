@@ -70,7 +70,6 @@ import static java.util.concurrent.TimeUnit.MICROSECONDS;
  * The work for CoordinateShardDurable is further subdivided where each subrange a node operates on is divided a fixed
  * number of times and then processed one at a time with a fixed wait between them.
  *
- * // TODO review will the scheduler shut down on its own or do the individual tasks need to be canceled manually?
  * // TODO (expected): cap number of coordinations we can have in flight at once
  * Didn't go with recurring because it doesn't play well with async execution of these tasks
  */

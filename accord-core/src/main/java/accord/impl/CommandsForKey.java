@@ -168,6 +168,11 @@ public class CommandsForKey implements CommandsSummary
             return executeAt;
         }
 
+        Info update(TxnId txnId, TxnId[] newMissing)
+        {
+            return newMissing == NO_TXNIDS && executeAt == txnId ? status.asNoInfo : new Info(status, executeAt, newMissing);
+        }
+
         @Override
         public boolean equals(Object o)
         {
@@ -691,7 +696,17 @@ public class CommandsForKey implements CommandsSummary
 
         TxnId[] newTxnIds = Arrays.copyOfRange(txnIds, pos, txnIds.length);
         Info[] newInfos = Arrays.copyOfRange(infos, pos, infos.length);
-        // TODO (expected): prune missing collections
+        for (int i = 0 ; i < newInfos.length ; ++i)
+        {
+            Info info = newInfos[i];
+            if (info.getClass() == NoInfo.class) continue;
+            if (info.missing == NO_TXNIDS) continue;
+            int j = Arrays.binarySearch(info.missing, redundantBefore);
+            if (j < 0) j = -1 - i;
+            if (j <= 0) continue;
+            TxnId[] newMissing = j == info.missing.length ? NO_TXNIDS : Arrays.copyOfRange(info.missing, j, info.missing.length);
+            newInfos[i] = info.update(txnIds[i], newMissing);
+        }
         return new CommandsForKey(key, redundantBefore, newTxnIds, newInfos);
     }
 
