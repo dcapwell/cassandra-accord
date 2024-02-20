@@ -346,8 +346,6 @@ public abstract class Command implements CommonAttributes
                 switch (known.executeAt)
                 {
                     default: throw new AssertionError("Unhandled KnownExecuteAt: " + known.executeAt);
-                    case ExecuteAtNotWitnessed:
-                        Invariants.checkState(executeAt == null);
                     case ExecuteAtErased:
                     case ExecuteAtUnknown:
                         break;

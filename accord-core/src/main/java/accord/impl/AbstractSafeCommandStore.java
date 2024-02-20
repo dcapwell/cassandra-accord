@@ -180,6 +180,7 @@ public abstract class AbstractSafeCommandStore<CommandType extends SafeCommand,
         else if (updated.known().isDefinitionKnown()) keys = (Keys)updated.partialTxn().keys();
         else if (prev.known().isDefinitionKnown()) keys = (Keys)prev.partialTxn().keys();
         else if (updated.saveStatus().is(Status.Invalidated)) return; // TODO (required): we may have transaction registered via Accept, and still want to expunge. we shouldn't special case: should ensure we have everything loaded, or permit asynchronous application
+        else if (updated.saveStatus().is(Status.AcceptedInvalidate)) return; // TODO (required): we may have transaction registered via Accept, and still want to expunge. we shouldn't special case: should ensure we have everything loaded, or permit asynchronous application
         else throw illegalState("No keys to update CommandsForKey with");
 
         Routables.foldl(keys, ranges, (self, p, key, u, i) -> {

@@ -94,6 +94,7 @@ import static accord.local.Status.Stable;
 import static accord.local.Status.Truncated;
 import static accord.primitives.Routables.Slice.Minimal;
 import static accord.primitives.Route.isFullRoute;
+import static accord.primitives.Txn.Kind.EphemeralRead;
 import static accord.primitives.Txn.Kind.ExclusiveSyncPoint;
 import static accord.utils.Invariants.illegalState;
 
@@ -1085,11 +1086,19 @@ public class Commands
                             safeStore.progressLog().waiting(curSafe, until, null, participants);
                             break loop;
 
-                        case PRE_BOOTSTRAP_OR_STALE:
-                        case REDUNDANT_PRE_BOOTSTRAP_OR_STALE:
                         case LOCALLY_REDUNDANT:
                         case SHARD_REDUNDANT:
-                            Invariants.checkState(cur.hasBeen(Applied) || !cur.hasBeen(PreCommitted) || redundantStatus == PRE_BOOTSTRAP_OR_STALE);
+                            if (cur.txnId().kind() == EphemeralRead)
+                            {
+                                removeRedundantDependencies(safeStore, curSafe, null);
+                                maybeExecute(safeStore, curSafe, false, false);
+                                --depth;
+                                prevSafe = get(safeStore, depth - 1);
+                                break;
+                            }
+                        case PRE_BOOTSTRAP_OR_STALE:
+                        case REDUNDANT_PRE_BOOTSTRAP_OR_STALE:
+                            Invariants.checkState(cur.txnId().kind() == EphemeralRead || cur.hasBeen(Applied) || !cur.hasBeen(PreCommitted) || redundantStatus == PRE_BOOTSTRAP_OR_STALE);
                             if (prev == null)
                                 return;
 
@@ -1156,7 +1165,7 @@ public class Commands
         }
     }
 
-    static Command removeRedundantDependencies(SafeCommandStore safeStore, SafeCommand safeCommand, TxnId redundant)
+    static Command removeRedundantDependencies(SafeCommandStore safeStore, SafeCommand safeCommand, @Nullable TxnId redundant)
     {
         CommandStore commandStore = safeStore.commandStore();
         Command.Committed current = safeCommand.current().asCommitted();
@@ -1166,7 +1175,8 @@ public class Commands
             safeStore.commandStore().removeRedundantDependencies(current.route().participants(), update);
 
         // if we are a range transaction, being redundant for this transaction does not imply we are redundant for all transactions
-        update.removeWaitingOn(redundant);
+        if (redundant != null)
+            update.removeWaitingOn(redundant);
         return safeCommand.updateWaitingOn(update);
     }
 
