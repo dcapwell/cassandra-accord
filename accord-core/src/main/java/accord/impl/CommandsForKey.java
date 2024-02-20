@@ -50,6 +50,12 @@ import static accord.local.SafeCommandStore.TestDep.WITH;
 import static accord.utils.ArrayBuffers.cachedTxnIds;
 import static accord.utils.Invariants.illegalState;
 
+/**
+ *
+ * TODO (expected): optimisations:
+ *    - remove duplicate missing TxnId: keep entry only in the highest PreApplied (by TxnId, so longest lasting) copy
+ *    - once durably PreApplied, erase from all missing collections
+ */
 public class CommandsForKey implements CommandsSummary
 {
     public static final TxnId[] NO_TXNIDS = new TxnId[0];
