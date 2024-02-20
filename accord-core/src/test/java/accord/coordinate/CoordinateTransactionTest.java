@@ -73,6 +73,7 @@ import static accord.impl.IntKey.keys;
 import static accord.impl.IntKey.range;
 import static accord.local.Status.Applied;
 import static accord.primitives.Routable.Domain.Key;
+import static accord.primitives.Routable.Domain.Range;
 import static accord.primitives.Txn.Kind.Read;
 import static accord.primitives.Txn.Kind.Write;
 import static accord.utils.Invariants.checkState;
@@ -121,7 +122,7 @@ public class CoordinateTransactionTest
             Node node = cluster.get(1);
             assertNotNull(node);
 
-            TxnId txnId = node.nextTxnId(Write, Key);
+            TxnId txnId = node.nextTxnId(Write, Range);
             Ranges keys = ranges(range(1, 2));
             Txn txn = writeTxn(keys);
             FullRangeRoute route = keys.toRoute(keys.get(0).someIntersectingRoutingKey(null));
