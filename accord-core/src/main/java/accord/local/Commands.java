@@ -428,7 +428,7 @@ public class Commands
         safeStore.notifyListeners(safeCommand);
     }
 
-    public static void stableEphemeralRead(SafeCommandStore safeStore, SafeCommand safeCommand, Route<?> route, TxnId txnId, PartialTxn partialTxn, PartialDeps partialDeps)
+    public static void stableEphemeralRead(SafeCommandStore safeStore, SafeCommand safeCommand, Route<?> route, TxnId txnId, long executeAtEpoch, PartialTxn partialTxn, PartialDeps partialDeps)
     {
         // TODO (expected): introduce in-memory only commands
         Command command = safeCommand.current();
@@ -440,7 +440,7 @@ public class Commands
         ProgressShard progressShard = No;
         Invariants.checkState(validate(command.status(), command, Ranges.EMPTY, coordinateRanges, progressShard, route, Set, partialTxn, Set, partialDeps, Set));
         CommonAttributes attrs = set(command, Ranges.EMPTY, coordinateRanges, progressShard, route, partialTxn, Set, partialDeps, Set);
-        safeCommand.stable(safeStore, attrs, Ballot.ZERO, txnId, initialiseWaitingOn(safeStore, txnId, Timestamp.MAX, attrs.partialDeps(), route));
+        safeCommand.stable(safeStore, attrs, Ballot.ZERO, txnId, initialiseWaitingOn(safeStore, txnId, txnId.withEpochAtLeast(executeAtEpoch), attrs.partialDeps(), route));
         maybeExecute(safeStore, safeCommand, false, true);
     }
 

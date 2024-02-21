@@ -87,7 +87,7 @@ public class ReadEphemeralTxnData extends AbstractExecute
     protected synchronized CommitOrReadNack apply(SafeCommandStore safeStore, SafeCommand safeCommand)
     {
         // TODO (expected): if one of our dependencies commits in a future epoch, so that we will never apply it locally, we should send a nack with the epoch to retry with
-        Commands.stableEphemeralRead(safeStore, safeCommand, route, txnId, partialTxn, partialDeps);
+        Commands.stableEphemeralRead(safeStore, safeCommand, route, txnId, executeAtEpoch, partialTxn, partialDeps);
         return super.apply(safeStore, safeCommand);
     }
 
