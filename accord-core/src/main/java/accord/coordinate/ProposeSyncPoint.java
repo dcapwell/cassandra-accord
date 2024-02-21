@@ -46,23 +46,19 @@ public class ProposeSyncPoint<S extends Seekables<?, ?>> extends Propose<SyncPoi
     @SuppressWarnings("unused")
     private static final Logger logger = LoggerFactory.getLogger(ProposeSyncPoint.class);
 
-    // Whether to wait on the dependencies applying globally before returning a result
-    final boolean async;
     final Set<Id> fastPathNodes;
-
     final S keysOrRanges;
 
-    ProposeSyncPoint(Node node, Topologies topologies, Ballot ballot, TxnId txnId, Txn txn, FullRoute<?> route, Deps deps, Timestamp executeAt, BiConsumer<SyncPoint<S>, Throwable> callback, boolean async, Set<Id> fastPathNodes, S keysOrRanges)
+    ProposeSyncPoint(Node node, Topologies topologies, Ballot ballot, TxnId txnId, Txn txn, FullRoute<?> route, Deps deps, Timestamp executeAt, BiConsumer<SyncPoint<S>, Throwable> callback, Set<Id> fastPathNodes, S keysOrRanges)
     {
         super(node, topologies, ballot, txnId, txn, route, executeAt, deps, callback);
-        this.async = async;
         this.fastPathNodes = fastPathNodes;
         this.keysOrRanges = keysOrRanges;
     }
 
-    public static <S extends Seekables<?, ?>> Propose<SyncPoint<S>> proposeSyncPoint(Node node, Topologies topologies, Ballot ballot, TxnId txnId, Txn txn, FullRoute<?> route, Deps deps, Timestamp executeAt, BiConsumer<SyncPoint<S>, Throwable> callback, boolean async, Set<Id> fastPathNodes, S keysOrRanges)
+    public static <S extends Seekables<?, ?>> Propose<SyncPoint<S>> proposeSyncPoint(Node node, Topologies topologies, Ballot ballot, TxnId txnId, Txn txn, FullRoute<?> route, Deps deps, Timestamp executeAt, BiConsumer<SyncPoint<S>, Throwable> callback, Set<Id> fastPathNodes, S keysOrRanges)
     {
-        ProposeSyncPoint proposeSyncPoint = new ProposeSyncPoint(node, topologies, ballot, txnId, txn, route, deps, executeAt, callback, async, fastPathNodes, keysOrRanges);
+        ProposeSyncPoint<S> proposeSyncPoint = new ProposeSyncPoint<>(node, topologies, ballot, txnId, txn, route, deps, executeAt, callback, fastPathNodes, keysOrRanges);
         proposeSyncPoint.start();
         return proposeSyncPoint;
     }
@@ -70,19 +66,14 @@ public class ProposeSyncPoint<S extends Seekables<?, ?>> extends Propose<SyncPoi
     @Override
     void onAccepted()
     {
-        Deps deps = this.deps;
-        if (!Faults.SYNCPOINT_UNMERGED_DEPS)
-            deps = deps.with(Deps.merge(acceptOks, ok -> ok.deps));
-
-        if (txnId.kind() == ExclusiveSyncPoint)
-        {
-            Apply.sendMaximal(node, txnId, route, txn, executeAt, deps, txn.execute(txnId, executeAt, null), txn.result(txnId, executeAt, null));
-            node.configService().reportEpochClosed((Ranges)keysOrRanges, txnId.epoch());
-            callback.accept(new SyncPoint<S>(txnId, deps, keysOrRanges, route, true), null);
-        }
-        else
-        {
-            CoordinateSyncPoint.blockOnDeps(node, txn, txnId, route, keysOrRanges, deps, callback, async);
-        }
+        Deps deps = Faults.SYNCPOINT_UNMERGED_DEPS ? this.deps : this.deps.with(Deps.merge(acceptOks, ok -> ok.deps));
+        Stabilise.stabilise(node, acceptTracker.topologies(), route, ballot, txnId, txn, executeAt, deps, (success, fail) -> {
+            if (fail != null) callback.accept(null, fail);
+            else
+            {
+                node.configService().reportEpochClosed((Ranges)keysOrRanges, txnId.epoch());
+                callback.accept(new SyncPoint<>(txnId, deps, keysOrRanges, route), null);
+            }
+        });
     }
 }

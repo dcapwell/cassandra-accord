@@ -158,7 +158,7 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusRep
             Commands.informHome(safeStore, safeCommand, Route.castToRoute(query));
 
         Ranges ranges = safeStore.ranges().allBetween(command.txnId().epoch(), command.executeAtIfKnownOrTxnId().epoch());
-        InvalidIfNot invalidIfNotAtLeast = invalidIfNotAtLeast(safeStore);
+        InvalidIfNot invalidIfNotAtLeast = invalidIfNot(safeStore);
         boolean isCoordinating = isCoordinating(node, command);
         Durability durability = command.durability();
         Route<?> route = command.route();
@@ -202,9 +202,9 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusRep
         else node.reply(replyTo, replyContext, ok, null);
     }
 
-    private InvalidIfNot invalidIfNotAtLeast(SafeCommandStore safeStore)
+    private InvalidIfNot invalidIfNot(SafeCommandStore safeStore)
     {
-        return Infer.invalidIfNotAtLeast(safeStore, txnId, query);
+        return Infer.invalidIfNot(safeStore, txnId, query);
     }
 
     public interface CheckStatusReply extends Reply
@@ -400,6 +400,11 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusRep
         public boolean hasTruncated()
         {
             return foldl((known, prev) -> known.isTruncated(), false, i -> i);
+        }
+
+        public boolean hasInvalidated()
+        {
+            return foldl((known, prev) -> known.isInvalidated(), false, i -> i);
         }
 
         public Known knownFor(Routables<?> routables)

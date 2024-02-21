@@ -104,8 +104,7 @@ public abstract class Stabilise implements Callback<ReadReply>
             case Read:
             case Write:
                 if (Faults.TRANSACTION_INSTABILITY) Execute.execute(node, allTopologies, route, SLOW, txnId, txn, executeAt, deps, callback);
-                else new StabiliseTxn(node, coordinates, allTopologies, route,
-                                      txnId, ballot, txn, executeAt, deps, callback).start();
+                else new StabiliseTxn(node, coordinates, allTopologies, route, txnId, ballot, txn, executeAt, deps, callback).start();
         }
     }
 

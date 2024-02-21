@@ -135,7 +135,8 @@ public class Barrier<S extends Seekables<?, ?>> extends AsyncResults.AbstractRes
 
     private void createSyncPoint()
     {
-        coordinateSyncPoint = CoordinateSyncPoint.inclusive(node, seekables, barrierType.async);
+        coordinateSyncPoint = barrierType.async ? CoordinateSyncPoint.inclusive(node, seekables)
+                                                : CoordinateSyncPoint.inclusiveAndWait(node, seekables);
         coordinateSyncPoint.addCallback((syncPoint, syncPointFailure) -> {
             if (syncPointFailure != null)
             {
@@ -145,7 +146,7 @@ public class Barrier<S extends Seekables<?, ?>> extends AsyncResults.AbstractRes
 
             // Need to wait for the local transaction to finish since coordinate sync point won't wait on anything
             // if async was requested or there were no deps found
-            if (syncPoint.finishedAsync)
+            if (barrierType.async)
             {
                 TxnId txnId = syncPoint.syncId;
                 long epoch = txnId.epoch();

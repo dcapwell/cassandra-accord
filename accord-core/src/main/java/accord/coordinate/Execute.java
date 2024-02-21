@@ -22,6 +22,7 @@ import java.util.function.BiConsumer;
 
 import accord.api.Result;
 import accord.local.Node;
+import accord.messages.Commit;
 import accord.primitives.Deps;
 import accord.primitives.FullRoute;
 import accord.primitives.Participants;
@@ -55,7 +56,9 @@ public interface Execute
         if (txn.kind() == Kind.SyncPoint)
         {
             checkArgument(txnId.equals(executeAt));
-            BlockOnDeps.blockOnDeps(node, txnId, txn, route, deps, callback);
+            anyTopologies = anyTopologies.forEpochs(txnId.epoch(), txnId.epoch());
+            Commit.stableMaximal(node, anyTopologies, txnId, txn, route, txnId, deps);
+            callback.accept(null, null);
         }
         else
         {

@@ -48,6 +48,8 @@ import accord.primitives.Ranges;
 import accord.primitives.RoutableKey;
 import accord.primitives.SyncPoint;
 import accord.primitives.Timestamp;
+import accord.primitives.Txn;
+import accord.primitives.TxnId;
 import accord.topology.Topologies;
 import accord.topology.Topology;
 import accord.utils.Timestamped;
@@ -55,6 +57,8 @@ import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncResults;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.LongArrayList;
+
+import static accord.utils.Invariants.illegalState;
 
 public class ListStore implements DataStore
 {
@@ -187,12 +191,20 @@ public class ListStore implements DataStore
 
     private void checkAccess(Timestamp executeAt, Range range)
     {
+        if (executeAt instanceof TxnId)
+        {
+            switch (((TxnId) executeAt).kind())
+            {
+                case EphemeralRead:
+                case ExclusiveSyncPoint:
+                    // TODO (required): introduce some mechanism for EphemeralReads/ExclusiveSyncPoints to abort if local store has been expunged (and check it here)
+                    return; // safe to access later
+            }
+        }
         Ranges singleRanges = Ranges.of(range);
         if (!allowed.containsAll(singleRanges))
-            throw new IllegalStateException(String.format("Attempted to access range %s on node %s, which is not in the range %s;\nexecuteAt = %s\n%s",
-                                                          range, node, allowed,
-                                                          executeAt,
-                                                          history(singleRanges)));
+            illegalState(String.format("Attempted to access range %s on node %s, which is not in the range %s;\nexecuteAt = %s\n%s",
+                                       range, node, allowed, executeAt, history(singleRanges)));
     }
 
     private String history(String type, Object key, Predicate<Ranges> test)

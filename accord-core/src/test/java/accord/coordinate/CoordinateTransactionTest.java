@@ -220,7 +220,7 @@ public class CoordinateTransactionTest
             assertEquals(previousBarrierTimestamp, globalBarrierTimestamp);
 
             // Sync over nothing should work
-            SyncPoint<Ranges> syncPoint = getUninterruptibly(CoordinateSyncPoint.inclusive(node, ranges(range(99, 100)), false));
+            SyncPoint<Ranges> syncPoint = getUninterruptibly(CoordinateSyncPoint.inclusiveAndWait(node, ranges(range(99, 100))));
             assertEquals(node.epoch(), syncPoint.syncId.epoch());
 
             // Keys and so on for the upcoming transaction pair
@@ -248,13 +248,13 @@ public class CoordinateTransactionTest
                     Commands.preaccept(store, store.get(txnId, homeKey), txnId, txnId.epoch(), txn.slice(store.ranges().allAt(txnId.epoch()), true), route, null))));
 
 
-            AsyncResult<SyncPoint<Ranges>> syncInclusiveSyncFuture = CoordinateSyncPoint.inclusive(node, ranges, false);
+            AsyncResult<SyncPoint<Ranges>> syncInclusiveSyncFuture = CoordinateSyncPoint.inclusiveAndWait(node, ranges);
             // Shouldn't complete because it is blocked waiting for the dependency just created to apply
             sleep(500);
             assertFalse(syncInclusiveSyncFuture.isDone());
 
             // Async sync should return a result immediately since we are going to wait on the sync point transaction that was created by the sync point
-            AsyncResult<SyncPoint<Ranges>> asyncInclusiveSyncFuture = CoordinateSyncPoint.inclusive(node, ranges, true);
+            AsyncResult<SyncPoint<Ranges>> asyncInclusiveSyncFuture = CoordinateSyncPoint.inclusive(node, ranges);
             SyncPoint<Ranges> localSyncPoint = getUninterruptibly(asyncInclusiveSyncFuture);
             Semaphore localSyncOccurred = new Semaphore(0);
             node.commandStores().ifLocal(PreLoadContext.contextFor(localSyncPoint.syncId), homeKey, epoch, epoch, safeStore ->

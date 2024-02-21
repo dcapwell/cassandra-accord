@@ -32,6 +32,7 @@ import accord.local.SafeCommandStore.TestDep;
 import accord.local.SafeCommandStore.TestStartedAt;
 import accord.local.SafeCommandStore.TestStatus;
 import accord.local.SaveStatus;
+import accord.local.Status;
 import accord.primitives.Ballot;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn.Kind.Kinds;
@@ -55,8 +56,13 @@ import static accord.utils.Invariants.illegalState;
 /**
  *
  * TODO (expected): optimisations:
- *    - remove duplicate missing TxnId: keep entry only in the highest PreApplied (by TxnId, so longest lasting) copy
- *    - once durably PreApplied, erase from all missing collections
+ *    1) remove duplicate missing TxnId: keep entry only in the highest PreApplied (by TxnId, so longest lasting) copy
+ *    2) once durably PreApplied, erase from all missing collections
+ *    3) once durably PreApplied (i.e. there's a later executing PreApplied command), do not store executeAt;
+ *        with (1) this should very quickly permit transition back to NoInfo
+ *    4) consider storing a prefix of TxnId that are all NoInfo PreApplied encoded as a BitStream as only required for computing missing collection
+ *
+ *    TODO (required): randomised testing
  */
 public class CommandsForKey implements CommandsSummary
 {
@@ -148,7 +154,7 @@ public class CommandsForKey implements CommandsSummary
     public static class Info
     {
         public final InternalStatus status;
-        // DO NOT ACCESS DIRECTLY: use accessor method to ensure correct value is returned
+        // ACCESS DIRECTLY WITH CARE: if null, TxnId is implied; use accessor method to ensure correct value is returned
         public final @Nullable Timestamp executeAt;
         public final TxnId[] missing; // those TxnId we know of that would be expected to be found in the provided deps, but aren't
 
@@ -406,7 +412,7 @@ public class CommandsForKey implements CommandsSummary
             @Nonnull Info cur = Invariants.nonNull(infos[pos]);
             // TODO (required): HACK to permit prev.saveStatus() == SaveStatus.AcceptedInvalidateWithDefinition as we don't always update as keys aren't guaranteed to be provided
             //    fix as soon as we support async updates
-            Invariants.checkState(cur.status.expectMatch == prevStatus || (prev != null && prev.saveStatus() == SaveStatus.AcceptedInvalidateWithDefinition));
+            Invariants.checkState(cur.status.expectMatch == prevStatus || (prev != null && prev.status() == Status.AcceptedInvalidate));
 
             if (newStatus.hasInfo) return update(pos, txnId, computeInfoAndAdditions(pos, txnId, newStatus, next));
             else return update(pos, cur, newStatus.asNoInfo);
@@ -740,7 +746,7 @@ public class CommandsForKey implements CommandsSummary
             if (info.getClass() == NoInfo.class) continue;
             if (info.missing == NO_TXNIDS) continue;
             int j = Arrays.binarySearch(info.missing, redundantBefore);
-            if (j < 0) j = -1 - i;
+            if (j < 0) j = -1 - j;
             if (j <= 0) continue;
             TxnId[] newMissing = j == info.missing.length ? NO_TXNIDS : Arrays.copyOfRange(info.missing, j, info.missing.length);
             newInfos[i] = info.update(txnIds[i], newMissing);

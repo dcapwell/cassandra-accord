@@ -235,6 +235,17 @@ public class Commit extends TxnRequest<CommitOrReadNack>
         }
     }
 
+    public static void stableMaximal(Node node, Topologies topologies, TxnId txnId, Txn txn, FullRoute<?> route, Timestamp executeAt, Deps deps)
+    {
+        checkArgument(topologies.size() == 1);
+        Topology topology = topologies.get(0);
+        for (Node.Id to : topology.nodes())
+        {
+            Commit commit = new Commit(CommitWithTxn, to, topology, topologies, txnId, txn, route, Ballot.ZERO, executeAt, deps, (ReadData) null);
+            node.send(to, commit);
+        }
+    }
+
     public static void stableMaximal(Node node, Node.Id to, Txn txn, TxnId txnId, Timestamp executeAt, FullRoute<?> route, Deps deps)
     {
         // the replica may be missing the original commit, or the additional commit, so send everything

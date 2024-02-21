@@ -48,7 +48,7 @@ public abstract class SafeTimestampsForKey implements SafeState<TimestampsForKey
         return update(new TimestampsForKey(key));
     }
 
-    <D> TimestampsForKey updateLastExecutionTimestamps(Timestamp lastExecutedTimestamp, long lastExecutedHlc, Timestamp lastWriteTimestamp)
+    TimestampsForKey updateLastExecutionTimestamps(Timestamp lastExecutedTimestamp, long lastExecutedHlc, Timestamp lastWriteTimestamp)
     {
         TimestampsForKey current = current();
         return update(new TimestampsForKey(current.key(),

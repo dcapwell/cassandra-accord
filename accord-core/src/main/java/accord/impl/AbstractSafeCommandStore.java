@@ -171,10 +171,12 @@ public abstract class AbstractSafeCommandStore<CommandType extends SafeCommand,
             return;
 
         // TODO (required): consider carefully epoch overlaps for dependencies;
-        //      here we're limiting our registration with CFK to the coordination epoch until committed
-        //      so we're relying on conflicting transactions talking to the coordination epoch
-        Timestamp executeAt = updated.executeAtIfKnown(updated.txnId());
-        Ranges ranges = ranges().allBetween(txnId, executeAt);
+        //      here we're limiting our registration with CFK to the coordination epoch only
+        //      if we permit coordination+execution we have to do a very careful dance (or relax validation)
+        //      because for some keys we can expect e.g. PreAccept and Accept states to have been processed
+        //      and for other keys Committed onwards will appear suddenly (or, if we permit Accept to process
+        //      on its executeAt ranges, it could go either way).
+        Ranges ranges = ranges().allAt(txnId);
         Keys keys;
         if (keysOrRanges != null) keys = (Keys) keysOrRanges;
         else if (updated.known().isDefinitionKnown()) keys = (Keys)updated.partialTxn().keys();
