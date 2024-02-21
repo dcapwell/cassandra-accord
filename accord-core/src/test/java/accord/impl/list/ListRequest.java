@@ -53,6 +53,7 @@ import static accord.impl.list.ListResult.Status.RecoveryApplied;
 import static accord.local.Status.Applied;
 import static accord.local.Status.Phase.Cleanup;
 
+import static accord.local.Status.PreAccepted;
 import static accord.local.Status.PreApplied;
 import static accord.local.Status.PreCommitted;
 import static accord.utils.Invariants.illegalState;
@@ -110,9 +111,9 @@ public class ListRequest implements Request
             if (failure != null) callback.accept(null, failure);
             else if (merged.maxKnowledgeSaveStatus.is(Status.Invalidated)) callback.accept(Outcome.Invalidated, null);
             else if (merged.maxKnowledgeSaveStatus.is(Status.Truncated)) callback.accept(Outcome.Truncated, null);
-            else if (!merged.maxKnowledgeSaveStatus.hasBeen(PreCommitted) && merged.maxSaveStatus.phase == Cleanup) callback.accept(Outcome.Truncated, null);
-            else if (count == nodes().size()) callback.accept(Outcome.Lost, null);
             else if (merged.maxKnowledgeSaveStatus.hasBeen(Applied)) callback.accept(new Outcome(Outcome.Kind.Applied, (ListResult) ((CheckStatus.CheckStatusOkFull) merged).result), null);
+            else if (!merged.maxKnowledgeSaveStatus.hasBeen(PreCommitted) && merged.maxSaveStatus.phase == Cleanup) callback.accept(Outcome.Truncated, null);
+            else if (!merged.maxSaveStatus.hasBeen(PreAccepted) && count == (1 + nodes().size())/2) callback.accept(Outcome.Lost, null);
             else callback.accept(Outcome.Other, null);
         }
 

@@ -229,15 +229,15 @@ public class CommandsForKey implements CommandsSummary
     private final Key key;
     private final TxnId redundantBefore;
     // any transactions that are durably decided (i.e. PREAPPLIED) and execute before this are durably dependent, and can be elided from mapReduceActive
-    private final @Nullable Timestamp maxPreappliedWrite;
+    private final @Nullable Timestamp maxPreAppliedWrite;
     private final TxnId[] txnIds;
     private final Info[] infos;
 
-    CommandsForKey(Key key, TxnId redundantBefore, @Nullable Timestamp maxPreappliedWrite, TxnId[] txnIds, Info[] infos)
+    CommandsForKey(Key key, TxnId redundantBefore, @Nullable Timestamp maxPreAppliedWrite, TxnId[] txnIds, Info[] infos)
     {
         this.key = key;
         this.redundantBefore = redundantBefore;
-        this.maxPreappliedWrite = maxPreappliedWrite;
+        this.maxPreAppliedWrite = maxPreAppliedWrite;
         this.txnIds = txnIds;
         this.infos = infos;
         Invariants.checkArgument(txnIds.length == 0 || infos[infos.length - 1] != null);
@@ -247,7 +247,7 @@ public class CommandsForKey implements CommandsSummary
     {
         this.key = key;
         this.redundantBefore = TxnId.NONE;
-        this.maxPreappliedWrite = null;
+        this.maxPreAppliedWrite = null;
         this.txnIds = NO_TXNIDS;
         this.infos = NO_INFOS;
     }
@@ -362,6 +362,7 @@ public class CommandsForKey implements CommandsSummary
                                      Kinds testKind,
                                      CommandFunction<P1, T, T> map, P1 p1, T initialValue)
     {
+        Timestamp maxPreAppliedWrite = maxPreAppliedBefore(startedBefore);
         int start = 0, end = insertPos(startedBefore);
 
         for (int i = start; i < end ; ++i)
@@ -374,7 +375,7 @@ public class CommandsForKey implements CommandsSummary
             switch (info.status)
             {
                 case PREAPPLIED:
-                    if (maxPreappliedWrite == null || info.executeAt(txnId).compareTo(maxPreappliedWrite) >= 0)
+                    if (maxPreAppliedWrite == null || info.executeAt(txnId).compareTo(maxPreAppliedWrite) >= 0)
                         break;
                 case TRANSITIVELY_KNOWN:
                 case INVALID_OR_TRUNCATED:
@@ -471,9 +472,33 @@ public class CommandsForKey implements CommandsSummary
         return update(newTxnIds, newInfos, updateTxnId, newInfo.info);
     }
 
+    private Timestamp maxPreAppliedBefore(Timestamp before)
+    {
+        if (maxPreAppliedWrite == null)
+            return null;
+
+        if (maxPreAppliedWrite.compareTo(before) < 0)
+            return maxPreAppliedWrite;
+
+        int i = Arrays.binarySearch(txnIds, before);
+        if (i < 0) i = -2 -i;
+        Timestamp max = null;
+        while (i >= 0)
+        {
+            Info info = infos[i];
+            if (info.status == PREAPPLIED)
+            {
+                if (max == null) max = info.executeAt != null ? info.executeAt : txnIds[i];
+                else if (info.getClass() != NoInfo.class && info.executeAt.compareTo(max) > 0) max = info.executeAt;
+            }
+            --i;
+        }
+        return max;
+    }
+
     private CommandsForKey update(TxnId[] newTxnIds, Info[] newInfos, TxnId updatedTxnId, Info updatedInfo)
     {
-        Timestamp maxPreappliedWrite = maybeUpdateMaxPreappliedWrite(updatedTxnId, updatedInfo, this.maxPreappliedWrite);
+        Timestamp maxPreappliedWrite = maybeUpdateMaxPreappliedWrite(updatedTxnId, updatedInfo, this.maxPreAppliedWrite);
         return new CommandsForKey(key, redundantBefore, maxPreappliedWrite, newTxnIds, newInfos);
     }
 
@@ -736,7 +761,7 @@ public class CommandsForKey implements CommandsSummary
 
         int pos = insertPos(redundantBefore);
         if (pos == 0)
-            return new CommandsForKey(key, redundantBefore, maxPreappliedWrite, txnIds, infos);
+            return new CommandsForKey(key, redundantBefore, maxPreAppliedWrite, txnIds, infos);
 
         TxnId[] newTxnIds = Arrays.copyOfRange(txnIds, pos, txnIds.length);
         Info[] newInfos = Arrays.copyOfRange(infos, pos, infos.length);
@@ -751,7 +776,7 @@ public class CommandsForKey implements CommandsSummary
             TxnId[] newMissing = j == info.missing.length ? NO_TXNIDS : Arrays.copyOfRange(info.missing, j, info.missing.length);
             newInfos[i] = info.update(txnIds[i], newMissing);
         }
-        return new CommandsForKey(key, redundantBefore, maxPreappliedWrite, newTxnIds, newInfos);
+        return new CommandsForKey(key, redundantBefore, maxPreAppliedWrite, newTxnIds, newInfos);
     }
 
     public CommandsForKey registerHistorical(TxnId txnId)
