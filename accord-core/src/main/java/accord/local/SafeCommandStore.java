@@ -169,6 +169,8 @@ public abstract class SafeCommandStore
         if (!txnId.kind().isGloballyVisible())
             return;
 
+//        if (keysOrRanges != null)
+//            keysOrRanges = keysOrRanges.slice(ranges().allBetween(updated.txnId(), updated.executeAt()));
         commandStore().updateMaxConflicts(prev, updated, keysOrRanges);
     }
 

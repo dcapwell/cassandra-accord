@@ -250,7 +250,7 @@ public interface Txn
 
         public char shortName()
         {
-            return toString().charAt(0);
+            return shortName;
         }
     }
 

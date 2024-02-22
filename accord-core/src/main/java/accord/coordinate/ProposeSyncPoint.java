@@ -26,7 +26,6 @@ import org.slf4j.LoggerFactory;
 
 import accord.local.Node;
 import accord.local.Node.Id;
-import accord.messages.Apply;
 import accord.primitives.Ballot;
 import accord.primitives.Deps;
 import accord.primitives.FullRoute;
@@ -38,8 +37,6 @@ import accord.primitives.Txn;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
 import accord.utils.Faults;
-
-import static accord.primitives.Txn.Kind.ExclusiveSyncPoint;
 
 public class ProposeSyncPoint<S extends Seekables<?, ?>> extends Propose<SyncPoint<S>>
 {

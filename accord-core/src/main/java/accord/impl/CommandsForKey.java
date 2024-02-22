@@ -24,6 +24,8 @@ import java.util.Objects;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import accord.api.Key;
 
 import accord.local.Command;
@@ -41,17 +43,19 @@ import accord.utils.Invariants;
 import accord.utils.SortedArrays;
 import accord.utils.SortedList;
 
+import static accord.impl.CommandsForKey.InternalStatus.ACCEPTED;
+import static accord.impl.CommandsForKey.InternalStatus.COMMITTED;
 import static accord.impl.CommandsForKey.InternalStatus.PREAPPLIED;
 import static accord.impl.CommandsForKey.InternalStatus.STABLE;
 import static accord.impl.CommandsForKey.InternalStatus.HISTORICAL;
 import static accord.impl.CommandsForKey.InternalStatus.INVALID_OR_TRUNCATED;
-import static accord.impl.CommandsForKey.InternalStatus.PROPOSED;
 import static accord.impl.CommandsForKey.InternalStatus.TRANSITIVELY_KNOWN;
 import static accord.local.SafeCommandStore.TestDep.ANY_DEPS;
 import static accord.local.SafeCommandStore.TestDep.WITH;
 import static accord.primitives.Txn.Kind.Write;
 import static accord.utils.ArrayBuffers.cachedTxnIds;
 import static accord.utils.Invariants.illegalState;
+import static accord.utils.SortedArrays.linearUnion;
 
 /**
  *
@@ -71,9 +75,9 @@ public class CommandsForKey implements CommandsSummary
 
     public static class SerializerSupport
     {
-        public static CommandsForKey create(Key key, TxnId redundantBefore, Timestamp maxPreappliedWrite, TxnId[] txnIds, Info[] infos)
+        public static CommandsForKey create(Key key, TxnId redundantBefore, TxnId[] txnIds, Info[] infos)
         {
-            return new CommandsForKey(key, redundantBefore, maxPreappliedWrite, txnIds, infos);
+            return new CommandsForKey(key, redundantBefore, txnIds, infos);
         }
     }
 
@@ -82,7 +86,8 @@ public class CommandsForKey implements CommandsSummary
         TRANSITIVELY_KNOWN(false, false), // (unwitnessed, no need for other transactions to witness)
         HISTORICAL(false, false),
         PREACCEPTED(false),
-        PROPOSED(true),
+        ACCEPTED(true),
+        COMMITTED(true),
         STABLE(true),
         PREAPPLIED(true),
         INVALID_OR_TRUNCATED(false);
@@ -93,12 +98,12 @@ public class CommandsForKey implements CommandsSummary
         {
             convert.put(SaveStatus.PreAccepted, PREACCEPTED);
             convert.put(SaveStatus.AcceptedInvalidateWithDefinition, PREACCEPTED);
-            convert.put(SaveStatus.Accepted, PROPOSED);
-            convert.put(SaveStatus.AcceptedWithDefinition, PROPOSED);
+            convert.put(SaveStatus.Accepted, ACCEPTED);
+            convert.put(SaveStatus.AcceptedWithDefinition, ACCEPTED);
             convert.put(SaveStatus.PreCommittedWithDefinition, PREACCEPTED);
-            convert.put(SaveStatus.PreCommittedWithAcceptedDeps, PROPOSED);
-            convert.put(SaveStatus.PreCommittedWithDefinitionAndAcceptedDeps, PROPOSED);
-            convert.put(SaveStatus.Committed, PROPOSED);
+            convert.put(SaveStatus.PreCommittedWithAcceptedDeps, ACCEPTED);
+            convert.put(SaveStatus.PreCommittedWithDefinitionAndAcceptedDeps, ACCEPTED);
+            convert.put(SaveStatus.Committed, COMMITTED);
             convert.put(SaveStatus.Stable, STABLE);
             convert.put(SaveStatus.ReadyToExecute, STABLE);
             convert.put(SaveStatus.PreApplied, PREAPPLIED);
@@ -114,7 +119,7 @@ public class CommandsForKey implements CommandsSummary
 
         public final boolean hasInfo;
         public final NoInfo asNoInfo;
-        public final InfoAndAdditions asNoInfoOrAdditions;
+        public final InfoWithAdditions asNoInfoOrAdditions;
         final InternalStatus expectMatch;
 
         InternalStatus(boolean hasInfo)
@@ -126,7 +131,7 @@ public class CommandsForKey implements CommandsSummary
         {
             this.hasInfo = hasInfo;
             this.asNoInfo = new NoInfo(this);
-            this.asNoInfoOrAdditions = new InfoAndAdditions(asNoInfo, NO_TXNIDS, 0);
+            this.asNoInfoOrAdditions = new InfoWithAdditions(asNoInfo, NO_TXNIDS, 0);
             this.expectMatch = expectMatch ? this : null;
         }
 
@@ -140,7 +145,29 @@ public class CommandsForKey implements CommandsSummary
             return hasInfo;
         }
 
-        static InternalStatus from(SaveStatus status)
+        public Timestamp depsKnownBefore(TxnId txnId, @Nullable Timestamp executeAt)
+        {
+            switch (this)
+            {
+                default: throw new AssertionError("Unhandled InternalStatus: " + this);
+                case TRANSITIVELY_KNOWN:
+                case INVALID_OR_TRUNCATED:
+                case HISTORICAL:
+                    throw new AssertionError("Invalid InternalStatus to know deps");
+
+                case PREACCEPTED:
+                case ACCEPTED:
+                    return txnId;
+
+                case PREAPPLIED:
+                case STABLE:
+                case COMMITTED:
+                    return executeAt == null ? txnId : executeAt;
+            }
+        }
+
+        @VisibleForTesting
+        public static InternalStatus from(SaveStatus status)
         {
             return convert.get(status);
         }
@@ -168,7 +195,7 @@ public class CommandsForKey implements CommandsSummary
         public static Info create(@Nonnull TxnId txnId, InternalStatus status, @Nonnull Timestamp executeAt, @Nonnull TxnId[] missing)
         {
             return new Info(status,
-                            Invariants.checkArgument(executeAt, executeAt == txnId || executeAt.compareTo(txnId) >= 0),
+                            Invariants.checkArgument(executeAt, executeAt == txnId || executeAt.compareTo(txnId) > 0),
                             Invariants.checkArgument(missing, missing == NO_TXNIDS || missing.length > 0));
         }
 
@@ -177,14 +204,20 @@ public class CommandsForKey implements CommandsSummary
             return new Info(status, executeAt, Invariants.checkArgument(missing, missing == null || missing == NO_TXNIDS));
         }
 
-        Timestamp executeAt(TxnId txnId)
+        @VisibleForTesting
+        public Timestamp executeAt(TxnId txnId)
         {
             return executeAt;
         }
 
+        Timestamp depsKnownBefore(TxnId txnId)
+        {
+            return status.depsKnownBefore(txnId, executeAt);
+        }
+
         Info update(TxnId txnId, TxnId[] newMissing)
         {
-            return newMissing == NO_TXNIDS && executeAt == txnId ? status.asNoInfo : new Info(status, executeAt, newMissing);
+            return newMissing == NO_TXNIDS && executeAt == txnId ? status.asNoInfo : Info.create(txnId, status, executeAt(txnId), newMissing);
         }
 
         @Override
@@ -220,9 +253,9 @@ public class CommandsForKey implements CommandsSummary
             super(status, null, NO_TXNIDS);
         }
 
-        Timestamp executeAt(TxnId txnId)
+        public Timestamp executeAt(TxnId txnId)
         {
-            return status.hasExecuteAt() ? txnId : executeAt;
+            return txnId;
         }
     }
 
@@ -233,6 +266,11 @@ public class CommandsForKey implements CommandsSummary
     private final TxnId[] txnIds;
     private final Info[] infos;
 
+    CommandsForKey(Key key, TxnId redundantBefore, TxnId[] txnIds, Info[] infos)
+    {
+        this(key, redundantBefore, maxPreAppliedBefore(Timestamp.MAX, txnIds, infos), txnIds, infos);
+    }
+
     CommandsForKey(Key key, TxnId redundantBefore, @Nullable Timestamp maxPreAppliedWrite, TxnId[] txnIds, Info[] infos)
     {
         this.key = key;
@@ -241,6 +279,7 @@ public class CommandsForKey implements CommandsSummary
         this.txnIds = txnIds;
         this.infos = infos;
         Invariants.checkArgument(txnIds.length == 0 || infos[infos.length - 1] != null);
+        Invariants.checkArgument(SortedArrays.isSortedUnique(txnIds));
     }
 
     public CommandsForKey(Key key)
@@ -329,7 +368,7 @@ public class CommandsForKey implements CommandsSummary
             {
                 default: throw new AssertionError("Unhandled TestStatus: " + testStatus);
                 case IS_PROPOSED:
-                    if (status == PROPOSED) break;
+                    if (status == ACCEPTED || status == COMMITTED) break;
                     else continue;
                 case IS_STABLE:
                     if (status.compareTo(STABLE) >= 0 && status.compareTo(INVALID_OR_TRUNCATED) < 0) break;
@@ -401,7 +440,7 @@ public class CommandsForKey implements CommandsSummary
             if (!newStatus.hasInfo)
                 return insert(pos, txnId, newStatus.asNoInfo);
 
-            return insert(pos, txnId, computeInfoAndAdditions(pos, txnId, newStatus, next));
+            return insert(pos, txnId, newStatus, next);
         }
         else
         {
@@ -415,7 +454,7 @@ public class CommandsForKey implements CommandsSummary
             //    fix as soon as we support async updates
             Invariants.checkState(cur.status.expectMatch == prevStatus || (prev != null && prev.status() == Status.AcceptedInvalidate));
 
-            if (newStatus.hasInfo) return update(pos, txnId, computeInfoAndAdditions(pos, txnId, newStatus, next));
+            if (newStatus.hasInfo) return update(pos, txnId, newStatus, next);
             else return update(pos, cur, newStatus.asNoInfo);
         }
     }
@@ -448,30 +487,6 @@ public class CommandsForKey implements CommandsSummary
         return updated != prev || (updated != null && updated.hasInfo && !prevAcceptedOrCommitted.equals(updatedAcceptedOrCommitted));
     }
 
-    private CommandsForKey insert(int pos, TxnId insertTxnId, InfoAndAdditions newInfo)
-    {
-        if (newInfo.additionCount == 0)
-            return insert(pos, insertTxnId, newInfo.info);
-
-        TxnId[] newTxnIds = new TxnId[txnIds.length + newInfo.additionCount + 1];
-        Info[] newInfos = new Info[newTxnIds.length];
-        int insertPos = insertWithAdditions(pos, insertTxnId, newInfo, newTxnIds, newInfos);
-        // TODO (desired): we do some redundant copying here; there might be a better way to share code
-        insertInfoAndMissing(insertPos, insertTxnId, newInfo.info, newInfos, newInfos, newTxnIds, 0);
-        return update(newTxnIds, newInfos, insertTxnId, newInfo.info);
-    }
-
-    private CommandsForKey update(int pos, TxnId updateTxnId, InfoAndAdditions newInfo)
-    {
-        if (newInfo.additionCount == 0)
-            return update(pos, newInfo.info);
-
-        TxnId[] newTxnIds = new TxnId[txnIds.length + newInfo.additionCount];
-        Info[] newInfos = new Info[newTxnIds.length];
-        updateWithAdditions(pos, updateTxnId, newInfo, newTxnIds, newInfos);
-        return update(newTxnIds, newInfos, updateTxnId, newInfo.info);
-    }
-
     private Timestamp maxPreAppliedBefore(Timestamp before)
     {
         if (maxPreAppliedWrite == null)
@@ -480,6 +495,11 @@ public class CommandsForKey implements CommandsSummary
         if (maxPreAppliedWrite.compareTo(before) < 0)
             return maxPreAppliedWrite;
 
+        return maxPreAppliedBefore(before, txnIds, infos);
+    }
+
+    private static Timestamp maxPreAppliedBefore(Timestamp before, TxnId[] txnIds, Info[] infos)
+    {
         int i = Arrays.binarySearch(txnIds, before);
         if (i < 0) i = -2 -i;
         Timestamp max = null;
@@ -496,101 +516,133 @@ public class CommandsForKey implements CommandsSummary
         return max;
     }
 
-    private CommandsForKey update(TxnId[] newTxnIds, Info[] newInfos, TxnId updatedTxnId, Info updatedInfo)
+    private CommandsForKey insert(int insertPos, TxnId insertTxnId, InternalStatus newStatus, Command command)
     {
-        Timestamp maxPreappliedWrite = maybeUpdateMaxPreappliedWrite(updatedTxnId, updatedInfo, this.maxPreAppliedWrite);
-        return new CommandsForKey(key, redundantBefore, maxPreappliedWrite, newTxnIds, newInfos);
+        InfoWithAdditions newInfo = computeInsert(insertPos, insertTxnId, newStatus, command);
+        if (newInfo.additionCount == 0)
+            return insert(insertPos, insertTxnId, newInfo.info);
+
+        TxnId[] newTxnIds = new TxnId[txnIds.length + newInfo.additionCount + 1];
+        Info[] newInfos = new Info[newTxnIds.length];
+        insertWithAdditions(insertPos, insertTxnId, newInfo, newTxnIds, newInfos);
+        return update(newTxnIds, newInfos, insertTxnId, newInfo.info);
     }
 
-    private static Timestamp maybeUpdateMaxPreappliedWrite(TxnId txnId, Info info, Timestamp maxPreappliedWrite)
+    private CommandsForKey update(int updatePos, TxnId txnId, InternalStatus newStatus, Command command)
     {
-        if (info.status != PREAPPLIED || txnId.kind() != Write)
-            return maxPreappliedWrite;
+        InfoWithAdditions newInfo = computeUpdate(updatePos, txnId, newStatus, command);
+        if (newInfo.additionCount == 0)
+            return update(updatePos, newInfo.info);
 
-        Timestamp executeAt = info.executeAt(txnId);
-        if (maxPreappliedWrite != null && maxPreappliedWrite.compareTo(executeAt) >= 0)
-            return maxPreappliedWrite;
-
-        return executeAt;
+        TxnId[] newTxnIds = new TxnId[txnIds.length + newInfo.additionCount];
+        Info[] newInfos = new Info[newTxnIds.length];
+        TxnId updateTxnId = txnIds[updatePos]; // want to reuse the existing TxnId for object identity
+        updateWithAdditions(updatePos, txnIds[updatePos], newInfo, newTxnIds, newInfos);
+        return update(newTxnIds, newInfos, updateTxnId, newInfo.info);
     }
 
-    private int updateWithAdditions(int sourceInsertPos, TxnId updateTxnId, InfoAndAdditions newInfo, TxnId[] newTxnIds, Info[] newInfos)
+    private void updateWithAdditions(int updatePos, TxnId updateTxnId, InfoWithAdditions withInfo, TxnId[] newTxnIds, Info[] newInfos)
     {
-        return updateOrInsertWithAdditions(sourceInsertPos, sourceInsertPos, updateTxnId, newInfo, newTxnIds, newInfos);
+        updateOrInsertWithAdditions(updatePos, updatePos, updateTxnId, withInfo, newTxnIds, newInfos);
     }
 
-    private int insertWithAdditions(int sourceInsertPos, TxnId updateTxnId, InfoAndAdditions newInfo, TxnId[] newTxnIds, Info[] newInfos)
+    private void insertWithAdditions(int pos, TxnId updateTxnId, InfoWithAdditions withInfo, TxnId[] newTxnIds, Info[] newInfos)
     {
-        return updateOrInsertWithAdditions(-1, sourceInsertPos, updateTxnId, newInfo, newTxnIds, newInfos);
+        updateOrInsertWithAdditions(pos, -1, updateTxnId, withInfo, newTxnIds, newInfos);
     }
 
-    private int updateOrInsertWithAdditions(int sourceUpdatePos, int sourceInsertPos, TxnId updateTxnId, InfoAndAdditions newInfo, TxnId[] newTxnIds, Info[] newInfos)
+    private void updateOrInsertWithAdditions(int sourceInsertPos, int sourceUpdatePos, TxnId updateTxnId, InfoWithAdditions withInfo, TxnId[] newTxnIds, Info[] newInfos)
     {
-        int additionInsertPos = Arrays.binarySearch(newInfo.additions, 0, newInfo.additionCount, updateTxnId);
+        TxnId[] additions = withInfo.additions;
+        int additionCount = withInfo.additionCount;
+        int additionInsertPos = Arrays.binarySearch(additions, 0, additionCount, updateTxnId);
         additionInsertPos = Invariants.checkArgument(-1 - additionInsertPos, additionInsertPos < 0);
         int targetInsertPos = sourceInsertPos + additionInsertPos;
 
-        int i = 0, j = 0, count = 0;
-        while (i < infos.length && j < newInfo.additionCount)
+        // additions plus the updateTxnId when necessary
+        TxnId[] missingSource = additions;
+
+        // the most recently constructed pure insert missing array, so that it may be reused if possible
+        TxnId[] cachedMissing = null;
+        int i = 0, j = 0, missingCount = 0, missingLimit = additionCount, count = 0;
+        while (i < infos.length)
         {
             if (count == targetInsertPos)
             {
                 newTxnIds[count] = updateTxnId;
-                newInfos[count] = newInfo.info;
-                if (txnIds[i].equals(updateTxnId)) ++i;
+                newInfos[count] = withInfo.info;
+                if (i == sourceUpdatePos) ++i;
+                else ++missingCount;
+                ++count;
+                continue;
+            }
+
+            int c = j == additionCount ? -1 : txnIds[i].compareTo(additions[j]);
+            if (c < 0)
+            {
+                TxnId txnId = txnIds[i];
+                Info info = infos[i];
+                if (i == sourceUpdatePos)
+                {
+                    info = withInfo.info;
+                }
+                else if (info.status.hasDeps())
+                {
+                    Timestamp depsKnownBefore = info.status.depsKnownBefore(txnId, info.executeAt);
+                    if (missingSource == additions && (missingCount != j || (depsKnownBefore != txnId && sourceUpdatePos < 0 && depsKnownBefore.compareTo(updateTxnId) > 0)))
+                    {
+                        missingSource = mergeMissing(additions, additionCount, updateTxnId, additionInsertPos);
+                        ++missingLimit;
+                    }
+
+                    int to = to(txnId, depsKnownBefore, missingSource, missingCount, missingLimit);
+                    if (to > 0)
+                    {
+                        TxnId[] missing = info.missing == NO_TXNIDS && to == missingCount
+                                          ? cachedMissing = ensureCachedMissing(missingSource, to, cachedMissing)
+                                          : linearUnion(info.missing, info.missing.length, missingSource, to, cachedTxnIds());
+                        info = info.update(txnId, missing);
+                    }
+                }
+                newTxnIds[count] = txnId;
+                newInfos[count] = info;
+                i++;
+            }
+            else if (c > 0)
+            {
+                newTxnIds[count] = additions[j++];
+                ++missingCount;
+                newInfos[count] = TRANSITIVELY_KNOWN.asNoInfo;
             }
             else
             {
-                int c = txnIds[i].compareTo(newInfo.additions[j]);
-                if (c < 0)
-                {
-                    newTxnIds[count] = txnIds[i];
-                    newInfos[count] = infos[i];
-                    i++;
-                }
-                else if (c > 0)
-                {
-                    newTxnIds[count] = newInfo.additions[j++];
-                    newInfos[count] = TRANSITIVELY_KNOWN.asNoInfo;
-                }
-                else illegalState(txnIds[i] + " should be an insertion, but found match when merging with origin");
+                throw illegalState(txnIds[i] + " should be an insertion, but found match when merging with origin");
             }
             count++;
         }
 
-        if (i < infos.length)
+        if (j < additionCount)
         {
             if (count <= targetInsertPos)
             {
                 int length = targetInsertPos - count;
-                System.arraycopy(txnIds, i, newTxnIds, count, length);
-                System.arraycopy(infos, i, newInfos, count, length);
-                newTxnIds[targetInsertPos] = updateTxnId;
-                newInfos[targetInsertPos] = newInfo.info;
-                count = targetInsertPos + 1;
-                i = sourceUpdatePos >= 0 ? sourceInsertPos + 1 : sourceInsertPos;
-            }
-            System.arraycopy(txnIds, i, newTxnIds, count, txnIds.length - i);
-            System.arraycopy(infos, i, newInfos, count, txnIds.length - i);
-        }
-        else if (j < newInfo.additionCount)
-        {
-            if (count <= targetInsertPos)
-            {
-                int length = targetInsertPos - count;
-                System.arraycopy(newInfo.additions, j, newTxnIds, count, length);
+                System.arraycopy(additions, j, newTxnIds, count, length);
                 Arrays.fill(newInfos, count, targetInsertPos, TRANSITIVELY_KNOWN.asNoInfo);
                 newTxnIds[targetInsertPos] = updateTxnId;
-                newInfos[targetInsertPos] = newInfo.info;
+                newInfos[targetInsertPos] = withInfo.info;
                 count = targetInsertPos + 1;
                 j = additionInsertPos;
             }
-            System.arraycopy(newInfo.additions, j, newTxnIds, count, newInfo.additionCount - j);
-            Arrays.fill(newInfos, count, count + newInfo.additionCount - j, TRANSITIVELY_KNOWN.asNoInfo);
+            System.arraycopy(additions, j, newTxnIds, count, additionCount - j);
+            Arrays.fill(newInfos, count, count + additionCount - j, TRANSITIVELY_KNOWN.asNoInfo);
+        }
+        else if (count == targetInsertPos)
+        {
+            newTxnIds[targetInsertPos] = updateTxnId;
+            newInfos[targetInsertPos] = withInfo.info;
         }
 
-        cachedTxnIds().forceDiscard(newInfo.additions, newInfo.additionCount);
-        return targetInsertPos;
+        cachedTxnIds().forceDiscard(additions, additionCount);
     }
 
     private CommandsForKey update(int pos, Info curInfo, Info newInfo)
@@ -607,6 +659,9 @@ public class CommandsForKey implements CommandsSummary
         return update(txnIds, newInfos, txnIds[pos], newInfo);
     }
 
+    /**
+     * Insert a new txnId and info
+     */
     private CommandsForKey insert(int pos, TxnId newTxnId, Info newInfo)
     {
         TxnId[] newTxnIds = new TxnId[txnIds.length + 1];
@@ -615,29 +670,35 @@ public class CommandsForKey implements CommandsSummary
         System.arraycopy(txnIds, pos, newTxnIds, pos + 1, txnIds.length - pos);
 
         Info[] newInfos = new Info[infos.length + 1];
-        insertInfoAndMissing(pos, newTxnId, newInfo, infos, newInfos, newTxnIds, 1);
+        insertInfoAndOneMissing(pos, newTxnId, newInfo, infos, newInfos, newTxnIds, 1);
         return update(newTxnIds, newInfos, newTxnId, newInfo);
     }
 
-    private static void insertInfoAndMissing(int insertPos, TxnId txnId, Info newInfo, Info[] oldInfos, Info[] newInfos, TxnId[] newTxnIds, int offsetAfterInsertPos)
+    /**
+     * Insert a new txnId and info, then insert the txnId into the missing collection of any command that should have already caused us to witness it
+     */
+    private static void insertInfoAndOneMissing(int insertPos, TxnId txnId, Info newInfo, Info[] oldInfos, Info[] newInfos, TxnId[] newTxnIds, int offsetAfterInsertPos)
     {
         TxnId[] oneMissing = null;
         for (int i = 0 ; i < insertPos ; ++i)
         {
             Info oldInfo = oldInfos[i];
-            if (oldInfo.getClass() == NoInfo.class || oldInfo.executeAt.compareTo(txnId) <= 0)
+            if (oldInfo.getClass() != NoInfo.class)
             {
-                newInfos[i] = oldInfo;
-                continue;
+                Timestamp depsKnownBefore = oldInfo.depsKnownBefore(null);
+                if (depsKnownBefore != null && depsKnownBefore.compareTo(txnId) > 0)
+                {
+                    TxnId[] missing;
+                    if (oldInfo.missing == NO_TXNIDS)
+                        missing = oneMissing = ensureOneMissing(txnId, oneMissing);
+                    else
+                        missing = SortedArrays.insert(oldInfo.missing, txnId, TxnId[]::new);
+
+                    newInfos[i] = Info.create(txnId, oldInfo.status, oldInfo.executeAt, missing);
+                    continue;
+                }
             }
-
-            TxnId[] missing;
-            if (oldInfo.missing == NO_TXNIDS)
-                missing = oneMissing = ensureOneMissing(txnId, oneMissing);
-            else
-                missing = SortedArrays.insert(oldInfo.missing, txnId, TxnId[]::new);
-
-            newInfos[i] = Info.create(txnId, oldInfo.status, oldInfo.executeAt, missing);
+            newInfos[i] = oldInfo;
         }
 
         newInfos[insertPos] = newInfo;
@@ -667,13 +728,35 @@ public class CommandsForKey implements CommandsSummary
         return oneMissing != null ? oneMissing : new TxnId[] { txnId };
     }
 
-    static class InfoAndAdditions
+    private static TxnId[] ensureCachedMissing(TxnId[] missingIds, int missingIdCount, TxnId[] cachedMissing)
+    {
+        return cachedMissing != null && cachedMissing.length == missingIdCount ? cachedMissing : Arrays.copyOf(missingIds, missingIdCount);
+    }
+
+    private static TxnId[] mergeMissing(TxnId[] additions, int additionCount, TxnId updateTxnId, int additionInsertPos)
+    {
+        TxnId[] missingSource = new TxnId[additionCount + 1];
+        System.arraycopy(additions, 0, missingSource, 0, additionInsertPos);
+        System.arraycopy(additions, additionInsertPos, missingSource, additionInsertPos + 1, additionCount - additionInsertPos);
+        missingSource[additionInsertPos] = updateTxnId;
+        return missingSource;
+    }
+
+    private static int to(TxnId txnId, Timestamp depsKnownBefore, TxnId[] missingSource, int missingCount, int missingLimit)
+    {
+        if (depsKnownBefore == txnId) return missingCount;
+        int to = Arrays.binarySearch(missingSource, 0, missingLimit, depsKnownBefore);
+        if (to < 0) to = -1 - to;
+        return to;
+    }
+
+    static class InfoWithAdditions
     {
         final Info info;
         final TxnId[] additions;
         final int additionCount;
 
-        InfoAndAdditions(Info info, TxnId[] additions, int additionCount)
+        InfoWithAdditions(Info info, TxnId[] additions, int additionCount)
         {
             this.info = info;
             this.additions = additions;
@@ -681,24 +764,40 @@ public class CommandsForKey implements CommandsSummary
         }
     }
 
-    private InfoAndAdditions computeInfoAndAdditions(int pos, TxnId txnId, InternalStatus newStatus, Command command)
+    private InfoWithAdditions computeInsert(int insertPos, TxnId txnId, InternalStatus newStatus, Command command)
     {
-        return computeInfoAndAdditions(pos, txnId, newStatus, command.executeAt(), command.partialDeps().keyDeps.txnIds(key));
+        return computeInfoAndAdditions(insertPos, -1, txnId, newStatus, command);
     }
 
-    private InfoAndAdditions computeInfoAndAdditions(int pos, TxnId txnId, InternalStatus newStatus, Timestamp executeAt, SortedList<TxnId> deps)
+    private InfoWithAdditions computeUpdate(int updatePos, TxnId txnId, InternalStatus newStatus, Command command)
     {
-        int executeAtPos;
-        if (executeAt.equals(txnId))
+        return computeInfoAndAdditions(updatePos, updatePos, txnId, newStatus, command);
+    }
+
+    private InfoWithAdditions computeInfoAndAdditions(int insertPos, int updatePos, TxnId txnId, InternalStatus newStatus, Command command)
+    {
+        Timestamp executeAt = txnId;
+        if (newStatus.hasInfo)
         {
-            executeAt = txnId;
-            executeAtPos = pos;
+            executeAt = command.executeAt();
+            if (executeAt.equals(txnId)) executeAt = txnId;
+        }
+        Timestamp depsKnownBefore = newStatus.depsKnownBefore(txnId, executeAt);
+        return computeInfoAndAdditions(insertPos, updatePos, txnId, newStatus, executeAt, depsKnownBefore, command.partialDeps().keyDeps.txnIds(key));
+    }
+
+    private InfoWithAdditions computeInfoAndAdditions(int insertPos, int updatePos, TxnId txnId, InternalStatus newStatus, Timestamp executeAt, Timestamp depsKnownBefore, SortedList<TxnId> deps)
+    {
+        int depsKnownBeforePos;
+        if (depsKnownBefore == txnId)
+        {
+            depsKnownBeforePos = insertPos;
         }
         else
         {
-            executeAtPos = Arrays.binarySearch(txnIds, pos, txnIds.length, executeAt);
-            Invariants.checkState(executeAtPos < 0);
-            executeAtPos = -1 - executeAtPos;
+            depsKnownBeforePos = Arrays.binarySearch(txnIds, insertPos, txnIds.length, depsKnownBefore);
+            Invariants.checkState(depsKnownBeforePos < 0);
+            depsKnownBeforePos = -1 - depsKnownBeforePos;
         }
 
         TxnId[] additions = NO_TXNIDS, missing = NO_TXNIDS;
@@ -707,7 +806,7 @@ public class CommandsForKey implements CommandsSummary
         int depsIndex = deps.find(redundantBefore);
         if (depsIndex < 0) depsIndex = -1 - depsIndex;
         int txnIdsIndex = 0;
-        while (txnIdsIndex < executeAtPos && depsIndex < deps.size())
+        while (txnIdsIndex < depsKnownBeforePos && depsIndex < deps.size())
         {
             TxnId t = txnIds[txnIdsIndex];
             TxnId d = deps.get(depsIndex);
@@ -719,39 +818,61 @@ public class CommandsForKey implements CommandsSummary
             }
             else if (c < 0)
             {
-                if (missingCount == missing.length)
-                    missing = cachedTxnIds().resize(missing, missingCount, Math.max(8, missingCount * 2));
-                missing[missingCount++] = t;
+                if (txnIdsIndex != updatePos) // we expect to be missing ourselves
+                {
+                    if (missingCount == missing.length)
+                        missing = cachedTxnIds().resize(missing, missingCount, Math.max(8, missingCount * 2));
+                    missing[missingCount++] = t;
+                }
                 txnIdsIndex++;
             }
             else
             {
-                if (additionCount == additions.length)
+                if (additionCount >= additions.length)
                     additions = cachedTxnIds().resize(additions, additionCount, Math.max(8, additionCount * 2));
+
                 additions[additionCount++] = d;
                 depsIndex++;
             }
         }
 
-        while (txnIdsIndex < executeAtPos)
+        while (txnIdsIndex < depsKnownBeforePos)
         {
-            TxnId t = txnIds[txnIdsIndex++];
+            TxnId t = txnIds[txnIdsIndex];
+            if (txnIdsIndex++ == updatePos) continue;
             if (missingCount == missing.length)
                 missing = cachedTxnIds().resize(missing, missingCount, Math.max(8, missingCount * 2));
             missing[missingCount++] = t;
         }
         while (depsIndex < deps.size())
         {
-            TxnId d = deps.get(depsIndex++);
-            if (additionCount == additions.length)
+            if (additionCount >= additions.length)
                 additions = cachedTxnIds().resize(additions, additionCount, Math.max(8, additionCount * 2));
-            additions[additionCount++] = d;
+            additions[additionCount++] = deps.get(depsIndex++);
         }
 
         if (missingCount == 0 && executeAt == txnId)
-            return additionCount == 0 ? newStatus.asNoInfoOrAdditions : new InfoAndAdditions(newStatus.asNoInfo, additions, additionCount);
+            return additionCount == 0 ? newStatus.asNoInfoOrAdditions : new InfoWithAdditions(newStatus.asNoInfo, additions, additionCount);
 
-        return new InfoAndAdditions(Info.create(txnId, newStatus, executeAt, cachedTxnIds().completeAndDiscard(missing, missingCount)), additions, additionCount);
+        return new InfoWithAdditions(Info.create(txnId, newStatus, executeAt, cachedTxnIds().completeAndDiscard(missing, missingCount)), additions, additionCount);
+    }
+
+    private CommandsForKey update(TxnId[] newTxnIds, Info[] newInfos, TxnId updatedTxnId, Info updatedInfo)
+    {
+        Timestamp maxPreappliedWrite = maybeUpdateMaxPreappliedWrite(updatedTxnId, updatedInfo, this.maxPreAppliedWrite);
+        return new CommandsForKey(key, redundantBefore, maxPreappliedWrite, newTxnIds, newInfos);
+    }
+
+    private static Timestamp maybeUpdateMaxPreappliedWrite(TxnId txnId, Info info, Timestamp maxPreappliedWrite)
+    {
+        if (info.status != PREAPPLIED || txnId.kind() != Write)
+            return maxPreappliedWrite;
+
+        Timestamp executeAt = info.executeAt(txnId);
+        if (maxPreappliedWrite != null && maxPreappliedWrite.compareTo(executeAt) >= 0)
+            return maxPreappliedWrite;
+
+        return executeAt;
     }
 
     public CommandsForKey withoutRedundant(TxnId redundantBefore)
@@ -806,7 +927,10 @@ public class CommandsForKey implements CommandsSummary
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         CommandsForKey that = (CommandsForKey) o;
-        return Objects.equals(key, that.key) && Objects.equals(redundantBefore, that.redundantBefore) && Arrays.equals(txnIds, that.txnIds) && Arrays.equals(infos, that.infos);
+        return Objects.equals(key, that.key)
+               && Objects.equals(redundantBefore, that.redundantBefore)
+               && Arrays.equals(txnIds, that.txnIds)
+               && Arrays.equals(infos, that.infos);
     }
 
     @Override

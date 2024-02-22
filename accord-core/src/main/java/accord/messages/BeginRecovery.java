@@ -366,7 +366,7 @@ public class BeginRecovery extends TxnRequest<BeginRecovery.RecoverReply>
                                              (p1, keyOrRange, txnId, executeAt, prev) -> true, null, false);
     }
 
-    private static boolean hasStableExecutesAfterWithoutWitnessing(SafeCommandStore safeStore, TxnId startedAfter, Ranges ranges, Seekables<?, ?> keys)
+    private static boolean hasStableExecutesAfterWithoutWitnessing(SafeCommandStore safeStore, TxnId executesAfter, Ranges ranges, Seekables<?, ?> keys)
     {
         /*
          * The idea here is to discover those transactions that have been decided to execute after us
@@ -375,7 +375,7 @@ public class BeginRecovery extends TxnRequest<BeginRecovery.RecoverReply>
          * witnessed us we are safe to propose the pre-accept timestamp regardless, whereas if any transaction
          * has not witnessed us we can safely invalidate it.
          */
-        return safeStore.mapReduceFull(keys, ranges, startedAfter, startedAfter.kind().witnessedBy(), ANY, WITHOUT, IS_STABLE,
+        return safeStore.mapReduceFull(keys, ranges, executesAfter, executesAfter.kind().witnessedBy(), ANY, WITHOUT, IS_STABLE,
                                        (p1, keyOrRange, txnId, executeAt, prev) -> true, null, false);
     }
 }

@@ -48,7 +48,6 @@ import accord.primitives.Ranges;
 import accord.primitives.RoutableKey;
 import accord.primitives.SyncPoint;
 import accord.primitives.Timestamp;
-import accord.primitives.Txn;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
 import accord.topology.Topology;
