@@ -202,8 +202,12 @@ public class ListStore implements DataStore
         }
         Ranges singleRanges = Ranges.of(range);
         if (!allowed.containsAll(singleRanges))
+        {
+            // TODO (required): it is actually safe for a node on an old epoch to still be executing a transaction that has been executed in a later epoch,
+            //   making this check over-enthusiastic.
             illegalState(String.format("Attempted to access range %s on node %s, which is not in the range %s;\nexecuteAt = %s\n%s",
                                        range, node, allowed, executeAt, history(singleRanges)));
+        }
     }
 
     private String history(String type, Object key, Predicate<Ranges> test)
