@@ -22,6 +22,7 @@ import accord.api.RoutingKey;
 import accord.coordinate.Infer;
 import accord.local.Command;
 import accord.local.Commands;
+import accord.local.KeyHistory;
 import accord.local.Node;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
@@ -220,6 +221,7 @@ public class Propagate implements EpochSupplier, LocalRequest<Status.Known>
     @Override
     public Seekables<?, ?> keys()
     {
+        // TODO (required): these may be insufficient; must make update of CommandsForKey async
         if (partialTxn != null)
             return partialTxn.keys();
 
@@ -227,6 +229,12 @@ public class Propagate implements EpochSupplier, LocalRequest<Status.Known>
             return stableDeps.keyDeps.keys();
 
         return Keys.EMPTY;
+    }
+
+    @Override
+    public KeyHistory keyHistory()
+    {
+        return KeyHistory.COMMANDS;
     }
 
     @Override
