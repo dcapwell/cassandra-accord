@@ -71,6 +71,7 @@ import static accord.utils.SortedArrays.linearUnion;
  */
 public class CommandsForKey implements CommandsSummary
 {
+    private static final boolean PRUNE_TRANSITIVE_DEPENDENCIES = false;
     public static final TxnId[] NO_TXNIDS = new TxnId[0];
     public static final Info[] NO_INFOS = new Info[0];
 
@@ -414,7 +415,9 @@ public class CommandsForKey implements CommandsSummary
             switch (info.status)
             {
                 case PREAPPLIED:
-                    if (maxPreAppliedWrite == null || info.executeAt(txnId).compareTo(maxPreAppliedWrite) >= 0)
+                    // TODO (expected): transitive dependency pruning is unsafe for fast-path decisions that may not have their dependencies durably recorded
+                    //   we can probably make this safe with some modifications to recovery, but it needs to be sketched out some more
+                    if (!PRUNE_TRANSITIVE_DEPENDENCIES || maxPreAppliedWrite == null || info.executeAt(txnId).compareTo(maxPreAppliedWrite) >= 0)
                         break;
                 case TRANSITIVELY_KNOWN:
                 case INVALID_OR_TRUNCATED:
