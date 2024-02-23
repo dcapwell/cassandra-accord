@@ -55,6 +55,7 @@ import static accord.local.SafeCommandStore.TestDep.WITH;
 import static accord.primitives.Txn.Kind.Write;
 import static accord.utils.ArrayBuffers.cachedTxnIds;
 import static accord.utils.Invariants.illegalState;
+import static accord.utils.Invariants.isParanoid;
 import static accord.utils.SortedArrays.linearUnion;
 
 /**
@@ -278,8 +279,7 @@ public class CommandsForKey implements CommandsSummary
         this.maxPreAppliedWrite = maxPreAppliedWrite;
         this.txnIds = txnIds;
         this.infos = infos;
-        Invariants.checkArgument(txnIds.length == 0 || infos[infos.length - 1] != null);
-        Invariants.checkArgument(SortedArrays.isSortedUnique(txnIds));
+        if (isParanoid()) Invariants.checkArgument(SortedArrays.isSortedUnique(txnIds));
     }
 
     public CommandsForKey(Key key)

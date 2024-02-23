@@ -44,6 +44,7 @@ import static accord.local.RedundantStatus.LOCALLY_REDUNDANT;
 import static accord.local.RedundantStatus.NOT_OWNED;
 import static accord.local.RedundantStatus.PRE_BOOTSTRAP_OR_STALE;
 import static accord.local.RedundantStatus.SHARD_REDUNDANT;
+import static accord.utils.Invariants.illegalState;
 
 public class RedundantBefore extends ReducingRangeMap<RedundantBefore.Entry>
 {
@@ -308,6 +309,7 @@ public class RedundantBefore extends ReducingRangeMap<RedundantBefore.Entry>
     {
         super(inclusiveEnds, starts, values);
         staleRanges = extractStaleRanges(values);
+        checkParanoid(starts, values);
     }
 
     private static Ranges extractStaleRanges(Entry[] values)
@@ -479,9 +481,32 @@ public class RedundantBefore extends ReducingRangeMap<RedundantBefore.Entry>
         }
 
         @Override
+        public void append(RoutingKey start, RoutingKey end, @Nonnull Entry value)
+        {
+            if (value.range.start().compareTo(start) != 0 || value.range.end().compareTo(end) != 0)
+                throw illegalState();
+            super.append(start, end, value);
+        }
+
+        @Override
         protected RedundantBefore buildInternal()
         {
             return new RedundantBefore(inclusiveEnds, starts.toArray(new RoutingKey[0]), values.toArray(new Entry[0]));
+        }
+    }
+
+    private static void checkParanoid(RoutingKey[] starts, Entry[] values)
+    {
+        if (!Invariants.isParanoid())
+            return;
+
+        for (int i = 0 ; i < values.length ; ++i)
+        {
+            if (values[i] != null)
+            {
+                Invariants.checkArgument(starts[i].equals(values[i].range.start()));
+                Invariants.checkArgument(starts[i + 1].equals(values[i].range.end()));
+            }
         }
     }
 }

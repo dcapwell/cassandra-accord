@@ -225,7 +225,11 @@ public class ReducingIntervalMap<K extends Comparable<? super K>, V>
             }
 
             start = second.start();
-            if (first.hasCurrent() && first.start().compareTo(start) < 0) builder.append(first.start(), start, first.value());
+            if (first.hasCurrent() && first.start().compareTo(start) < 0)
+            {
+                V value = first.value() == null ? null : builder.slice(first.start(), start, first.value());
+                builder.append(first.start(), start, value);
+            }
             Invariants.checkState(start.compareTo(second.start()) <= 0);
         }
 
