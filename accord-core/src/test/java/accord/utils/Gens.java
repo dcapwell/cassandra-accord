@@ -232,7 +232,12 @@ public class Gens {
                 case 2: // zipf
                     int[] array = IntStream.range(minInclusive, maxExclusive).toArray();
                     if (rs.nextBoolean())
-                        Collections.reverse(Arrays.asList(array));
+                        for (int i = 0, mid = array.length / 2, j = array.length - 1; i < mid; i++, j--)
+                        {
+                            int tmp = array[i];
+                            array[i] = array[j];
+                            array[j] = tmp;
+                        }
                     return Gens.pickZipf(array);
                 case 3: // random weight
                     return randomWeights(IntStream.range(minInclusive, maxExclusive).toArray()).next(rs);
@@ -255,7 +260,14 @@ public class Gens {
                 case 2: // zipf
                     long[] array = LongStream.range(minInclusive, maxExclusive).toArray();
                     if (rs.nextBoolean())
-                        Collections.reverse(Arrays.asList(array));
+                    {
+                        for (int i = 0, mid = array.length / 2, j = array.length - 1; i < mid; i++, j--)
+                        {
+                            long tmp = array[i];
+                            array[i] = array[j];
+                            array[j] = tmp;
+                        }
+                    }
                     return Gens.pickZipf(array);
                 case 3: // random weight
                     return randomWeights(LongStream.range(minInclusive, maxExclusive).toArray()).next(rs);
