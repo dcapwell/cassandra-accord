@@ -221,6 +221,24 @@ public class Gens {
 
     public static Gen<Gen.IntGen> mixedDistribution(int minInclusive, int maxExclusive)
     {
+        int domainSize = (maxExclusive - minInclusive + 1);
+        if (domainSize < 0)
+            throw new IllegalArgumentException("Range is too large; min=" + minInclusive + ", max=" + maxExclusive);
+        int[] array, indexes;
+        if (domainSize > 200) // randomly selected
+        {
+            int numBuckets = 10;
+            int delta = domainSize / numBuckets;
+            array = new int[numBuckets];
+            for (int i = 0; i < numBuckets; i++)
+                array[i] = minInclusive + i * delta;
+            indexes = IntStream.range(0, array.length).toArray();
+        }
+        else
+        {
+            array = IntStream.range(minInclusive, maxExclusive).toArray();
+            indexes = null;
+        }
         return rs -> {
             switch (rs.nextInt(0, 4))
             {
@@ -230,25 +248,60 @@ public class Gens {
                     int median = rs.nextInt(minInclusive, maxExclusive);
                     return r -> r.nextBiasedInt(minInclusive, median, maxExclusive);
                 case 2: // zipf
-                    int[] array = IntStream.range(minInclusive, maxExclusive).toArray();
-                    if (rs.nextBoolean())
-                        for (int i = 0, mid = array.length / 2, j = array.length - 1; i < mid; i++, j--)
-                        {
-                            int tmp = array[i];
-                            array[i] = array[j];
-                            array[j] = tmp;
-                        }
-                    return Gens.pickZipf(array);
+                    if (indexes == null)
+                        return Gens.pickZipf(rs.nextBoolean() ? reverseAndCopy(array) : array);
+                    return Gens.pickZipf(rs.nextBoolean() ? reverseAndCopy(indexes) : indexes).mapAsInt((r, index) -> {
+                        int start = array[index];
+                        int end = index == array.length - 1 ? maxExclusive : array[index + 1];
+                        return r.nextInt(start, end);
+                    });
                 case 3: // random weight
-                    return randomWeights(IntStream.range(minInclusive, maxExclusive).toArray()).next(rs);
+                    if (indexes == null)
+                        return randomWeights(array).next(rs);
+                    return randomWeights(indexes).next(rs).mapAsInt((r, index) -> {
+                        int start = array[index];
+                        int end = index == array.length - 1 ? maxExclusive : array[index + 1];
+                        return r.nextInt(start, end);
+                    });
                 default:
                     throw new AssertionError();
             }
         };
     }
 
+    private static int[] reverseAndCopy(int[] array)
+    {
+        array = Arrays.copyOf(array, array.length);
+        for (int i = 0, mid = array.length / 2, j = array.length - 1; i < mid; i++, j--)
+        {
+            int tmp = array[i];
+            array[i] = array[j];
+            array[j] = tmp;
+        }
+        return array;
+    }
+
     public static Gen<Gen.LongGen> mixedDistribution(long minInclusive, long maxExclusive)
     {
+        long domainSize = (maxExclusive - minInclusive + 1);
+        if (domainSize < 0)
+            throw new IllegalArgumentException("Range is too large; min=" + minInclusive + ", max=" + maxExclusive);
+        long[] array;
+        int[] indexes;
+        if (domainSize > 200) // randomly selected
+        {
+            int numBuckets = 10;
+            long delta = domainSize / numBuckets;
+            array = new long[numBuckets];
+            for (int i = 0; i < numBuckets; i++)
+                array[i] = minInclusive + i * delta;
+            indexes = IntStream.range(0, array.length).toArray();
+        }
+        else
+        {
+            array = LongStream.range(minInclusive, maxExclusive).toArray();
+            indexes = null;
+        }
         return rs -> {
             switch (rs.nextInt(0, 4))
             {
@@ -258,23 +311,37 @@ public class Gens {
                     long median = rs.nextLong(minInclusive, maxExclusive);
                     return r -> r.nextBiasedLong(minInclusive, median, maxExclusive);
                 case 2: // zipf
-                    long[] array = LongStream.range(minInclusive, maxExclusive).toArray();
-                    if (rs.nextBoolean())
-                    {
-                        for (int i = 0, mid = array.length / 2, j = array.length - 1; i < mid; i++, j--)
-                        {
-                            long tmp = array[i];
-                            array[i] = array[j];
-                            array[j] = tmp;
-                        }
-                    }
-                    return Gens.pickZipf(array);
+                    if (indexes == null)
+                        return Gens.pickZipf(rs.nextBoolean() ? reverseAndCopy(array) : array);
+                    return Gens.pickZipf(rs.nextBoolean() ? reverseAndCopy(indexes) : indexes).mapAsLong((r, index) -> {
+                        long start = array[index];
+                        long end = index == array.length - 1 ? maxExclusive : array[index + 1];
+                        return r.nextLong(start, end);
+                    });
                 case 3: // random weight
-                    return randomWeights(LongStream.range(minInclusive, maxExclusive).toArray()).next(rs);
+                    if (indexes == null)
+                        return randomWeights(array).next(rs);
+                    return randomWeights(indexes).next(rs).mapAsLong((r, index) -> {
+                        long start = array[index];
+                        long end = index == array.length - 1 ? maxExclusive : array[index + 1];
+                        return r.nextLong(start, end);
+                    });
                 default:
                     throw new AssertionError();
             }
         };
+    }
+
+    private static long[] reverseAndCopy(long[] array)
+    {
+        array = Arrays.copyOf(array, array.length);
+        for (int i = 0, mid = array.length / 2, j = array.length - 1; i < mid; i++, j--)
+        {
+            long tmp = array[i];
+            array[i] = array[j];
+            array[j] = tmp;
+        }
+        return array;
     }
 
     public static <T> Gen<Gen<T>> mixedDistribution(T... list)
