@@ -26,7 +26,6 @@ import java.util.SortedSet;
 import java.util.function.Function;
 
 import accord.api.Key;
-import accord.utils.ArrayBuffers;
 import accord.utils.ArrayBuffers.ObjectBuffers;
 import accord.utils.SortedArrays;
 
@@ -84,9 +83,29 @@ public class Keys extends AbstractKeys<Key> implements Seekables<Key, Keys>
         return wrap(slice(ranges, Key[]::new));
     }
 
-    public final Keys intersect(Keys that)
+    public final Keys intersecting(Unseekables<?> intersecting)
     {
-        return wrap(SortedArrays.linearIntersection(this.keys, that.keys, ArrayBuffers.cachedKeys()), that);
+        switch (intersecting.domain())
+        {
+            default: throw new AssertionError("Unhandled domain: " + intersecting.domain());
+            case Key: return intersecting((AbstractUnseekableKeys) intersecting);
+            case Range: return wrap(intersecting((AbstractRanges) intersecting, cachedKeys()));
+        }
+    }
+
+    public final Keys intersecting(Unseekables<?> intersecting, Slice slice)
+    {
+        return intersecting(intersecting);
+    }
+
+    public final Keys intersecting(Keys that)
+    {
+        return wrap(SortedArrays.linearIntersection(this.keys, that.keys, cachedKeys()), that);
+    }
+
+    public final Keys intersecting(AbstractUnseekableKeys that)
+    {
+        return wrap(SortedArrays.asymmetricLinearIntersection(this.keys, this.keys.length, that.keys, that.keys.length, Key::compareTo, cachedKeys()), this);
     }
 
     public Keys with(Key key)
@@ -168,7 +187,7 @@ public class Keys extends AbstractKeys<Key> implements Seekables<Key, Keys>
 
     public static <A, B> Keys ofMergeSorted(List<A> as, Function<? super A, ? extends Key> fa, List<B> bs, Function<? super B, ? extends Key> fb)
     {
-        ObjectBuffers<Key> cache = ArrayBuffers.cachedKeys();
+        ObjectBuffers<Key> cache = cachedKeys();
         int asSize = as.size(), bsSize = bs.size();
         Key[] array = cache.get(asSize + bsSize);
         int count = 0;

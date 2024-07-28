@@ -26,9 +26,7 @@ import accord.local.SafeCommandStore;
 import accord.primitives.FullRoute;
 import accord.primitives.PartialDeps;
 import accord.primitives.PartialRoute;
-import accord.primitives.Participants;
 import accord.primitives.Ranges;
-import accord.primitives.Route;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
@@ -54,7 +52,7 @@ public class GetDeps extends TxnRequest.WithUnsynced<PartialDeps>
     public GetDeps(Id to, Topologies topologies, FullRoute<?> route, TxnId txnId, Seekables<?, ?> keys, Timestamp executeAt)
     {
         super(to, topologies, txnId, route);
-        this.keys = keys.slice(scope.covering());
+        this.keys = keys.intersecting(scope);
         this.executeAt = executeAt;
     }
 
@@ -75,7 +73,7 @@ public class GetDeps extends TxnRequest.WithUnsynced<PartialDeps>
     public PartialDeps apply(SafeCommandStore instance)
     {
         Ranges ranges = instance.ranges().allBetween(minUnsyncedEpoch, executeAt);
-        return calculatePartialDeps(instance, txnId, keys, constant(minUnsyncedEpoch), executeAt, ranges);
+        return calculatePartialDeps(instance, txnId, keys, scope, constant(minUnsyncedEpoch), executeAt, ranges);
     }
 
     @Override

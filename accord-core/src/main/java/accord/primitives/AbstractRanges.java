@@ -178,13 +178,6 @@ public abstract class AbstractRanges implements Iterable<Range>, Routables<Range
         return subtract((AbstractRanges) keysOrRanges);
     }
 
-    public Ranges intersect(Unseekables<?> keysOrRanges)
-    {
-        if (keysOrRanges.domain() == Routable.Domain.Key)
-            keysOrRanges = ((AbstractUnseekableKeys)keysOrRanges).toRanges();
-        return sliceMinimal((AbstractRanges)keysOrRanges, this, (AbstractRanges)keysOrRanges, (i1, i2, rs) -> i2.ranges == rs && i2 instanceof Ranges ? (Ranges)i2 : Ranges.ofSortedAndDeoverlapped(rs));
-    }
-
     // returns ri in low 32 bits, ki in top, or -1 if no match found
     @Override
     public final long findNextIntersection(int ri, AbstractKeys<?> keys, int ki)
@@ -297,21 +290,12 @@ public abstract class AbstractRanges implements Iterable<Range>, Routables<Range
 
     /**
      * Returns the inputs that intersect with any of the members of the keysOrRanges.
-     * DOES NOT MODIFY THE RANGES.
+     * DOES NOT MODIFY THE INPUT.
      */
-    static <I extends AbstractRanges, P> I intersecting(I input, Routables<?> keysOrRanges, P param, SliceConstructor<AbstractRanges, P, I> constructor)
+    static <I extends AbstractRanges, P> I intersecting(AbstractKeys<?> intersecting, I input, P param, SliceConstructor<I, P, I> constructor)
     {
-        switch (keysOrRanges.domain())
-        {
-            default: throw new AssertionError();
-            case Range: return sliceOverlapping((AbstractRanges)keysOrRanges, input, param, constructor);
-            case Key:
-            {
-                AbstractKeys<?> that = (AbstractKeys<?>) keysOrRanges;
-                Range[] result = SortedArrays.intersectWithMultipleMatches(input.ranges, input.ranges.length, that.keys, that.keys.length, Range::compareTo, cachedRanges());
-                return result == input.ranges ? input : constructor.construct(input, param, result);
-            }
-        }
+        Range[] result = SortedArrays.intersectWithMultipleMatches(input.ranges, input.ranges.length, intersecting.keys, intersecting.keys.length, Range::compareTo, cachedRanges());
+        return result == input.ranges ? input : constructor.construct(input, param, result);
     }
 
     interface SliceConstructor<I extends AbstractRanges, P, RS>

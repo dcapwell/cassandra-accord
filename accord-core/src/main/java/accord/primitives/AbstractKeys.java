@@ -180,7 +180,7 @@ public abstract class AbstractKeys<K extends RoutableKey> implements Iterable<K>
 
 
     // TODO (expected, efficiency): accept cached buffers
-    protected K[] slice(Ranges ranges, IntFunction<K[]> factory)
+    protected K[] slice(AbstractRanges ranges, IntFunction<K[]> factory)
     {
         return SortedArrays.sliceWithMultipleMatches(keys, ranges.ranges, factory, (k, r) -> -r.compareTo(k), Range::compareTo);
     }
@@ -204,12 +204,12 @@ public abstract class AbstractKeys<K extends RoutableKey> implements Iterable<K>
         return Arrays.copyOfRange(keys, start, end);
     }
 
-    protected K[] intersect(AbstractKeys<K> that, ObjectBuffers<K> buffers)
+    protected K[] intersecting(AbstractKeys<K> that, ObjectBuffers<K> buffers)
     {
         return SortedArrays.linearIntersection(this.keys, that.keys, buffers);
     }
 
-    protected K[] intersect(AbstractRanges ranges, ObjectBuffers<K> buffers)
+    protected K[] intersecting(AbstractRanges ranges, ObjectBuffers<K> buffers)
     {
         return SortedArrays.intersectWithMultipleMatches(keys, keys.length, ranges.ranges, ranges.ranges.length, (k, r) -> -r.compareTo(k), buffers);
     }

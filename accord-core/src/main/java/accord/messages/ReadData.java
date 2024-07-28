@@ -36,6 +36,7 @@ import accord.primitives.EpochSupplier;
 import accord.primitives.PartialTxn;
 import accord.primitives.Participants;
 import accord.primitives.Ranges;
+import accord.primitives.Routables;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
@@ -46,6 +47,7 @@ import static accord.messages.MessageType.READ_RSP;
 import static accord.messages.ReadData.CommitOrReadNack.Insufficient;
 import static accord.messages.ReadData.CommitOrReadNack.Redundant;
 import static accord.messages.TxnRequest.latestRelevantEpochIndex;
+import static accord.primitives.Routables.Slice.Minimal;
 import static accord.utils.Invariants.illegalState;
 import static accord.utils.MapReduceConsume.forEach;
 
@@ -318,7 +320,7 @@ public abstract class ReadData extends AbstractEpochRequest<ReadData.CommitOrRea
 
         if (newUnavailable != null && !newUnavailable.isEmpty())
         {
-            newUnavailable = newUnavailable.intersecting(readScope);
+            newUnavailable = newUnavailable.intersecting(readScope, Minimal);
             if (this.unavailable == null) this.unavailable = newUnavailable;
             else this.unavailable = newUnavailable.with(this.unavailable);
         }

@@ -22,13 +22,11 @@ import accord.api.RoutingKey;
 
 import javax.annotation.Nullable;
 
-public interface Route<K extends Unseekable> extends Unseekables<K>
+public interface Route<K extends Unseekable> extends Participants<K>
 {
     RoutingKey homeKey();
 
     default boolean isRoute() { return true; }
-
-    boolean covers(Ranges ranges);
 
     /**
      * Return an object containing any {@code K} present in either of the original collections,
@@ -41,9 +39,13 @@ public interface Route<K extends Unseekable> extends Unseekables<K>
 
     @Override
     PartialRoute<K> slice(Ranges ranges);
+    @Override
     PartialRoute<K> slice(Ranges ranges, Slice slice);
-    PartialRoute<K> sliceStrict(Ranges ranges);
-    Ranges sliceCovering(Ranges ranges, Slice slice);
+
+    @Override
+    Route<K> intersecting(Unseekables<?> intersecting);
+    @Override
+    Route<K> intersecting(Unseekables<?> intersecting, Slice slice);
 
     Route<K> withHomeKey();
 

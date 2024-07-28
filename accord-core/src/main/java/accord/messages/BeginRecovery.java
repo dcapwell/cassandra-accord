@@ -70,7 +70,7 @@ public class BeginRecovery extends TxnRequest<BeginRecovery.RecoverReply>
     {
         super(to, topologies, route, txnId);
         // TODO (expected): only scope.contains(route.homeKey); this affects state eviction and is low priority given size in C*
-        this.partialTxn = txn.slice(scope.covering(), true);
+        this.partialTxn = txn.intersecting(scope, true);
         this.ballot = ballot;
         this.route = route;
     }
@@ -115,7 +115,7 @@ public class BeginRecovery extends TxnRequest<BeginRecovery.RecoverReply>
         if (!command.known().deps.hasCommittedOrDecidedDeps())
         {
             // TODO (required): consider whether we are safe ignoring the concept of minUnsyncedEpoch here
-            localDeps = calculatePartialDeps(safeStore, txnId, partialTxn.keys(), txnId, txnId, safeStore.ranges().coordinates(txnId));
+            localDeps = calculatePartialDeps(safeStore, txnId, partialTxn.keys(), scope, txnId, txnId, safeStore.ranges().coordinates(txnId));
         }
 
         LatestDeps deps = LatestDeps.create(safeStore.ranges().allAt(txnId.epoch()), command.known().deps, command.acceptedOrCommitted(), coordinatedDeps, localDeps);

@@ -186,7 +186,7 @@ public abstract class InMemoryCommandStore extends CommandStore
                                 break;
 
                             Participants participantsOfPrev = prev.route().participants(ranges, Minimal);
-                            Participants intersectingParticipants = participants.intersect(participantsOfPrev);
+                            Participants intersectingParticipants = participants.intersecting(participantsOfPrev, Minimal);
                             if (intersectingParticipants.isEmpty())
                                 continue;
 

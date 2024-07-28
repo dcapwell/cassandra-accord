@@ -81,13 +81,30 @@ public abstract class RangeRoute extends AbstractRanges implements Route<Range>,
     @Override
     public PartialRangeRoute slice(Ranges ranges)
     {
-        return slice(ranges, Overlapping, this, homeKey, PartialRangeRoute::new);
+        return slice(ranges, Overlapping);
     }
 
     @Override
     public PartialRangeRoute slice(Ranges ranges, Slice slice)
     {
-        return slice(ranges, slice, this, homeKey, PartialRangeRoute::new);
+        return slice(ranges, slice, this, homeKey, (ignore, hk, rs) -> new PartialRangeRoute(hk, rs));
+    }
+
+    @Override
+    public RangeRoute intersecting(Unseekables<?> intersecting)
+    {
+        return intersecting(intersecting, Overlapping);
+    }
+
+    @Override
+    public RangeRoute intersecting(Unseekables<?> intersecting, Slice slice)
+    {
+        switch (intersecting.domain())
+        {
+            default: throw new AssertionError("Unhandled domain: " + intersecting.domain());
+            case Key: return intersecting((AbstractKeys<RoutingKey>)intersecting, this, homeKey, (ignore, hk, ranges) -> new PartialRangeRoute(hk, ranges));
+            case Range: return slice((Ranges)intersecting, slice, this, homeKey, (ignore, homeKey, ranges) -> new PartialRangeRoute(homeKey, ranges));
+        }
     }
 
     @Override
@@ -104,11 +121,7 @@ public abstract class RangeRoute extends AbstractRanges implements Route<Range>,
 
     public Participants<Range> participants(Ranges slice, Slice kind)
     {
-        Range[] ranges = slice(slice, kind, this, null, (i1, i2, rs) -> rs);
-        if (ranges == this.ranges)
-            return this;
-
-        return Ranges.ofSortedAndDeoverlapped(ranges);
+        return slice(slice, kind, this, null, (i1, i2, rs) -> i1.ranges == rs ? i1 : Ranges.ofSortedAndDeoverlapped(rs));
     }
 
     public Ranges toRanges()

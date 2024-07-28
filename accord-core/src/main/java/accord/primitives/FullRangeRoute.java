@@ -42,18 +42,6 @@ public class FullRangeRoute extends RangeRoute implements FullRoute<Range>
     }
 
     @Override
-    public boolean covers(Ranges ranges)
-    {
-        return true;
-    }
-
-    @Override
-    public PartialRangeRoute sliceStrict(Ranges ranges)
-    {
-        return slice(ranges);
-    }
-
-    @Override
     public FullRangeRoute withHomeKey()
     {
         return this;

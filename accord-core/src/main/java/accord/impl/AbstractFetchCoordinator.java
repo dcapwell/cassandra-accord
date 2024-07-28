@@ -137,7 +137,7 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
         inflight.put(key, starting(to, ranges));
         Ranges ownedRanges = ownedRangesForNode(to);
         Invariants.checkArgument(ownedRanges.containsAll(ranges), "Got a reply from %s for ranges %s, but owned ranges %s does not contain all the ranges", to, ranges, ownedRanges);
-        PartialDeps partialDeps = syncPoint.waitFor.slice(ownedRanges, ranges);
+        PartialDeps partialDeps = syncPoint.waitFor.intersecting(ranges);
         node.send(to, newFetchRequest(syncPoint.sourceEpoch(), syncPoint.syncId, ranges, partialDeps, rangeReadTxn(ranges)), new Callback<ReadReply>()
         {
             @Override

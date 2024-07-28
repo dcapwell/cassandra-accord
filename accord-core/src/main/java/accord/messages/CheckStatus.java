@@ -846,8 +846,8 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusRep
         public Known knownFor(Routables<?> participants)
         {
             Known known = super.knownFor(participants);
-            Invariants.checkState(!known.hasDefinition() || (partialTxn != null && partialTxn.covering().containsAll(participants)));
-            Invariants.checkState(!known.hasDecidedDeps() || (stableDeps != null && stableDeps.covering.containsAll(participants)));
+            Invariants.checkState(!known.hasDefinition() || (partialTxn != null && partialTxn.covers(participants)));
+            Invariants.checkState(!known.hasDecidedDeps() || (stableDeps != null && stableDeps.covers(participants)));
             return known;
         }
 

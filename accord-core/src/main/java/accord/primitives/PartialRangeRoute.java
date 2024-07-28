@@ -30,18 +30,21 @@ public class PartialRangeRoute extends RangeRoute implements PartialRoute<Range>
 {
     public static class SerializationSupport
     {
-        public static PartialRangeRoute create(Ranges covering, RoutingKey homeKey, Range[] ranges)
+        public static PartialRangeRoute create(RoutingKey homeKey, Range[] ranges)
         {
-            return new PartialRangeRoute(covering, homeKey, ranges);
+            return new PartialRangeRoute(homeKey, ranges);
         }
     }
 
-    public final Ranges covering;
-
-    public PartialRangeRoute(Ranges covering, RoutingKey homeKey, Range[] ranges)
+    public PartialRangeRoute(RoutingKey homeKey, Range[] ranges)
     {
         super(homeKey, ranges);
-        this.covering = covering;
+    }
+
+    //
+    private PartialRangeRoute(Object ignore, RoutingKey homeKey, Range[] ranges)
+    {
+        super(homeKey, ranges);
     }
 
     @Override
@@ -51,34 +54,13 @@ public class PartialRangeRoute extends RangeRoute implements PartialRoute<Range>
     }
 
     @Override
-    public Ranges covering()
-    {
-        return covering;
-    }
-
-    @Override
-    public boolean covers(Ranges ranges)
-    {
-        return covering.containsAll(ranges);
-    }
-
-    @Override
-    public PartialRangeRoute sliceStrict(Ranges newRanges)
-    {
-        if (!covering.containsAll(newRanges))
-            throw new IllegalArgumentException("Not covered");
-
-        return slice(newRanges);
-    }
-
-    @Override
     public PartialRangeRoute withHomeKey()
     {
         if (contains(homeKey))
             return this;
 
         Ranges with = Ranges.of(homeKey.asRange());
-        return new PartialRangeRoute(covering.with(with), homeKey, union(MERGE_OVERLAPPING, this, with, null, null, (i1, i2, rs) -> rs));
+        return new PartialRangeRoute(homeKey, union(MERGE_OVERLAPPING, this, with, null, null, (i1, i2, rs) -> rs));
     }
 
     @Override
@@ -96,16 +78,7 @@ public class PartialRangeRoute extends RangeRoute implements PartialRoute<Range>
 
         PartialRangeRoute that = (PartialRangeRoute) with;
         Invariants.checkState(homeKey.equals(that.homeKey));
-        Ranges covering = this.covering.with(that.covering);
-        if (covering == this.covering) return this;
-        else if (covering == that.covering) return that;
 
-        return union(MERGE_OVERLAPPING, this, that, covering, homeKey, PartialRangeRoute::new);
-    }
-
-    @Override
-    public boolean equals(Object that)
-    {
-        return super.equals(that) && covering.equals(((PartialRangeRoute)that).covering);
+        return union(MERGE_OVERLAPPING, this, that, null, homeKey, (ignore, homeKey, ranges) -> new PartialRangeRoute(homeKey, ranges));
     }
 }

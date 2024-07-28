@@ -25,11 +25,13 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
 
+import accord.primitives.RoutableKey;
+
 import static accord.utils.ArrayBuffers.cachedInts;
 import static accord.utils.CheckpointIntervalArray.MAX_SCAN_DISTANCE;
 import static accord.utils.SortedArrays.Search.CEIL;
 
-public class CheckpointIntervalArrayBuilder<Ranges, Range, RoutingKey>
+public class CheckpointIntervalArrayBuilder<Ranges, Range extends accord.primitives.Range, RoutingKey extends RoutableKey>
 {
     public enum Strategy
     {
@@ -492,7 +494,7 @@ public class CheckpointIntervalArrayBuilder<Ranges, Range, RoutingKey>
             lists = cachedInts().resize(lists, listCount, lists.length + lists.length/2 + maxPendingSize);
     }
 
-    static class Scan<Ranges, Range, RoutingKey>
+    static class Scan<Ranges, Range extends accord.primitives.Range, RoutingKey extends RoutableKey>
     {
         final Accessor<Ranges, Range, RoutingKey> accessor;
         /** the scan distance we are aiming for; should be proportional to log2(N) */

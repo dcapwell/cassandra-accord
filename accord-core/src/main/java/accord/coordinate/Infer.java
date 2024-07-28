@@ -327,11 +327,10 @@ public class Infer
     {
         Invariants.checkArgument(fetchedWith != null || command.route() != null);
         TxnId txnId = command.txnId();
-        if (command.route() == null || !fetchedWith.covers(safeStore.ranges().allAt(txnId.epoch())))
-            return false;
+        Route<?> route = Route.merge(command.route(), (Route)fetchedWith);
 
-        Route<?> route = command.route();
-        if (route == null) route = fetchedWith;
+        if (!Route.isFullRoute(route))
+            return false;
 
         // TODO (required): is it safe to cleanup without an executeAt? We don't know for sure which ranges it might participate in.
         //    We can infer the upper bound of execution by the "execution" of any ExclusiveSyncPoint used to infer the invalidation.

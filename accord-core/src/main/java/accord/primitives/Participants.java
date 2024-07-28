@@ -30,7 +30,9 @@ public interface Participants<K extends Unseekable> extends Unseekables<K>
     Participants<K> with(Participants<K> with);
 
     @Override
-    Participants<K> intersect(Unseekables<?> with);
+    Participants<K> intersecting(Unseekables<?> intersecting);
+    @Override
+    Participants<K> intersecting(Unseekables<?> intersecting, Slice slice);
     @Override
     Participants<K> slice(Ranges ranges);
     @Override

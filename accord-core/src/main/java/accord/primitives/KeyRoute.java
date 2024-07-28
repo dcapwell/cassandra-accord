@@ -84,13 +84,34 @@ public abstract class KeyRoute extends AbstractUnseekableKeys implements Route<R
         return homeKey;
     }
 
+
     @Override
-    public abstract PartialKeyRoute slice(Ranges ranges);
+    public PartialKeyRoute slice(Ranges select)
+    {
+        return new PartialKeyRoute(homeKey, slice(select, RoutingKey[]::new));
+    }
 
     @Override
     public PartialKeyRoute slice(Ranges ranges, Slice slice)
     {
         return slice(ranges);
+    }
+
+    @Override
+    public PartialKeyRoute intersecting(Unseekables<?> intersecting)
+    {
+        switch (intersecting.domain())
+        {
+            default: throw new AssertionError("Unhandled domain: " + intersecting.domain());
+            case Key: return new PartialKeyRoute(homeKey, intersecting((AbstractUnseekableKeys)intersecting, cachedRoutingKeys()));
+            case Range: return new PartialKeyRoute(homeKey, slice((AbstractRanges)intersecting, RoutingKey[]::new));
+        }
+    }
+
+    @Override
+    public PartialKeyRoute intersecting(Unseekables<?> intersecting, Slice slice)
+    {
+        return intersecting(intersecting);
     }
 
     private AbstractUnseekableKeys wrap(RoutingKey[] wrap, AbstractKeys<RoutingKey> that)
