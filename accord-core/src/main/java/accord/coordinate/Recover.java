@@ -350,7 +350,7 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
             }
             else
             {
-                CollectDeps.withDeps(node, txnId, missing.toRoute(route.homeKey()), missing, executeAt, (extraDeps, fail) -> {
+                CollectDeps.withDeps(node, txnId, route, missing.toParticipants(), missing, executeAt, (extraDeps, fail) -> {
                     if (fail != null) node.agent().onHandledException(fail);
                     else withDeps.accept(merged.deps.with(extraDeps));
                 });
@@ -360,7 +360,7 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
 
     private void invalidate()
     {
-        proposeInvalidate(node, ballot, txnId, route.someParticipatingKey(), (success, fail) -> {
+        proposeInvalidate(node, ballot, txnId, route.homeKey(), (success, fail) -> {
             if (fail != null) accept(null, fail);
             else commitInvalidate();
         });

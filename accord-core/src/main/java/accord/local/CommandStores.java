@@ -40,6 +40,7 @@ import accord.api.ProgressLog;
 import accord.api.RoutingKey;
 import accord.local.CommandStore.EpochUpdateHolder;
 import accord.primitives.EpochSupplier;
+import accord.primitives.Participants;
 import accord.primitives.Range;
 import accord.primitives.Ranges;
 import accord.primitives.Routables;
@@ -663,6 +664,11 @@ public abstract class CommandStores
     public CommandStore select(Route<?> route)
     {
         return  select(ranges -> ranges.intersects(route));
+    }
+
+    public CommandStore select(Participants<?> participants)
+    {
+        return  select(ranges -> ranges.intersects(participants));
     }
 
     private CommandStore select(Predicate<Ranges> fn)

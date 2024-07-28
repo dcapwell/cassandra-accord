@@ -25,15 +25,15 @@ public class FullKeyRoute extends KeyRoute implements FullRoute<RoutingKey>
 {
     public static class SerializationSupport
     {
-        public static FullKeyRoute create(RoutingKey homeKey, boolean isParticipatingHomeKey, RoutingKey[] keys)
+        public static FullKeyRoute create(RoutingKey homeKey, RoutingKey[] keys)
         {
-            return new FullKeyRoute(homeKey, isParticipatingHomeKey, keys);
+            return new FullKeyRoute(homeKey, keys);
         }
     }
 
-    public FullKeyRoute(RoutingKey homeKey, boolean isParticipatingHomeKey, RoutingKey[] keys)
+    public FullKeyRoute(RoutingKey homeKey, RoutingKey[] keys)
     {
-        super(homeKey, isParticipatingHomeKey, keys);
+        super(homeKey, keys);
     }
 
     @Override
@@ -58,7 +58,7 @@ public class FullKeyRoute extends KeyRoute implements FullRoute<RoutingKey>
     @Override
     public PartialKeyRoute slice(Ranges newRanges)
     {
-        return new PartialKeyRoute(newRanges, homeKey, isParticipatingHomeKey, slice(newRanges, RoutingKey[]::new));
+        return new PartialKeyRoute(newRanges, homeKey, slice(newRanges, RoutingKey[]::new));
     }
 
     @Override

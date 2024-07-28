@@ -24,15 +24,15 @@ public class FullRangeRoute extends RangeRoute implements FullRoute<Range>
 {
     public static class SerializationSupport
     {
-        public static FullRangeRoute create(RoutingKey homeKey, boolean isParticipatingHomeKey, Range[] ranges)
+        public static FullRangeRoute create(RoutingKey homeKey, Range[] ranges)
         {
-            return new FullRangeRoute(homeKey, isParticipatingHomeKey, ranges);
+            return new FullRangeRoute(homeKey, ranges);
         }
     }
 
-    public FullRangeRoute(RoutingKey homeKey, boolean isParticipatingHomeKey, Range[] ranges)
+    public FullRangeRoute(RoutingKey homeKey, Range[] ranges)
     {
-        super(homeKey, isParticipatingHomeKey, ranges);
+        super(homeKey, ranges);
     }
 
     @Override

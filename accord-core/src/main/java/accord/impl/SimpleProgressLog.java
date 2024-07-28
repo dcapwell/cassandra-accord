@@ -292,7 +292,7 @@ public class SimpleProgressLog implements ProgressLog.Factory
                 {
                     Invariants.checkState(route != null || participants != null, "Route and participants are both undefined");
                     Invariants.checkState(participants == null || !participants.isEmpty(), "participants is empty");
-                    Invariants.checkState(route == null || route.hasParticipants(), "Route %s does not have participants", route);
+                    Invariants.checkState(route == null || !route.isEmpty(), "Route %s is empty", route);
 
                     this.route = Route.merge(this.route, (Route)route);
                     this.participants = Participants.merge(this.participants, (Participants) participants);

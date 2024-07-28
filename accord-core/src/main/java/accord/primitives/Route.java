@@ -26,12 +26,6 @@ public interface Route<K extends Unseekable> extends Unseekables<K>
 {
     RoutingKey homeKey();
 
-    /**
-     * @return true iff homeKey() is involved in the transaction, not only in its coordination (i.e. txn.keys().contains(homeKey())
-     */
-    boolean isParticipatingHomeKey();
-    RoutingKey someParticipatingKey();
-
     default boolean isRoute() { return true; }
 
     boolean covers(Ranges ranges);
@@ -72,11 +66,6 @@ public interface Route<K extends Unseekable> extends Unseekables<K>
      * Return the unseekables excluding any coordination-only home key, that intersect the provided ranges
      */
     Participants<K> participants(Ranges ranges, Slice slice);
-
-    default boolean hasParticipants()
-    {
-        return size() > (isParticipatingHomeKey() || !contains(homeKey()) ? 0 : 1);
-    }
 
     // this method exists solely to circumvent JDK bug with testing and casting interfaces
     static boolean isFullRoute(@Nullable Unseekables<?> unseekables) { return unseekables != null && unseekables.kind().isFullRoute(); }

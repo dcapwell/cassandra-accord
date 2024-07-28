@@ -157,11 +157,9 @@ public class Ranges extends AbstractRanges implements Iterable<Range>, Seekables
     public FullRangeRoute toRoute(RoutingKey homeKey)
     {
         if (!contains(homeKey))
-        {
-            Range[] ranges = with(Ranges.of(homeKey.asRange())).ranges;
-            return new FullRangeRoute(homeKey, false, ranges);
-        }
-        return new FullRangeRoute(homeKey, true, ranges);
+            throw new IllegalArgumentException("Home key must be contained in the route: " + homeKey + " ∉ " + this);
+
+        return new FullRangeRoute(homeKey, ranges);
     }
 
     public Ranges union(UnionMode mode, Ranges that)

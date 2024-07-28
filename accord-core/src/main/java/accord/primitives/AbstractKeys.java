@@ -155,7 +155,7 @@ public abstract class AbstractKeys<K extends RoutableKey> implements Iterable<K>
     @Override
     public Iterator<K> iterator()
     {
-        return new Iterator<K>()
+        return new Iterator<>()
         {
             int i = 0;
             @Override
@@ -294,10 +294,10 @@ public abstract class AbstractKeys<K extends RoutableKey> implements Iterable<K>
 
     public final FullKeyRoute toRoute(RoutingKey homeKey)
     {
-        if (isEmpty())
-            return new FullKeyRoute(homeKey, false, new RoutingKey[] { homeKey });
+        if (!contains(homeKey))
+            throw new IllegalArgumentException("Home key must be a participant of the Route: " + homeKey + " ∉ " + this);
 
-        return toRoutingKeysArray(homeKey, (routingKeys, homeKeyIndex, isParticipatingHomeKey) -> new FullKeyRoute(routingKeys[homeKeyIndex], isParticipatingHomeKey, routingKeys));
+        return toRoutingKeysArray(homeKey, (routingKeys, homeKeyIndex, isParticipatingHomeKey) -> new FullKeyRoute(routingKeys[homeKeyIndex], routingKeys));
     }
 
     protected RoutingKey[] toRoutingKeysArray(RoutingKey withKey)

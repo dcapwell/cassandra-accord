@@ -189,7 +189,7 @@ public class ListRequest implements Request
 
         private void checkOnResult(@Nullable RoutingKey homeKey, TxnId txnId, int attempt, Throwable t) {
             if (homeKey == null)
-                homeKey = node.computeRoute(txnId, txn.keys()).someParticipatingKey();
+                homeKey = node.computeRoute(txnId, txn.keys()).homeKey();
             RoutingKey finalHomeKey = homeKey;
             node.commandStores().select(homeKey).execute(() -> CheckOnResult.checkOnResult(node, txnId, finalHomeKey, (s, f) -> {
                 if (f != null)
