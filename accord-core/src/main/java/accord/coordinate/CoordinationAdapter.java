@@ -248,7 +248,7 @@ public interface CoordinationAdapter<R>
             @Override
             public void execute(Node node, Topologies all, FullRoute<?> route, ExecutePath path, TxnId txnId, Txn txn, Timestamp executeAt, Deps deps, BiConsumer<? super SyncPoint<S>, Throwable> callback)
             {
-                // TODO (required): remember and document why we don't use fast path for exclusive sync points
+                // TODO (required, consider): remember and document why we don't use fast path for exclusive sync points
                 if (path == FAST)
                 {
                     Invoke.stabilise(this, node, all, route, Ballot.ZERO, txnId, txn, executeAt, deps, callback);

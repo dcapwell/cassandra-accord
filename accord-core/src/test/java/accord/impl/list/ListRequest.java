@@ -108,7 +108,8 @@ public class ListRequest implements Request
         @Override
         protected void onDone(CheckShards.Success done, Throwable failure)
         {
-            if (failure != null) callback.accept(null, failure);
+            if (failure instanceof Exhausted) callback.accept(Outcome.Lost, null);
+            else if (failure != null) callback.accept(null, failure);
             else if (merged.maxKnowledgeSaveStatus.is(Status.Invalidated)) callback.accept(Outcome.Invalidated, null);
             else if (merged.maxKnowledgeSaveStatus.is(Status.Truncated)) callback.accept(Outcome.Truncated, null);
             else if (merged.maxKnowledgeSaveStatus.hasBeen(Applied)) callback.accept(new Outcome(Outcome.Kind.Applied, (ListResult) ((CheckStatus.CheckStatusOkFull) merged).result), null);

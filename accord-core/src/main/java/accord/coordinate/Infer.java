@@ -266,7 +266,7 @@ public class Infer
         {
             // we're applying an invalidation, so the record will not be cleaned up until the whole range is truncated
             Command command = safeCommand.current();
-            // TODO (required): consider the !command.hasBeen(PreCommitted) condition
+            // TODO (required, consider): consider the !command.hasBeen(PreCommitted) condition
             Invariants.checkState(!command.hasBeen(PreCommitted) || command.hasBeen(Status.Truncated), "Unexpected status for %s", command);
             Commands.commitInvalidate(safeStore, safeCommand, someUnseekables);
             return null;
@@ -293,7 +293,7 @@ public class Infer
         Void apply(SafeCommandStore safeStore, SafeCommand safeCommand)
         {
             Command command = safeCommand.current();
-            // TODO (required): introduce a special form of Erased where we do not imply the phase is "Cleanup"
+            // TODO (required, consider): introduce a special form of Erased where we do not imply the phase is "Cleanup"
             if (!command.hasBeen(PreApplied) && safeToCleanup(safeStore, command, Route.castToRoute(someUnseekables), null))
                 Commands.setErased(safeStore, safeCommand);
             return null;

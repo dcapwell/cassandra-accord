@@ -383,25 +383,16 @@ public class Commands
         return CommitOutcome.Success;
     }
 
-    public static void createBootstrapCompleteMarkerTransaction(SafeCommandStore safeStore, TxnId localSyncId, SyncPoint syncPoint, Seekables<?, ?> keys)
+    public static void createBootstrapCompleteMarkerTransaction(SafeCommandStore safeStore, TxnId localSyncId, Seekables<?, ?> keys)
     {
         SafeCommand safeCommand = safeStore.get(localSyncId);
         Command command = safeCommand.current();
         Invariants.checkState(!command.hasBeen(Committed));
-        createBootstrapCompleteMarkerTransaction(safeStore, localSyncId, keys, syncPoint.route());
-    }
-
-    private static void createBootstrapCompleteMarkerTransaction(SafeCommandStore safeStore, TxnId localSyncId, Seekables<?, ?> keys, Route<?> route)
-    {
-        SafeCommand safeCommand = safeStore.get(localSyncId);
-        Command command = safeCommand.current();
-        if (command.hasBeen(Stable))
-            return;
+        FullRoute<?> route = keys.toRoute(keys.get(0).someIntersectingRoutingKey(null));
 
         Ranges coordinateRanges = coordinateRanges(safeStore, localSyncId);
         // TODO (desired, consider): in the case of sync points, the coordinator is unlikely to be a home shard, do we mind this? should document at least
         Txn emptyTxn = safeStore.agent().emptyTxn(localSyncId.kind(), keys);
-        ProgressShard progressShard = coordinateRanges.contains(route.homeKey()) ? UnmanagedHome : No;
         PartialDeps none = Deps.NONE.intersecting(route);
         PartialTxn partialTxn = emptyTxn.slice(coordinateRanges, true);
         Invariants.checkState(validate(SaveStatus.Stable, command, coordinateRanges, route, partialTxn, none, null));
@@ -421,7 +412,6 @@ public class Commands
         //                       then we need to revisit how we execute transactions that awaitsOnlyDeps, as they may need additional
         //                       information to execute in the eventual execution epoch (that they didn't know they needed when they were made stable)
         Ranges coordinateRanges = coordinateRanges(safeStore, txnId);
-        ProgressShard progressShard = No;
         Invariants.checkState(validate(SaveStatus.Stable, command, coordinateRanges, route, partialTxn, partialDeps, null));
         CommonAttributes attrs = set(SaveStatus.Stable, command, command, coordinateRanges, route, partialTxn, partialDeps);
         safeCommand.stable(safeStore, attrs, Ballot.ZERO, txnId, initialiseWaitingOn(safeStore, txnId, attrs, txnId, route));
@@ -746,7 +736,7 @@ public class Commands
                 case TruncatedApply:
                 case TruncatedApplyWithOutcome:
                 case TruncatedApplyWithDeps:
-                    Invariants.checkState(dependency.executeAt().compareTo(waitingExecuteAt) < 0 || waitingId.kind().awaitsOnlyDeps());
+                    Invariants.checkState(dependency.executeAt().compareTo(waitingExecuteAt) < 0 || waitingId.kind().awaitsOnlyDeps() || !dependency.txnId().kind().witnesses(waitingId));
                 case ErasedOrInvalidated:
                 case Erased:
                     logger.trace("{}: {} is truncated. Stop listening and removing from waiting on commit set.", waitingId, dependencyId);

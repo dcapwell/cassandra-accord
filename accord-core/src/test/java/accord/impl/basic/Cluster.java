@@ -58,6 +58,7 @@ import accord.coordinate.Exhausted;
 import accord.coordinate.Invalidated;
 import accord.coordinate.Preempted;
 import accord.coordinate.Timeout;
+import accord.coordinate.Truncated;
 import accord.impl.CoordinateDurabilityScheduling;
 import accord.impl.MessageListener;
 import accord.impl.PrefixedIntHashKey;
@@ -595,7 +596,7 @@ public class Cluster implements Scheduler
                 if (f != null)
                 {
                     // ignore specific errors
-                    if (f instanceof Invalidated || f instanceof Timeout || f instanceof Preempted || f instanceof Exhausted)
+                    if (f instanceof Invalidated || f instanceof Timeout || f instanceof Preempted || f instanceof Exhausted || f instanceof Truncated)
                         return;
                     node.agent().onUncaughtException(f);
                 }
