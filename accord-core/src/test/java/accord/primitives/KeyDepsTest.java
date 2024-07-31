@@ -77,12 +77,7 @@ public class KeyDepsTest
         qt().check(rs -> {
             Gen<KeyDeps> gen = AccordGens.keyDeps(keyDistro.next(rs), txnIdDistro.next(rs));
             KeyDeps keyDeps = gen.next(rs);
-            Map<TxnId, List<Key>> reverseLookup = new HashMap<>();
-            for (Key key : keyDeps.keys)
-            {
-                for (TxnId id : keyDeps.txnIds(key))
-                    reverseLookup.computeIfAbsent(id, ignore -> new ArrayList<>()).add(key);
-            }
+            Map<TxnId, List<Key>> reverseLookup = buildReverseLookup(keyDeps);
             for (Key key : keyDeps.keys)
             {
                 keyDeps.forEach(key.asRange(), null, null, null, (i1, i2, i3, index) -> {
@@ -95,6 +90,17 @@ public class KeyDepsTest
                 });
             }
         });
+    }
+
+    private static Map<TxnId, List<Key>> buildReverseLookup(KeyDeps keyDeps)
+    {
+        Map<TxnId, List<Key>> reverseLookup = new HashMap<>();
+        for (Key key : keyDeps.keys)
+        {
+            for (TxnId id : keyDeps.txnIds(key))
+                reverseLookup.computeIfAbsent(id, ignore -> new ArrayList<>()).add(key);
+        }
+        return reverseLookup;
     }
 
     @Test
