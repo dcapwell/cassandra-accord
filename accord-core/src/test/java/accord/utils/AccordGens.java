@@ -41,6 +41,7 @@ import accord.local.RedundantBefore;
 import accord.primitives.Ballot;
 import accord.primitives.Deps;
 import accord.primitives.KeyDeps;
+import accord.primitives.Keys;
 import accord.primitives.Range;
 import accord.primitives.RangeDeps;
 import accord.primitives.Ranges;
@@ -253,6 +254,20 @@ public class AccordGens
         if (sample instanceof IntKey.Routing)
             return intKeysInsideRanges(ranges);
         throw new IllegalArgumentException("Unsupported key type " + sample.getClass() + "; supported = PrefixedIntHashKey, IntKey");
+    }
+
+    public static Gen<Keys> keys(Gen<Key> keyGen)
+    {
+        return keys(Gens.ints().between(1, 5), keyGen);
+    }
+
+    public static Gen<Keys> keys(Gen.IntGen sizeGen, Gen<Key> keyGen)
+    {
+        return rs -> Gens.lists(keyGen)
+                         .uniqueBestEffort()
+                         .ofSize(sizeGen.nextInt(rs))
+                         .map(l -> Keys.of(l))
+                         .next(rs);
     }
 
     public static Gen<KeyDeps> keyDeps(Gen<? extends Key> keyGen)
