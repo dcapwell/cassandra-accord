@@ -778,6 +778,12 @@ public abstract class Command implements CommonAttributes
             return erased(command.txnId(), durability, command.route());
         }
 
+        public static Truncated erasedOrInvalidated(Command command)
+        {
+            Durability durability = Durability.mergeAtLeast(command.durability(), UniversalOrInvalidated);
+            return erasedOrInvalidated(command.txnId(), durability, command.route());
+        }
+
         public static Truncated erasedOrInvalidated(TxnId txnId, Status.Durability durability, Route<?> route)
         {
             return validate(new Truncated(txnId, SaveStatus.ErasedOrInvalidated, durability, route, null, EMPTY, null, null));

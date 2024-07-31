@@ -62,6 +62,7 @@ import static accord.api.ProgressLog.ProgressShard.UnmanagedHome;
 import static accord.local.Cleanup.ERASE;
 import static accord.local.Cleanup.shouldCleanup;
 import static accord.local.Command.Truncated.erased;
+import static accord.local.Command.Truncated.erasedOrInvalidated;
 import static accord.local.Command.Truncated.truncatedApply;
 import static accord.local.Command.Truncated.truncatedApplyWithOutcome;
 import static accord.local.KeyHistory.TIMESTAMPS;
@@ -836,7 +837,7 @@ public class Commands
         if (executeAt == null) executeAt = command.executeAtIfKnown();
         if (route == null || executeAt == null)
         {
-            safeCommand.update(safeStore, erased(command));
+            safeCommand.update(safeStore, erasedOrInvalidated(command));
         }
         else
         {
@@ -893,7 +894,7 @@ public class Commands
             case TRUNCATE:
                 // TODO (expected): consider passing through any information we have about the reason for loading, so we can infer APPLIED if !PreCommitted
                 Invariants.checkState(command.saveStatus().compareTo(TruncatedApply) < 0);
-                if (!command.hasBeen(PreCommitted)) result = erased(command);
+                if (!command.hasBeen(PreCommitted)) result = erasedOrInvalidated(command);
                 else result = truncatedApply(command, Route.tryCastToFullRoute(maybeFullRoute));
                 break;
 

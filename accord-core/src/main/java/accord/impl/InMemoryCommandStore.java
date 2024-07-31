@@ -79,6 +79,7 @@ import static accord.local.SafeCommandStore.TestStatus.ANY_STATUS;
 import static accord.local.SafeCommandStore.TestStartedAt.STARTED_BEFORE;
 import static accord.local.SaveStatus.Applying;
 import static accord.local.SaveStatus.Erased;
+import static accord.local.SaveStatus.ErasedOrInvalidated;
 import static accord.local.SaveStatus.ReadyToExecute;
 import static accord.local.Status.Applied;
 import static accord.local.Status.Stable;
@@ -734,7 +735,7 @@ public abstract class InMemoryCommandStore extends CommandStore
                 return;
 
             // TODO (expected): consider removing if erased
-            if (updated.saveStatus() == Erased)
+            if (updated.saveStatus() == Erased || updated.saveStatus() == ErasedOrInvalidated)
                 return;
 
             Seekables<?, ?> keysOrRanges = updated.keysOrRanges();
