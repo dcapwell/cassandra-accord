@@ -20,13 +20,19 @@ package accord.primitives;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeSet;
 
 import org.junit.jupiter.api.Test;
 
 import accord.api.Key;
 import accord.impl.IntKey;
 import accord.utils.AccordGens;
+import accord.utils.SortedArrays;
+import accord.utils.SortedCursor;
+import accord.utils.SortedList;
 
 import static accord.utils.Property.qt;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,6 +49,7 @@ class DepsTest
             validateIndexes(deps);
             validateMaxTxnId(deps);
             validateIntersects(deps);
+            validateTxnIds(deps);
         });
     }
 
@@ -115,5 +122,55 @@ class DepsTest
         for (Range range : deps.rangeDeps.ranges)
             ranges.add(range);
         return Ranges.of(ranges.toArray(Range[]::new));
+    }
+
+    private static void validateTxnIds(Deps deps)
+    {
+        Map<Key, List<TxnId>> keyToTxnMapping = new HashMap<>();
+        for (Key key : deps.keyDeps.keys)
+        {
+            List<TxnId> txnIds = keyToTxnMapping.computeIfAbsent(key, ignore -> new ArrayList<>());
+            txnIds.addAll(deps.keyDeps.txnIds(key));
+            // any ranges match?
+            for (Range range : deps.rangeDeps.ranges)
+            {
+                if (range.contains(key))
+                    txnIds.addAll(deps.rangeDeps.computeTxnIds(key));
+            }
+        }
+        for (Key key : deps.directKeyDeps.keys)
+        {
+            List<TxnId> txnIds = keyToTxnMapping.computeIfAbsent(key, ignore -> new ArrayList<>());
+            txnIds.addAll(deps.directKeyDeps.txnIds(key));
+            // any ranges match?
+            for (Range range : deps.rangeDeps.ranges)
+            {
+                if (range.contains(key))
+                    txnIds.addAll(deps.rangeDeps.computeTxnIds(key));
+            }
+        }
+        for (Key key : keyToTxnMapping.keySet())
+        {
+            SortedList<TxnId> expected = toSortedList(keyToTxnMapping.get(key));
+            SortedList<TxnId> actual = toSortedList(deps.txnIds(key));
+            assertThat(actual).isEqualTo(expected);
+        }
+    }
+
+    private static SortedList<TxnId> toSortedList(List<TxnId> txnIds)
+    {
+        TreeSet<TxnId> set = new TreeSet<>(txnIds);
+        return new SortedArrays.SortedArrayList(set.toArray(TxnId[]::new));
+    }
+
+    private static SortedList<TxnId> toSortedList(SortedCursor<TxnId> txnIds)
+    {
+        List<TxnId> buffer = new ArrayList<>();
+        while (txnIds.hasCur())
+        {
+            buffer.add(txnIds.cur());
+            txnIds.advance();
+        }
+        return new SortedArrays.SortedArrayList(buffer.toArray(TxnId[]::new));
     }
 }
