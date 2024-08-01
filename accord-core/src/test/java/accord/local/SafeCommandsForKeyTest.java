@@ -89,7 +89,7 @@ class SafeCommandsForKeyTest
 {
     private static Property.Command<State, Void, ?> addTxn(CommandUpdator updator)
     {
-        return new SimpleCommand("Add Txn " + updator.txnId, state -> state.pendingTxns.put(updator.txnId, updator));
+        return new SimpleCommand("Add Txn " + updator.txnId + "; " + updator.txn, state -> state.pendingTxns.put(updator.txnId, updator));
     }
 
     private static Property.Command<State, Void, ?> commandStep(CommandUpdator updator)
@@ -117,7 +117,7 @@ class SafeCommandsForKeyTest
         return rs -> {
             Txn txn = txnGen.next(rs);
             TxnId id = state.nextTxnId(txn);
-            CommandUpdator updator = new CommandUpdator(id, Iterators.peekingIterator(transformationsGen(id, txn).next(rs).iterator()));
+            CommandUpdator updator = new CommandUpdator(id, txn, Iterators.peekingIterator(transformationsGen(id, txn).next(rs).iterator()));
             return Property.multistep(addTxn(updator), commandStep(updator));
         };
     }
@@ -164,13 +164,14 @@ class SafeCommandsForKeyTest
     private static class State
     {
         private static final Node.Id NODE = new Node.Id(42);
-        private static final Topology TOPOLOGY = new Topology(1, new Shard(IntKey.range(Integer.MIN_VALUE, Integer.MAX_VALUE),
-                                                                           Collections.singletonList(NODE),
-                                                                           Collections.singleton(NODE)));
         private final Map<TxnId, CommandUpdator> pendingTxns = new HashMap<>();
         private final SafeCommandStore safeStore;
         private final Key key;
         private final InMemorySafeCommandsForKey cfk;
+        private final long epoch = 1;
+        private final Topology topology = new Topology(epoch, new Shard(IntKey.range(Integer.MIN_VALUE, Integer.MAX_VALUE),
+                                                                        Collections.singletonList(NODE),
+                                                                        Collections.singleton(NODE)));
         private final AtomicLong time = new AtomicLong(0);
         private final LongSupplier clock;
 
@@ -194,31 +195,31 @@ class SafeCommandsForKeyTest
                 @Override
                 public Node.Id id()
                 {
-                    return null;
+                    return NODE;
                 }
 
                 @Override
                 public long epoch()
                 {
-                    return 0;
+                    return epoch;
                 }
 
                 @Override
                 public long now()
                 {
-                    return 0;
+                    return clock.getAsLong();
                 }
 
                 @Override
                 public long unix(TimeUnit unit)
                 {
-                    return 0;
+                    throw new UnsupportedOperationException();
                 }
 
                 @Override
                 public Timestamp uniqueNow(Timestamp atLeast)
                 {
-                    return null;
+                    throw new UnsupportedOperationException();
                 }
             };
             ProgressLog.Factory factory = ignore -> Mockito.mock(ProgressLog.class);
@@ -227,7 +228,7 @@ class SafeCommandsForKeyTest
             ListStore listStore = new ListStore(State.NODE);
             Node node = Mockito.mock(Node.class);
             Mockito.when(node.id()).thenReturn(NODE);
-            listStore.onTopologyUpdate(node, TOPOLOGY);
+            listStore.onTopologyUpdate(node, topology);
             InMemoryCommandStore store = new InMemoryCommandStore(0, timeService, new TestAgent.RethrowAgent(), listStore, factory, epochHolder)
             {
                 @Override
@@ -290,7 +291,7 @@ class SafeCommandsForKeyTest
                     });
                 }
             };
-            epochHolder.add(1, new CommandStores.RangesForEpoch(1, ranges, store), ranges);
+            epochHolder.add(epoch, new CommandStores.RangesForEpoch(epoch, ranges, store), ranges);
             safeStore = new InMemoryCommandStore.InMemorySafeStore(store, store.updateRangesForEpoch(), PreLoadContext.contextFor(key), new HashMap<>(), new HashMap<>(), new HashMap<>())
             {
                 @Override
@@ -343,7 +344,7 @@ class SafeCommandsForKeyTest
 
         TxnId nextTxnId(Txn txn)
         {
-            return new TxnId(1, clock.getAsLong(), txn.kind(), txn.keys().domain(), NODE);
+            return new TxnId(epoch, clock.getAsLong(), txn.kind(), txn.keys().domain(), NODE);
         }
     }
 
@@ -564,13 +565,15 @@ class SafeCommandsForKeyTest
     private static class CommandUpdator
     {
         final TxnId txnId;
+        final Txn txn;
         final PeekingIterator<SimpleCommandTransformation> transformations;
         @Nullable
         Command current = null;
 
-        private CommandUpdator(TxnId txnId, PeekingIterator<SimpleCommandTransformation> transformations)
+        private CommandUpdator(TxnId txnId, Txn txn, PeekingIterator<SimpleCommandTransformation> transformations)
         {
             this.txnId = txnId;
+            this.txn = txn;
             this.transformations = transformations;
         }
 
