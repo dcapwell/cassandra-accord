@@ -505,7 +505,7 @@ public class Commands
             // This listener must be a stale vestige
             // TODO (desired): would be nice to ensure these are deregistered explicitly, but would be costly
             Invariants.checkState(listener.saveStatus().isUninitialised() || listener.is(Truncated), "Listener status expected to be Uninitialised or Truncated, but was %s", listener.saveStatus());
-            Invariants.checkState(updated.is(NotDefined) || updated.is(Truncated) || !updated.asCommitted().waitingOn().isWaitingOn(listener.txnId()), "Updated status expected to be Applied or NotDefined, but was %s", updated);
+            Invariants.checkState(updated.is(NotDefined) || updated.hasBeen(Truncated) || !updated.asCommitted().waitingOn().isWaitingOn(listener.txnId()), "Updated status expected to be Applied or NotDefined, but was %s", updated);
             safeUpdated.removeListener(listener.asListener());
             return;
         }
