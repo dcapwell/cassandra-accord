@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 
@@ -510,26 +511,6 @@ public class Property
         }
     }
 
-    public interface UnitCommand<State, SystemUnderTest> extends Command<State, SystemUnderTest, Void>
-    {
-        void applyUnit(State state) throws Throwable;
-        void runUnit(SystemUnderTest sut) throws Throwable;
-
-        @Override
-        default Void apply(State state) throws Throwable
-        {
-            applyUnit(state);
-            return null;
-        }
-
-        @Override
-        default Void run(SystemUnderTest sut) throws Throwable
-        {
-            runUnit(sut);
-            return null;
-        }
-    }
-
     public static <State, SystemUnderTest> MultistepCommand<State, SystemUnderTest> multistep(Command<State, SystemUnderTest, ?>... cmds)
     {
         return multistep(Arrays.asList(cmds));
@@ -598,6 +579,56 @@ public class Property
         default void process(State state, SystemUnderTest sut) throws Throwable
         {
             throw new UnsupportedOperationException();
+        }
+    }
+
+    public interface UnitCommand<State, SystemUnderTest> extends Command<State, SystemUnderTest, Void>
+    {
+        void applyUnit(State state) throws Throwable;
+        void runUnit(SystemUnderTest sut) throws Throwable;
+
+        @Override
+        default Void apply(State state) throws Throwable
+        {
+            applyUnit(state);
+            return null;
+        }
+
+        @Override
+        default Void run(SystemUnderTest sut) throws Throwable
+        {
+            runUnit(sut);
+            return null;
+        }
+    }
+
+    public interface StateOnlyCommand<State> extends UnitCommand<State, Void>
+    {
+        @Override
+        default void runUnit(Void sut) throws Throwable {}
+    }
+
+    public static class SimpleCommand<State> implements StateOnlyCommand<State>
+    {
+        private final String name;
+        private final Consumer<State> fn;
+
+        public SimpleCommand(String name, Consumer<State> fn)
+        {
+            this.name = name;
+            this.fn = fn;
+        }
+
+        @Override
+        public String detailed(State state)
+        {
+            return name;
+        }
+
+        @Override
+        public void applyUnit(State state) throws Throwable
+        {
+            fn.accept(state);
         }
     }
 

@@ -74,6 +74,7 @@ import accord.utils.Gens;
 import accord.utils.Invariants;
 import accord.utils.Property;
 import accord.utils.Property.Commands;
+import accord.utils.Property.SimpleCommand;
 import accord.utils.RandomSource;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
@@ -89,12 +90,12 @@ class SafeCommandsForKeyTest
 {
     private static Property.Command<State, Void, ?> addTxn(CommandUpdator updator)
     {
-        return new SimpleCommand("Add Txn " + updator.txnId + "; " + updator.txn, state -> state.pendingTxns.put(updator.txnId, updator));
+        return new SimpleCommand<>("Add Txn " + updator.txnId + "; " + updator.txn, state -> state.pendingTxns.put(updator.txnId, updator));
     }
 
     private static Property.Command<State, Void, ?> commandStep(CommandUpdator updator)
     {
-        return new SimpleCommand("Next Step for " + updator.txnId + ": " + updator.name(), state -> {
+        return new SimpleCommand<>("Next Step for " + updator.txnId + ": " + updator.name(), state -> {
             Assertions.assertThat(updator.transformations.hasNext()).isTrue();
             CommandTransformation next = updator.transformations.next();
             CommandTransformation.Result result = next.transform(state.safeStore, state.cfk, updator.current);
@@ -580,37 +581,6 @@ class SafeCommandsForKeyTest
         String name()
         {
             return transformations.peek().name;
-        }
-    }
-
-    private static class SimpleCommand implements Property.Command<State, Void, Object>
-    {
-        private final String msg;
-        private final Consumer<State> fn;
-
-        private SimpleCommand(String msg, Consumer<State> fn)
-        {
-            this.msg = msg;
-            this.fn = fn;
-        }
-
-        @Override
-        public Object apply(State state)
-        {
-            fn.accept(state);
-            return null;
-        }
-
-        @Override
-        public Object run(Void sut)
-        {
-            return null;
-        }
-
-        @Override
-        public String detailed(State state)
-        {
-            return msg;
         }
     }
 }
