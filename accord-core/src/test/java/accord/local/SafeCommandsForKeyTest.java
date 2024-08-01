@@ -59,7 +59,6 @@ import accord.primitives.PartialRoute;
 import accord.primitives.PartialTxn;
 import accord.primitives.Ranges;
 import accord.primitives.Routable;
-import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
 import accord.primitives.TxnGenBuilder;
@@ -112,7 +111,7 @@ class SafeCommandsForKeyTest
     @Test
     void test()
     {
-        stateful().withSeed(-4825193645054929911L).check(new Commands<State, Void>()
+        stateful().check(new Commands<State, Void>()
         {
             @Override
             public Gen<State> genInitialState()
@@ -133,19 +132,17 @@ class SafeCommandsForKeyTest
                     return createTxn(state);
 
                 //Rules:
-                // CFK.manages -> Key + Read/Write/SyncPoint
-                // CFK.managesExecution -> Key + Read/Write
-                // SafeCFK.registerUnmanaged -> Range + Read/SyncPoint/ExclusiveSyncPoint
-                // SafeCFK.registerHistorical -> Key + Read/Write/SyncPoint
+                // CFK.manages -> Key + Read/Write/SyncPoint (called already)
+                // CFK.managesExecution -> Key + Read/Write (called already)
+                // SafeCFK.registerUnmanaged -> Range + Read/SyncPoint/ExclusiveSyncPoint (called already)
+                // SafeCFK.registerHistorical -> Key + Read/Write/SyncPoint (called already)
+                // SafeCFK.updatePruned -> ??? (called already)
+                // CommandStore.markBootstraping - before sync point (called already)
+                // CommandStore.markSharedDurable - after sync point (called already)
+                // CommandStore.markShardStale - ???
+                // CommandStore.markExclusiveSyncPointLocallyApplied - RX applied locally (called already)
+                // CommandStore.add|remove - topology change (called already)
                 return rs -> {
-                    CommandStore store = state.safeStore.commandStore();
-                    RedundantBefore rb = store.redundantBefore();
-                    RedundantBefore.Entry status = rb.foldl(RedundantBefore.Entry::reduce);
-                    if (!status.locallyAppliedOrInvalidatedBefore.equals(TxnId.NONE))
-                    {
-                        Ranges ranges = (Ranges) state.safeStore.get(status.locallyAppliedOrInvalidatedBefore).current().keysOrRanges();
-                        store.setRedundantBefore(RedundantBefore.create(ranges, Long.MIN_VALUE, Long.MAX_VALUE, status.locallyAppliedOrInvalidatedBefore, status.locallyAppliedOrInvalidatedBefore, TxnId.NONE));
-                    }
                     // pick a txn to move forward
                     TxnId id = rs.pickUnorderedSet(state.pendingTxns.keySet());
                     CommandUpdator update = state.pendingTxns.get(id);
@@ -165,7 +162,7 @@ class SafeCommandsForKeyTest
         private final Map<TxnId, CommandUpdator> pendingTxns = new HashMap<>();
         private final SafeCommandStore safeStore;
         private final Key key;
-        private final long epoch = 1;
+        private final long epoch = 2;
         private final Topology topology = new Topology(epoch, new Shard(IntKey.range(Integer.MIN_VALUE, Integer.MAX_VALUE),
                                                                         Collections.singletonList(NODE),
                                                                         Collections.singleton(NODE)));
@@ -218,7 +215,7 @@ class SafeCommandsForKeyTest
                     throw new UnsupportedOperationException();
                 }
             };
-            ProgressLog.Factory factory = ignore -> Mockito.mock(ProgressLog.class);
+            ProgressLog.Factory factory = ignore -> ProgressLog.noop();
             CommandStore.EpochUpdateHolder epochHolder = new CommandStore.EpochUpdateHolder();
             Ranges ranges = Ranges.of(IntKey.range(Integer.MIN_VALUE, Integer.MAX_VALUE));
             ListStore listStore = new ListStore(State.NODE);
@@ -337,12 +334,7 @@ class SafeCommandsForKeyTest
                 }
             };
             TxnGenBuilder txnBuilder = new TxnGenBuilder(rs);
-            txnBuilder.mapKeys(keys -> keys.with(key));
-            txnBuilder.mapRanges(r -> {
-                if (r.contains(key))
-                    return r;
-                return r.with(Ranges.of(key.asRange()));
-            });
+            txnBuilder.withKeys(ignore -> Keys.of(key)).withRanges(ignore -> Ranges.single(key.asRange()));
             txnGen = txnBuilder.build();
         }
 
@@ -356,15 +348,19 @@ class SafeCommandsForKeyTest
     {
         Gen<CheckedCommands.Messages> firstMessageGen = Gens.enums().all(CheckedCommands.Messages.class);
         return rs -> {
+            boolean isExclusiveSyncPoint = txnId.kind() == Txn.Kind.ExclusiveSyncPoint;
+            boolean isBootstrap = isExclusiveSyncPoint && rs.nextBoolean();
             List<NamedCommandTransformation> ts = new ArrayList<>();
             if (rs.decide(0.02))
             {
                 ts.add(new NamedCommandTransformation("Register Historical", cs -> {
                     Deps.Builder builder = Deps.builder();
-                    txn.keys().forEach(s -> builder.add(s, txnId));
+                    // only allowed IFF the store doesn't manage that epoch
+                    txn.keys().forEach(s -> builder.add(s, txnId.withEpoch(txnId.epoch() - 1)));
                     cs.registerHistoricalTransactions(builder.build());
-                    return ok(null);
+                    return done(null);
                 }));
+                return ts;
             }
             FullRoute<?> fullRoute = txn.keys().domain() == Routable.Domain.Key ?
                                      txn.keys().toRoute(((Keys) txn.keys()).get(0).toUnseekable()) :
@@ -377,8 +373,18 @@ class SafeCommandsForKeyTest
                     partial = PreAccept.calculatePartialDeps(safeStore, txnId, txn.keys(), txnId, txnId, safeStore.ranges().allAt(txnId));
                     depsRef.set(partial);
                 }
+                // simulate load by reloading the commands
+                for (TxnId id : partial.txnIds())
+                    safeStore.get(id);
                 return partial;
             };
+            if (isExclusiveSyncPoint && isBootstrap)
+            {
+                ts.add(new NamedCommandTransformation("markBootstraping", cs -> {
+                    cs.commandStore().markBootstrapping(cs, txnId, (Ranges) txn.keys());
+                    return ok(cs.get(txnId).current());
+                }));
+            }
             switch (firstMessageGen.next(rs))
             {
                 case PreAccept:
@@ -442,11 +448,21 @@ class SafeCommandsForKeyTest
                         Result result = txn.result(txnId, txnId, data);
                         Writes writes = txn.execute(txnId, txnId, data);
                         CheckedCommands.apply(cs, txnId, fullRoute, fullRoute.homeKey(), txnId, partialDeps, partialTxn, writes, result);
-                        return done(cs.get(txnId).current());
+                        if (!(isExclusiveSyncPoint && !isBootstrap))
+                            return done(cs.get(txnId).current());
+                        else
+                            return ok(cs.get(txnId).current());
                     }));
                     break;
                 default:
                     throw new UnsupportedOperationException();
+            }
+            if (isExclusiveSyncPoint && !isBootstrap)
+            {
+                ts.add(new NamedCommandTransformation("markSharedDurable", cs -> {
+                    cs.commandStore().markShardDurable(cs, txnId, (Ranges) txn.keys());
+                    return done(cs.get(txnId).current());
+                }));
             }
             return ts;
         };
