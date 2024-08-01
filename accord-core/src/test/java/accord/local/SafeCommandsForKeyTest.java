@@ -19,6 +19,7 @@
 package accord.local;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 import javax.annotation.Nullable;
 
 import com.google.common.collect.Iterators;
@@ -64,6 +66,8 @@ import accord.primitives.Timestamp;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
 import accord.primitives.Writes;
+import accord.topology.Shard;
+import accord.topology.Topology;
 import accord.utils.AccordGens;
 import accord.utils.Gen;
 import accord.utils.Gens;
@@ -102,9 +106,18 @@ class SafeCommandsForKeyTest
 
     private static Gen<Property.Command<State, Void, ?>> createTxn(State state)
     {
+        TxnGenBuilder txnBuilder = new TxnGenBuilder();
+        txnBuilder.mapKeys(keys -> keys.with(state.key));
+        txnBuilder.mapRanges(ranges -> {
+            if (ranges.contains(state.key))
+                return ranges;
+            return ranges.with(Ranges.of(state.key.asRange()));
+        });
+        Gen<Txn> txnGen = txnBuilder.build();
         return rs -> {
-            TxnId id = state.idGen.next(rs);
-            CommandUpdator updator = new CommandUpdator(id, Iterators.peekingIterator(transformationsGen(id, state.key).next(rs).iterator()));
+            Txn txn = txnGen.next(rs);
+            TxnId id = state.nextTxnId(txn);
+            CommandUpdator updator = new CommandUpdator(id, Iterators.peekingIterator(transformationsGen(id, txn).next(rs).iterator()));
             return Property.multistep(addTxn(updator), commandStep(updator));
         };
     }
@@ -151,25 +164,31 @@ class SafeCommandsForKeyTest
     private static class State
     {
         private static final Node.Id NODE = new Node.Id(42);
+        private static final Topology TOPOLOGY = new Topology(1, new Shard(IntKey.range(Integer.MIN_VALUE, Integer.MAX_VALUE),
+                                                                           Collections.singletonList(NODE),
+                                                                           Collections.singleton(NODE)));
         private final Map<TxnId, CommandUpdator> pendingTxns = new HashMap<>();
         private final SafeCommandStore safeStore;
         private final Key key;
         private final InMemorySafeCommandsForKey cfk;
         private final AtomicLong time = new AtomicLong(0);
-        private final Gen<TxnId> idGen = rs -> {
-            long now = time.get();
-            long jitter = rs.nextInt(0, 1024);
-            long hlc = now + 1 + jitter;
-            time.set(hlc);
-            Routable.Domain domain = TxnGenBuilder.DOMAIN_GEN.next(rs);
-            Txn.Kind kind = (domain == Routable.Domain.Key ? TxnGenBuilder.KEY_KINDS : TxnGenBuilder.RANGE_KINDS).next(rs);
-            return new TxnId(1, hlc, kind, domain, NODE);
-        };
+        private final LongSupplier clock;
 
         State(RandomSource rs)
         {
             key = AccordGens.intKeys().next(rs);
             cfk = new InMemorySafeCommandsForKey(key, new InMemoryCommandStore.GlobalCommandsForKey(key));
+            cfk.initialize();
+            {
+                RandomSource fork = rs.fork();
+                clock =  () -> {
+                long now = time.get();
+                long jitter = fork.nextInt(0, 1024);
+                long hlc = now + 1 + jitter;
+                time.set(hlc);
+                return hlc;
+            };
+            }
             NodeTimeService timeService = new NodeTimeService()
             {
                 @Override
@@ -205,7 +224,11 @@ class SafeCommandsForKeyTest
             ProgressLog.Factory factory = ignore -> Mockito.mock(ProgressLog.class);
             CommandStore.EpochUpdateHolder epochHolder = new CommandStore.EpochUpdateHolder();
             Ranges ranges = Ranges.of(IntKey.range(Integer.MIN_VALUE, Integer.MAX_VALUE));
-            InMemoryCommandStore store = new InMemoryCommandStore(0, timeService, new TestAgent.RethrowAgent(), new ListStore(State.NODE), factory, epochHolder)
+            ListStore listStore = new ListStore(State.NODE);
+            Node node = Mockito.mock(Node.class);
+            Mockito.when(node.id()).thenReturn(NODE);
+            listStore.onTopologyUpdate(node, TOPOLOGY);
+            InMemoryCommandStore store = new InMemoryCommandStore(0, timeService, new TestAgent.RethrowAgent(), listStore, factory, epochHolder)
             {
                 @Override
                 public boolean inStore()
@@ -290,6 +313,8 @@ class SafeCommandsForKeyTest
                     {
                         cfk = key.equals(State.this.key)? State.this.cfk : new InMemorySafeCommandsForKey(key, new InMemoryCommandStore.GlobalCommandsForKey(key));
                         addCommandsForKeyInternal(cfk);
+                        if (cfk.isUnset())
+                            cfk.initialize();
                     }
                     return cfk;
                 }
@@ -302,6 +327,8 @@ class SafeCommandsForKeyTest
                     {
                         cfk = new InMemorySafeTimestampsForKey(key, new InMemoryCommandStore.GlobalTimestampsForKey(key));
                         addTimestampsForKeyInternal(cfk);
+                        if (cfk.isUnset())
+                            cfk.initialize();
                     }
                     return cfk;
                 }
@@ -313,9 +340,14 @@ class SafeCommandsForKeyTest
                 }
             };
         }
+
+        TxnId nextTxnId(Txn txn)
+        {
+            return new TxnId(1, clock.getAsLong(), txn.kind(), txn.keys().domain(), NODE);
+        }
     }
 
-    private static Gen<List<SimpleCommandTransformation>> transformationsGen(TxnId txnId, Key key)
+    private static Gen<List<SimpleCommandTransformation>> transformationsGen(TxnId txnId, Txn txn)
     {
         Gen<CheckedCommands.Messages> firstMessageGen = Gens.enums().all(CheckedCommands.Messages.class);
         return rs -> {
@@ -328,14 +360,6 @@ class SafeCommandsForKeyTest
                     return ok(null);
                 }));
             }
-            TxnGenBuilder txnBuilder = new TxnGenBuilder();
-            txnBuilder.mapKeys(keys -> keys.with(key));
-            txnBuilder.mapRanges(ranges -> {
-                if (ranges.contains(key))
-                    return ranges;
-                return ranges.with(Ranges.of(key.asRange()));
-            });
-            Txn txn = txnBuilder.forTxnId(txnId).build().next(rs);
             FullRoute<?> fullRoute = txn.keys().domain() == Routable.Domain.Key ?
                                      txn.keys().toRoute(((Keys) txn.keys()).get(0).toUnseekable()) :
                                      txn.keys().toRoute(((Ranges) txn.keys()).get(0).end());
@@ -376,7 +400,19 @@ class SafeCommandsForKeyTest
                                     data = null;
                                     break;
                                 default:
+                                {
                                     data = (ListData) AsyncChains.getBlocking(txn.read(cs, txnId, Ranges.EMPTY));
+                                    if (data == null)
+                                        data = new ListData();
+                                    // this test does not require that writes must first do a read... but ListUpdate does, we still need reads to exist...
+                                    if (txn.update() != null)
+                                    {
+                                        Keys keys = (Keys) txn.update().keys();
+                                        keys = keys.subtract((Keys) txn.read().keys());
+                                        for (Key key : keys)
+                                            data.put(key, ((ListStore) cs.dataStore()).get(Ranges.EMPTY, txnId, key));
+                                    }
+                                }
                             }
                         }
                         catch (InterruptedException e)
@@ -423,13 +459,6 @@ class SafeCommandsForKeyTest
         TxnGenBuilder mapRanges(Function<? super Ranges, ? extends Ranges> fn)
         {
             rangesGen = rangesGen.map(fn);
-            return this;
-        }
-
-        TxnGenBuilder forTxnId(TxnId id)
-        {
-            domainGen = ignore -> id.domain();
-            keyKinds = rangeKinds = ignore -> id.kind();
             return this;
         }
 
