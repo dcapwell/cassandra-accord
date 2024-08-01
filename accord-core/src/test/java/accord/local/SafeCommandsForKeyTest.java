@@ -27,11 +27,11 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
-import javax.annotation.Nullable;
 
 import com.google.common.collect.Iterators;
 import com.google.common.collect.PeekingIterator;
@@ -52,8 +52,9 @@ import accord.impl.list.ListQuery;
 import accord.impl.list.ListRead;
 import accord.impl.list.ListStore;
 import accord.impl.list.ListUpdate;
+import accord.local.CommandTransformation.NamedCommandTransformation;
+import accord.messages.PreAccept;
 import accord.primitives.Ballot;
-import accord.primitives.Deps;
 import accord.primitives.FullRoute;
 import accord.primitives.Keys;
 import accord.primitives.PartialDeps;
@@ -82,8 +83,9 @@ import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 import org.assertj.core.api.Assertions;
 import org.mockito.Mockito;
 
-import static accord.local.SafeCommandsForKeyTest.CommandTransformation.Result.done;
-import static accord.local.SafeCommandsForKeyTest.CommandTransformation.Result.ok;
+import static accord.local.CommandTransformation.Result.done;
+import static accord.local.CommandTransformation.Result.ok;
+import static accord.primitives.Txn.Kind.Kinds.AnyGloballyVisible;
 import static accord.utils.Property.stateful;
 
 class SafeCommandsForKeyTest
@@ -96,11 +98,7 @@ class SafeCommandsForKeyTest
     private static Property.Command<State, Void, ?> commandStep(CommandUpdator updator)
     {
         return new SimpleCommand<>("Next Step for " + updator.txnId + ": " + updator.name(), state -> {
-            Assertions.assertThat(updator.transformations.hasNext()).isTrue();
-            CommandTransformation next = updator.transformations.next();
-            CommandTransformation.Result result = next.transform(state.safeStore, state.cfk, updator.current);
-            updator.current = result.command;
-            if (result.status == CommandTransformation.Status.Done)
+            if (!updator.processNext(state.safeStore))
                 state.pendingTxns.remove(updator.txnId);
         });
     }
@@ -183,13 +181,13 @@ class SafeCommandsForKeyTest
             cfk.initialize();
             {
                 RandomSource fork = rs.fork();
-                clock =  () -> {
-                long now = time.get();
-                long jitter = fork.nextInt(0, 1024);
-                long hlc = now + 1 + jitter;
-                time.set(hlc);
-                return hlc;
-            };
+                clock = () -> {
+                    long now = time.get();
+                    long jitter = fork.nextInt(0, 1024);
+                    long hlc = now + 1 + jitter;
+                    time.set(hlc);
+                    return hlc;
+                };
             }
             NodeTimeService timeService = new NodeTimeService()
             {
@@ -301,7 +299,7 @@ class SafeCommandsForKeyTest
                     InMemorySafeCommand cmd = super.getCommandInternal(txnId);
                     if (cmd == null)
                     {
-                        cmd = new InMemorySafeCommand(txnId, new InMemoryCommandStore.GlobalCommand(txnId));
+                        cmd = new InMemorySafeCommand(txnId, store.command(txnId));
                         addCommandInternal(cmd);
                     }
                     return cmd;
@@ -313,7 +311,7 @@ class SafeCommandsForKeyTest
                     InMemorySafeCommandsForKey cfk = super.getCommandsForKeyInternal(key);
                     if (cfk == null)
                     {
-                        cfk = key.equals(State.this.key)? State.this.cfk : new InMemorySafeCommandsForKey(key, new InMemoryCommandStore.GlobalCommandsForKey(key));
+                        cfk = key.equals(State.this.key) ? State.this.cfk : new InMemorySafeCommandsForKey(key, store.commandsForKey(key));
                         addCommandsForKeyInternal(cfk);
                         if (cfk.isUnset())
                             cfk.initialize();
@@ -327,7 +325,7 @@ class SafeCommandsForKeyTest
                     InMemorySafeTimestampsForKey cfk = super.getTimestampsForKeyInternal(key);
                     if (cfk == null)
                     {
-                        cfk = new InMemorySafeTimestampsForKey(key, new InMemoryCommandStore.GlobalTimestampsForKey(key));
+                        cfk = new InMemorySafeTimestampsForKey(key, store.timestampsForKey(key));
                         addTimestampsForKeyInternal(cfk);
                         if (cfk.isUnset())
                             cfk.initialize();
@@ -349,49 +347,75 @@ class SafeCommandsForKeyTest
         }
     }
 
-    private static Gen<List<SimpleCommandTransformation>> transformationsGen(TxnId txnId, Txn txn)
+    private static Gen<List<NamedCommandTransformation>> transformationsGen(TxnId txnId, Txn txn)
     {
         Gen<CheckedCommands.Messages> firstMessageGen = Gens.enums().all(CheckedCommands.Messages.class);
+        Function<SafeCommandStore, Keys> keysForCFK = safeStore -> {
+            // txn can be key or range txn, where they have slightly different semantics
+            List<Key> keys = safeStore.mapReduceFull(txn.keys(), safeStore.ranges().allAt(txnId), txnId,
+                                                     AnyGloballyVisible,
+                                                     SafeCommandStore.TestStartedAt.ANY,
+                                                     SafeCommandStore.TestDep.ANY_DEPS,
+                                                     SafeCommandStore.TestStatus.ANY_STATUS,
+                                                     (ignore, keyOrRange, id, executeAt, accum) -> {
+                                                         if (keyOrRange.domain().isKey())
+                                                             accum.add(keyOrRange.asKey());
+                                                         return accum;
+                                                     }, null, new ArrayList<>());
+            return Keys.of(keys.toArray(Key[]::new));
+        };
         return rs -> {
-            List<SimpleCommandTransformation> ts = new ArrayList<>();
+            List<NamedCommandTransformation> ts = new ArrayList<>();
             if (rs.decide(0.02))
             {
-                ts.add(new SimpleCommandTransformation("Register Historical", (cs, cfk, ignore) -> {
-                    // adding historic command
-                    cfk.registerHistorical(cs, txnId);
+                ts.add(new NamedCommandTransformation("Register Historical", cs -> {
+                    for (Key key : keysForCFK.apply(cs))
+                    {
+                        // adding historic command
+                        cs.get(key).registerHistorical(cs, txnId);
+                    }
                     return ok(null);
                 }));
             }
             FullRoute<?> fullRoute = txn.keys().domain() == Routable.Domain.Key ?
                                      txn.keys().toRoute(((Keys) txn.keys()).get(0).toUnseekable()) :
                                      txn.keys().toRoute(((Ranges) txn.keys()).get(0).end());
-            Deps deps = Deps.NONE;
+            AtomicReference<PartialDeps> depsRef = new AtomicReference<>();
+            Function<SafeCommandStore, PartialDeps> getDeps = safeStore -> {
+                PartialDeps partial = depsRef.get();
+                if (partial == null)
+                {
+                    partial = PreAccept.calculatePartialDeps(safeStore, txnId, txn.keys(), txnId, txnId, safeStore.ranges().allAt(txnId));
+                    depsRef.set(partial);
+                }
+                return partial;
+            };
             switch (firstMessageGen.next(rs))
             {
                 case PreAccept:
-                    ts.add(new SimpleCommandTransformation("PreAccept", (cs, cfk, cmd) -> {
+                    ts.add(new NamedCommandTransformation("PreAccept", cs -> {
                         PartialTxn partialTxn = txn.slice(cs.ranges().currentRanges(), true);
                         CheckedCommands.preaccept(cs, txnId, partialTxn, fullRoute, fullRoute.homeKey());
                         return ok(cs.get(txnId).current());
                     }));
                 case Accept:
-                    ts.add(new SimpleCommandTransformation("Accept", (cs, cfk, cmd) -> {
+                    ts.add(new NamedCommandTransformation("Accept", cs -> {
                         PartialRoute<?> route = fullRoute.slice(cs.ranges().currentRanges());
-                        PartialDeps partialDeps = deps.slice(cs.ranges().currentRanges());
+                        PartialDeps partialDeps = getDeps.apply(cs);
                         CheckedCommands.accept(cs, txnId, Ballot.ZERO, route, txn.keys(), fullRoute.homeKey(), txnId, partialDeps);
                         return ok(cs.get(txnId).current());
                     }));
                 case Commit:
-                    ts.add(new SimpleCommandTransformation("Commit", (cs, cfk, cmd) -> {
+                    ts.add(new NamedCommandTransformation("Commit", cs -> {
                         PartialTxn partialTxn = txn.slice(cs.ranges().currentRanges(), true);
-                        PartialDeps partialDeps = deps.slice(cs.ranges().currentRanges());
+                        PartialDeps partialDeps = getDeps.apply(cs);
                         CheckedCommands.commit(cs, SaveStatus.Stable, Ballot.ZERO, txnId, fullRoute, fullRoute.homeKey(), partialTxn, txnId, partialDeps);
                         return ok(cs.get(txnId).current());
                     }));
                 case Apply:
-                    ts.add(new SimpleCommandTransformation("Apply", (cs, cfk, cmd) -> {
+                    ts.add(new NamedCommandTransformation("Apply", cs -> {
                         PartialTxn partialTxn = txn.slice(cs.ranges().currentRanges(), true);
-                        PartialDeps partialDeps = deps.slice(cs.ranges().currentRanges());
+                        PartialDeps partialDeps = getDeps.apply(cs);
                         ListData data;
                         try
                         {
@@ -517,61 +541,13 @@ class SafeCommandsForKeyTest
         }
     }
 
-    interface CommandTransformation
-    {
-        enum Status { Ok, Done}
-        class Result
-        {
-            final Status status;
-            @Nullable
-            final Command command;
-
-            public Result(Status status, @Nullable Command command)
-            {
-                this.status = status;
-                this.command = command;
-            }
-
-            public static Result ok(@Nullable Command command)
-            {
-                return new Result(Status.Ok, command);
-            }
-
-            public static Result done(@Nullable Command command)
-            {
-                return new Result(Status.Done, command);
-            }
-        }
-        Result transform(SafeCommandStore cs, SafeCommandsForKey cfk, @Nullable Command current);
-    }
-
-    private static class SimpleCommandTransformation implements CommandTransformation
-    {
-        private final String name;
-        private final CommandTransformation delegate;
-
-        private SimpleCommandTransformation(String name, CommandTransformation delegate)
-        {
-            this.name = name;
-            this.delegate = delegate;
-        }
-
-        @Override
-        public Result transform(SafeCommandStore cs, SafeCommandsForKey cfk, @Nullable Command current)
-        {
-            return delegate.transform(cs, cfk, current);
-        }
-    }
-
     private static class CommandUpdator
     {
         final TxnId txnId;
         final Txn txn;
-        final PeekingIterator<SimpleCommandTransformation> transformations;
-        @Nullable
-        Command current = null;
+        final PeekingIterator<NamedCommandTransformation> transformations;
 
-        private CommandUpdator(TxnId txnId, Txn txn, PeekingIterator<SimpleCommandTransformation> transformations)
+        private CommandUpdator(TxnId txnId, Txn txn, PeekingIterator<NamedCommandTransformation> transformations)
         {
             this.txnId = txnId;
             this.txn = txn;
@@ -581,6 +557,22 @@ class SafeCommandsForKeyTest
         String name()
         {
             return transformations.peek().name;
+        }
+
+        boolean processNext(SafeCommandStore safeStore)
+        {
+            Assertions.assertThat(transformations.hasNext()).isTrue();
+            NamedCommandTransformation next = transformations.next();
+            CommandTransformation.Result result = next.transform(safeStore);
+            switch (result.status)
+            {
+                case Ok:
+                    return true;
+                case Done:
+                    return false;
+                default:
+                    throw new UnsupportedOperationException(result.status.name());
+            }
         }
     }
 }

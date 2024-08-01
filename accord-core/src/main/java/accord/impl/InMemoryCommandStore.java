@@ -528,6 +528,7 @@ public abstract class InMemoryCommandStore extends CommandStore
 
         RangeCommand(GlobalCommand command)
         {
+            Invariants.checkArgument(command != null, "Attempted to create a range command from an null global reference!");
             this.command = command;
         }
 
