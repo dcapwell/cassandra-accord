@@ -51,6 +51,7 @@ import accord.impl.list.ListStore;
 import accord.local.CommandTransformation.NamedCommandTransformation;
 import accord.messages.PreAccept;
 import accord.primitives.Ballot;
+import accord.primitives.Deps;
 import accord.primitives.FullRoute;
 import accord.primitives.Keys;
 import accord.primitives.PartialDeps;
@@ -80,7 +81,6 @@ import org.mockito.Mockito;
 
 import static accord.local.CommandTransformation.Result.done;
 import static accord.local.CommandTransformation.Result.ok;
-import static accord.primitives.Txn.Kind.Kinds.AnyGloballyVisible;
 import static accord.utils.Property.stateful;
 
 class SafeCommandsForKeyTest
@@ -111,7 +111,7 @@ class SafeCommandsForKeyTest
     @Test
     void test()
     {
-        stateful().withSeed(-4825193645054929911L).check(new Commands<State, Void>()
+        stateful().check(new Commands<State, Void>()
         {
             @Override
             public Gen<State> genInitialState()
@@ -324,7 +324,7 @@ class SafeCommandsForKeyTest
                     return true;
                 }
             };
-            TxnGenBuilder txnBuilder = new TxnGenBuilder();
+            TxnGenBuilder txnBuilder = new TxnGenBuilder(rs);
             txnBuilder.mapKeys(keys -> keys.with(key));
             txnBuilder.mapRanges(r -> {
                 if (r.contains(key))
@@ -343,30 +343,14 @@ class SafeCommandsForKeyTest
     private static Gen<List<NamedCommandTransformation>> transformationsGen(TxnId txnId, Txn txn)
     {
         Gen<CheckedCommands.Messages> firstMessageGen = Gens.enums().all(CheckedCommands.Messages.class);
-        Function<SafeCommandStore, Keys> keysForCFK = safeStore -> {
-            // txn can be key or range txn, where they have slightly different semantics
-            List<Key> keys = safeStore.mapReduceFull(txn.keys(), safeStore.ranges().allAt(txnId), txnId,
-                                                     AnyGloballyVisible,
-                                                     SafeCommandStore.TestStartedAt.ANY,
-                                                     SafeCommandStore.TestDep.ANY_DEPS,
-                                                     SafeCommandStore.TestStatus.ANY_STATUS,
-                                                     (ignore, keyOrRange, id, executeAt, accum) -> {
-                                                         if (keyOrRange.domain().isKey())
-                                                             accum.add(keyOrRange.asKey());
-                                                         return accum;
-                                                     }, null, new ArrayList<>());
-            return Keys.of(keys.toArray(Key[]::new));
-        };
         return rs -> {
             List<NamedCommandTransformation> ts = new ArrayList<>();
             if (rs.decide(0.02))
             {
                 ts.add(new NamedCommandTransformation("Register Historical", cs -> {
-                    for (Key key : keysForCFK.apply(cs))
-                    {
-                        // adding historic command
-                        cs.get(key).registerHistorical(cs, txnId);
-                    }
+                    Deps.Builder builder = Deps.builder();
+                    txn.keys().forEach(s -> builder.add(s, txnId));
+                    cs.registerHistoricalTransactions(builder.build());
                     return ok(null);
                 }));
             }
