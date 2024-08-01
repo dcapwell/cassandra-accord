@@ -30,6 +30,7 @@ import accord.messages.PreAccept.PreAcceptOk;
 import accord.primitives.Ballot;
 import accord.primitives.Deps;
 import accord.primitives.FullRoute;
+import accord.primitives.Ranges;
 import accord.primitives.Seekables;
 import accord.primitives.SyncPoint;
 import accord.primitives.Timestamp;
@@ -68,12 +69,12 @@ public class CoordinateSyncPoint<S extends Seekables<?, ?>> extends CoordinatePr
         this.adapter = adapter;
     }
 
-    public static <S extends Seekables<?, ?>> AsyncResult<SyncPoint<S>> exclusive(Node node, S keysOrRanges)
+    public static AsyncResult<SyncPoint<Ranges>> exclusive(Node node, Ranges keysOrRanges)
     {
         return coordinate(node, ExclusiveSyncPoint, keysOrRanges, Adapters.exclusiveSyncPoint());
     }
 
-    public static <S extends Seekables<?, ?>> AsyncResult<SyncPoint<S>> exclusive(Node node, TxnId txnId, S keysOrRanges)
+    public static AsyncResult<SyncPoint<Ranges>> exclusive(Node node, TxnId txnId, Ranges keysOrRanges)
     {
         return coordinate(node, txnId, keysOrRanges, Adapters.exclusiveSyncPoint());
     }
