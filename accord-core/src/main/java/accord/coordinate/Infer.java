@@ -53,6 +53,7 @@ import static accord.local.Status.PreCommitted;
 import static accord.primitives.Route.castToRoute;
 import static accord.primitives.Route.isRoute;
 
+// TODO (required): dedicated randomised testing of all inferences
 public class Infer
 {
     public enum InvalidIfNot
