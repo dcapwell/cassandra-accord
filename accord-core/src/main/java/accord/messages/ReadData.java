@@ -36,7 +36,6 @@ import accord.primitives.EpochSupplier;
 import accord.primitives.PartialTxn;
 import accord.primitives.Participants;
 import accord.primitives.Ranges;
-import accord.primitives.Routables;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
@@ -193,6 +192,8 @@ public abstract class ReadData extends AbstractEpochRequest<ReadData.CommitOrRea
                 waitingOn.set(safeStore.commandStore().id());
                 ++waitingOnCount;
                 safeCommand.addListener(this);
+                // TODO (expected): should we invoke waiting directly? We depend on NotifyWaitingOn to make progress, and it will call this.
+                //  Though we might get PreApplied info earlier.
                 safeStore.progressLog().waiting(safeCommand, executeOn().min.execution, null, readScope);
                 beginWaiting(safeStore, false);
                 return status.compareTo(SaveStatus.Stable) >= 0 ? null : Insufficient;

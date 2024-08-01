@@ -435,6 +435,11 @@ public class ReducingIntervalMap<K extends Comparable<? super K>, V>
             this.values = new ArrayList<>(capacity + 1);
         }
 
+        public boolean isEmpty()
+        {
+            return values.isEmpty();
+        }
+
         /**
          * null is a valid value to represent no knowledge, and is the *expected* final value, representing
          * the bound of our knowledge (any higher key will find no associated information)

@@ -58,14 +58,6 @@ public enum Cleanup
     }
 
     /**
-     * Durability has been achieved globally across all keys/ranges that make this txnId's metadata safe to purge
-     */
-    public static boolean isSafeToCleanup(DurableBefore durableBefore, TxnId txnId)
-    {
-        return durableBefore.min(txnId) == UniversalOrInvalidated;
-    }
-
-    /**
      * Durability has been achieved for the specific keys associated with this txnId that makes its metadata safe to purge
      */
     public static boolean isSafeToCleanup(DurableBefore durableBefore, TxnId txnId, Unseekables<?> participants)
