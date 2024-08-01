@@ -59,6 +59,7 @@ import accord.primitives.PartialRoute;
 import accord.primitives.PartialTxn;
 import accord.primitives.Ranges;
 import accord.primitives.Routable;
+import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
 import accord.primitives.TxnGenBuilder;
@@ -111,7 +112,7 @@ class SafeCommandsForKeyTest
     @Test
     void test()
     {
-        stateful().check(new Commands<State, Void>()
+        stateful().withSeed(-4825193645054929911L).check(new Commands<State, Void>()
         {
             @Override
             public Gen<State> genInitialState()
@@ -130,7 +131,21 @@ class SafeCommandsForKeyTest
             {
                 if (state.pendingTxns.isEmpty())
                     return createTxn(state);
+
+                //Rules:
+                // CFK.manages -> Key + Read/Write/SyncPoint
+                // CFK.managesExecution -> Key + Read/Write
+                // SafeCFK.registerUnmanaged -> Range + Read/SyncPoint/ExclusiveSyncPoint
+                // SafeCFK.registerHistorical -> Key + Read/Write/SyncPoint
                 return rs -> {
+                    CommandStore store = state.safeStore.commandStore();
+                    RedundantBefore rb = store.redundantBefore();
+                    RedundantBefore.Entry status = rb.foldl(RedundantBefore.Entry::reduce);
+                    if (!status.locallyAppliedOrInvalidatedBefore.equals(TxnId.NONE))
+                    {
+                        Ranges ranges = (Ranges) state.safeStore.get(status.locallyAppliedOrInvalidatedBefore).current().keysOrRanges();
+                        store.setRedundantBefore(RedundantBefore.create(ranges, Long.MIN_VALUE, Long.MAX_VALUE, status.locallyAppliedOrInvalidatedBefore, status.locallyAppliedOrInvalidatedBefore, TxnId.NONE));
+                    }
                     // pick a txn to move forward
                     TxnId id = rs.pickUnorderedSet(state.pendingTxns.keySet());
                     CommandUpdator update = state.pendingTxns.get(id);
@@ -138,13 +153,10 @@ class SafeCommandsForKeyTest
                 };
             }
         });
-        // public void update(SafeCommandStore safeStore, Command nextCommand)
-        // public void registerHistorical(SafeCommandStore safeStore, TxnId txnId)
         // public void updateRedundantBefore(SafeCommandStore safeStore, RedundantBefore.Entry redundantBefore)
 
         //TODO
         // void updatePruned(SafeCommandStore safeStore, Command nextCommand, NotifySink notifySink)
-        // void registerUnmanaged(SafeCommandStore safeStore, SafeCommand unmanaged)
     }
 
     private static class State
