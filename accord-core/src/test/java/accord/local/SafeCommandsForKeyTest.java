@@ -46,12 +46,8 @@ import accord.impl.InMemorySafeCommandsForKey;
 import accord.impl.InMemorySafeTimestampsForKey;
 import accord.impl.IntKey;
 import accord.impl.TestAgent;
-import accord.impl.list.ListAgent;
 import accord.impl.list.ListData;
-import accord.impl.list.ListQuery;
-import accord.impl.list.ListRead;
 import accord.impl.list.ListStore;
-import accord.impl.list.ListUpdate;
 import accord.local.CommandTransformation.NamedCommandTransformation;
 import accord.messages.PreAccept;
 import accord.primitives.Ballot;
@@ -62,9 +58,9 @@ import accord.primitives.PartialRoute;
 import accord.primitives.PartialTxn;
 import accord.primitives.Ranges;
 import accord.primitives.Routable;
-import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
+import accord.primitives.TxnGenBuilder;
 import accord.primitives.TxnId;
 import accord.primitives.Writes;
 import accord.topology.Shard;
@@ -72,7 +68,6 @@ import accord.topology.Topology;
 import accord.utils.AccordGens;
 import accord.utils.Gen;
 import accord.utils.Gens;
-import accord.utils.Invariants;
 import accord.utils.Property;
 import accord.utils.Property.Commands;
 import accord.utils.Property.SimpleCommand;
@@ -105,16 +100,8 @@ class SafeCommandsForKeyTest
 
     private static Gen<Property.Command<State, Void, ?>> createTxn(State state)
     {
-        TxnGenBuilder txnBuilder = new TxnGenBuilder();
-        txnBuilder.mapKeys(keys -> keys.with(state.key));
-        txnBuilder.mapRanges(ranges -> {
-            if (ranges.contains(state.key))
-                return ranges;
-            return ranges.with(Ranges.of(state.key.asRange()));
-        });
-        Gen<Txn> txnGen = txnBuilder.build();
         return rs -> {
-            Txn txn = txnGen.next(rs);
+            Txn txn = state.txnGen.next(rs);
             TxnId id = state.nextTxnId(txn);
             CommandUpdator updator = new CommandUpdator(id, txn, Iterators.peekingIterator(transformationsGen(id, txn).next(rs).iterator()));
             return Property.multistep(addTxn(updator), commandStep(updator));
@@ -166,19 +153,17 @@ class SafeCommandsForKeyTest
         private final Map<TxnId, CommandUpdator> pendingTxns = new HashMap<>();
         private final SafeCommandStore safeStore;
         private final Key key;
-        private final InMemorySafeCommandsForKey cfk;
         private final long epoch = 1;
         private final Topology topology = new Topology(epoch, new Shard(IntKey.range(Integer.MIN_VALUE, Integer.MAX_VALUE),
                                                                         Collections.singletonList(NODE),
                                                                         Collections.singleton(NODE)));
         private final AtomicLong time = new AtomicLong(0);
         private final LongSupplier clock;
+        private final Gen<Txn> txnGen;
 
         State(RandomSource rs)
         {
             key = AccordGens.intKeys().next(rs);
-            cfk = new InMemorySafeCommandsForKey(key, new InMemoryCommandStore.GlobalCommandsForKey(key));
-            cfk.initialize();
             {
                 RandomSource fork = rs.fork();
                 clock = () -> {
@@ -311,7 +296,7 @@ class SafeCommandsForKeyTest
                     InMemorySafeCommandsForKey cfk = super.getCommandsForKeyInternal(key);
                     if (cfk == null)
                     {
-                        cfk = key.equals(State.this.key) ? State.this.cfk : new InMemorySafeCommandsForKey(key, store.commandsForKey(key));
+                        cfk = new InMemorySafeCommandsForKey(key, store.commandsForKey(key));
                         addCommandsForKeyInternal(cfk);
                         if (cfk.isUnset())
                             cfk.initialize();
@@ -339,6 +324,14 @@ class SafeCommandsForKeyTest
                     return true;
                 }
             };
+            TxnGenBuilder txnBuilder = new TxnGenBuilder();
+            txnBuilder.mapKeys(keys -> keys.with(key));
+            txnBuilder.mapRanges(r -> {
+                if (r.contains(key))
+                    return r;
+                return r.with(Ranges.of(key.asRange()));
+            });
+            txnGen = txnBuilder.build();
         }
 
         TxnId nextTxnId(Txn txn)
@@ -461,84 +454,6 @@ class SafeCommandsForKeyTest
             }
             return ts;
         };
-    }
-
-    public static class TxnGenBuilder
-    {
-        public static final Gen<Routable.Domain> DOMAIN_GEN = Gens.enums().all(Routable.Domain.class);
-        public static final Gen<Txn.Kind> KEY_KINDS = Gens.pick(Txn.Kind.Write, Txn.Kind.Read, Txn.Kind.SyncPoint, Txn.Kind.ExclusiveSyncPoint);
-        public static final Gen<Txn.Kind> RANGE_KINDS = Gens.pick(Txn.Kind.Read, Txn.Kind.SyncPoint, Txn.Kind.ExclusiveSyncPoint);
-
-        ListAgent agent = Mockito.mock(ListAgent.class, Mockito.CALLS_REAL_METHODS);
-        Gen<Routable.Domain> domainGen = DOMAIN_GEN;
-        Gen<Keys> keysGen = AccordGens.keys(AccordGens.intKeys());
-        Gen<Txn.Kind> keyKinds = KEY_KINDS;
-        Gen<Ranges> rangesGen = AccordGens.ranges(Gens.ints().between(1, 5), AccordGens.intRoutingKey(), (ignore, a, b) -> IntKey.range(a, b));
-        Gen<Txn.Kind> rangeKinds = RANGE_KINDS;
-
-        TxnGenBuilder mapKeys(Function<? super Keys, ? extends Keys> fn)
-        {
-            keysGen = keysGen.map(fn);
-            return this;
-        }
-
-        TxnGenBuilder mapRanges(Function<? super Ranges, ? extends Ranges> fn)
-        {
-            rangesGen = rangesGen.map(fn);
-            return this;
-        }
-
-        Gen<Txn> build()
-        {
-            return rs -> {
-                Seekables<?, ?> keysOrRanges;
-                Txn.Kind kind;
-                switch (domainGen.next(rs))
-                {
-                    case Key:
-                    {
-                        keysOrRanges = keysGen.next(rs);
-                        kind = keyKinds.next(rs);
-                    }
-                    break;
-                    case Range:
-                    {
-                        keysOrRanges = rangesGen.next(rs);
-                        kind = rangeKinds.next(rs);
-                    }
-                    break;
-                    default:
-                        throw new UnsupportedOperationException();
-                }
-                switch (kind)
-                {
-                    case Read:
-                    {
-                        ListRead read = new ListRead(Function.identity(), false, keysOrRanges, keysOrRanges);
-                        ListQuery query = new ListQuery(null, 42, false);
-                        return new Txn.InMemory(kind, keysOrRanges, read, query, null);
-                    }
-                    case Write:
-                    {
-                        Invariants.checkArgument(keysOrRanges.domain() == Routable.Domain.Key, "Only key txn may do writes");
-                        Seekables<?, ?> readKeysOrRanges = rs.nextBoolean() ? keysOrRanges : Keys.EMPTY;
-                        ListRead read = new ListRead(Function.identity(), false, readKeysOrRanges, readKeysOrRanges);
-                        ListQuery query = new ListQuery(null, 42, false);
-                        ListUpdate update = new ListUpdate(Function.identity());
-                        for (Key key : (Keys) keysOrRanges)
-                            update.put(key, 1);
-                        return new Txn.InMemory(kind, keysOrRanges, read, query, update);
-                    }
-                    case ExclusiveSyncPoint:
-                    case SyncPoint:
-                    {
-                        return agent.emptyTxn(kind, keysOrRanges);
-                    }
-                    default:
-                        throw new UnsupportedOperationException(kind.name());
-                }
-            };
-        }
     }
 
     private static class CommandUpdator
