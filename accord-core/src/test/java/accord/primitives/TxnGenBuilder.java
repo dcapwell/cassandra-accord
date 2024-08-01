@@ -40,7 +40,7 @@ public class TxnGenBuilder
 {
     public static final Gen<Routable.Domain> DOMAIN_GEN = Gens.enums().all(Routable.Domain.class);
     public static final Gen<Gen<Routable.Domain>> DOMAIN_DISTRIBUTION = Gens.enums().allMixedDistribution(Routable.Domain.class);
-    public static final List<Txn.Kind> ALLOWED_KEY_KINDS = ImmutableList.of(Txn.Kind.Write, Txn.Kind.Read, Txn.Kind.SyncPoint, Txn.Kind.ExclusiveSyncPoint);
+    public static final List<Txn.Kind> ALLOWED_KEY_KINDS = ImmutableList.of(Txn.Kind.Write, Txn.Kind.Read, Txn.Kind.SyncPoint);
     public static final Gen<Txn.Kind> KEY_KINDS = Gens.pick(ALLOWED_KEY_KINDS);
     public static final Gen<Gen<Txn.Kind>> KEY_KINDS_DISTRIBUTION = Gens.mixedDistribution(ALLOWED_KEY_KINDS);
     public static final List<Txn.Kind> ALLOWED_RANGE_KINDS = ImmutableList.of(Txn.Kind.Read, Txn.Kind.SyncPoint, Txn.Kind.ExclusiveSyncPoint);

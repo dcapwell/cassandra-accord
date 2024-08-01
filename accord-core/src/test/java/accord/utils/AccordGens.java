@@ -278,6 +278,9 @@ public class AccordGens
 
     public static Gen<KeyDeps> directKeyDeps(Gen<? extends Key> keyGen)
     {
+        //Maintance Note: KX is not actually supported and is blocked in coordination layer, but it is not desired to spread
+        // this assumption throughtout the code base in case that is desired to change in the future, so allow it here
+        // only for testing
         Gen<Txn.Kind> kinds = Gens.pick(Txn.Kind.SyncPoint, Txn.Kind.ExclusiveSyncPoint);
         return keyDeps(keyGen, txnIds(kinds, ignore -> Routable.Domain.Key));
     }
