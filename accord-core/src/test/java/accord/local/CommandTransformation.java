@@ -22,7 +22,7 @@ import javax.annotation.Nullable;
 
 public interface CommandTransformation
 {
-    enum Status {Ok, Done}
+    enum Status {Ok, Done, Ignore}
 
     class Result
     {
@@ -45,6 +45,11 @@ public interface CommandTransformation
         {
             return new Result(Status.Done, command);
         }
+
+        public static Result ignore(@Nullable Command command)
+        {
+            return new Result(Status.Ignore, command);
+        }
     }
     
     Result transform(SafeCommandStore cs);
@@ -64,6 +69,12 @@ public interface CommandTransformation
         public Result transform(SafeCommandStore cs)
         {
             return delegate.transform(cs);
+        }
+
+        @Override
+        public String toString()
+        {
+            return name;
         }
     }
 }

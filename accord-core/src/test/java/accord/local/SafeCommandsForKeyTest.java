@@ -20,9 +20,12 @@ package accord.local;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -32,6 +35,9 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import javax.annotation.Nullable;
 
 import com.google.common.collect.Iterators;
 import com.google.common.collect.PeekingIterator;
@@ -48,8 +54,10 @@ import accord.impl.IntKey;
 import accord.impl.TestAgent;
 import accord.impl.list.ListData;
 import accord.impl.list.ListStore;
+import accord.impl.list.ListWrite;
 import accord.local.CommandTransformation.NamedCommandTransformation;
 import accord.messages.PreAccept;
+import accord.messages.Propagate;
 import accord.primitives.Ballot;
 import accord.primitives.Deps;
 import accord.primitives.FullRoute;
@@ -57,6 +65,7 @@ import accord.primitives.Keys;
 import accord.primitives.PartialDeps;
 import accord.primitives.PartialRoute;
 import accord.primitives.PartialTxn;
+import accord.primitives.Range;
 import accord.primitives.Ranges;
 import accord.primitives.Routable;
 import accord.primitives.Timestamp;
@@ -69,6 +78,7 @@ import accord.topology.Topology;
 import accord.utils.AccordGens;
 import accord.utils.Gen;
 import accord.utils.Gens;
+import accord.utils.Invariants;
 import accord.utils.Property;
 import accord.utils.Property.Commands;
 import accord.utils.Property.SimpleCommand;
@@ -80,11 +90,15 @@ import org.assertj.core.api.Assertions;
 import org.mockito.Mockito;
 
 import static accord.local.CommandTransformation.Result.done;
+import static accord.local.CommandTransformation.Result.ignore;
 import static accord.local.CommandTransformation.Result.ok;
 import static accord.utils.Property.stateful;
 
 class SafeCommandsForKeyTest
 {
+    private static final List<SaveStatus> FINAL_STATUSES = Stream.of(SaveStatus.values()).filter(s -> s.ordinal() >= SaveStatus.Applied.ordinal()).collect(Collectors.toList());
+    public static final Range FULL_RANGE = IntKey.range(Integer.MIN_VALUE, Integer.MAX_VALUE);
+
     private static Property.Command<State, Void, ?> addTxn(CommandUpdator updator)
     {
         return new SimpleCommand<>("Add Txn " + updator.txnId + "; " + updator.txn, state -> state.pendingTxns.put(updator.txnId, updator));
@@ -103,7 +117,10 @@ class SafeCommandsForKeyTest
         return rs -> {
             Txn txn = state.txnGen.next(rs);
             TxnId id = state.nextTxnId(txn);
-            CommandUpdator updator = new CommandUpdator(id, txn, Iterators.peekingIterator(transformationsGen(id, txn).next(rs).iterator()));
+            boolean historic = rs.decide(0.02);
+            if (historic)
+                id = id.withEpoch(id.epoch() - 1);
+            CommandUpdator updator = new CommandUpdator(id, txn, Iterators.peekingIterator(transformationsGen(id, txn, historic).next(rs).iterator()));
             return Property.multistep(addTxn(updator), commandStep(updator));
         };
     }
@@ -111,7 +128,7 @@ class SafeCommandsForKeyTest
     @Test
     void test()
     {
-        stateful().check(new Commands<State, Void>()
+        stateful().withSeed(-7006818297468705568L).check(new Commands<State, Void>()
         {
             @Override
             public Gen<State> genInitialState()
@@ -128,9 +145,6 @@ class SafeCommandsForKeyTest
             @Override
             public Gen<Property.Command<State, Void, ?>> commands(State state)
             {
-                if (state.pendingTxns.isEmpty())
-                    return createTxn(state);
-
                 //Rules:
                 // CFK.manages -> Key + Read/Write/SyncPoint (called already)
                 // CFK.managesExecution -> Key + Read/Write (called already)
@@ -142,24 +156,76 @@ class SafeCommandsForKeyTest
                 // CommandStore.markShardStale - ???
                 // CommandStore.markExclusiveSyncPointLocallyApplied - RX applied locally (called already)
                 // CommandStore.add|remove - topology change (called already)
-                return rs -> {
-                    // pick a txn to move forward
-                    TxnId id = rs.pickUnorderedSet(state.pendingTxns.keySet());
-                    CommandUpdator update = state.pendingTxns.get(id);
-                    return commandStep(update);
-                };
+                if (state.pendingTxns.isEmpty())
+                    return createTxn(state);
+
+                Order o = pendingOrder(state);
+                Map<Gen<Property.Command<State, Void, ?>>, Integer> possible = new LinkedHashMap<>();
+                if (!o.anyOrder.isEmpty())
+                {
+                    possible.put(rs -> commandStep(state.pendingTxns.get(rs.pick(o.anyOrder))), 1);
+                }
+                if (!o.sequential.isEmpty())
+                {
+                    possible.put(ignore -> commandStep(state.pendingTxns.get(o.sequential.get(0))), 1);
+                }
+                return Gens.oneOf(possible);
+            }
+
+            @Override
+            public void destroyState(State state) throws Throwable
+            {
+                // make sure all transactions complete...
+                while (!state.pendingTxns.isEmpty())
+                {
+                    Order o = pendingOrder(state);
+                    if (!o.anyOrder.isEmpty())          state.pendingTxns.get(o.anyOrder.get(0)).processNext(state.safeStore);
+                    else if (!o.sequential.isEmpty())   state.pendingTxns.get(o.sequential.get(0)).processNext(state.safeStore);
+                }
             }
         });
-        // public void updateRedundantBefore(SafeCommandStore safeStore, RedundantBefore.Entry redundantBefore)
+    }
 
-        //TODO
-        // void updatePruned(SafeCommandStore safeStore, Command nextCommand, NotifySink notifySink)
+    private static class Order
+    {
+        final List<TxnId> anyOrder, sequential;
+
+        private Order(List<TxnId> anyOrder, List<TxnId> sequential)
+        {
+            this.anyOrder = anyOrder;
+            this.sequential = sequential;
+        }
+    }
+    private static Order pendingOrder(State state)
+    {
+        List<TxnId> anyOrder = new ArrayList<>();
+        List<TxnId> sequential = new ArrayList<>();
+        // find all txn that can get to ReadyToExecute, they can run in any order
+        // find the oldest ReadyToExecute and apply
+        for (CommandUpdator txn : state.pendingTxns.values())
+        {
+            if (txn.current == null)
+            {
+                anyOrder.add(txn.txnId);
+                continue;
+            }
+            if (!txn.current.hasBeen(Status.Stable))
+            {
+                anyOrder.add(txn.txnId);
+                continue;
+            }
+            sequential.add(txn.txnId);
+        }
+        Invariants.checkState(!(anyOrder.isEmpty() && sequential.isEmpty()));
+        anyOrder.sort(Comparator.naturalOrder());
+        sequential.sort(Comparator.naturalOrder());
+        return new Order(anyOrder, sequential);
     }
 
     private static class State
     {
         private static final Node.Id NODE = new Node.Id(42);
-        private final Map<TxnId, CommandUpdator> pendingTxns = new HashMap<>();
+        private final TreeMap<TxnId, CommandUpdator> pendingTxns = new TreeMap<>();
         private final SafeCommandStore safeStore;
         private final Key key;
         private final long epoch = 2;
@@ -344,40 +410,59 @@ class SafeCommandsForKeyTest
         }
     }
 
-    private static Gen<List<NamedCommandTransformation>> transformationsGen(TxnId txnId, Txn txn)
+    private static Gen<List<NamedCommandTransformation>> transformationsGen(TxnId txnId, Txn txn, boolean historic)
     {
         Gen<CheckedCommands.Messages> firstMessageGen = Gens.enums().all(CheckedCommands.Messages.class);
-        return rs -> {
-            boolean isExclusiveSyncPoint = txnId.kind() == Txn.Kind.ExclusiveSyncPoint;
-            boolean isBootstrap = isExclusiveSyncPoint && rs.nextBoolean();
-            List<NamedCommandTransformation> ts = new ArrayList<>();
-            if (rs.decide(0.02))
+        FullRoute<?> fullRoute = txn.keys().domain() == Routable.Domain.Key ?
+                                 txn.keys().toRoute(((Keys) txn.keys()).get(0).toUnseekable()) :
+                                 txn.keys().toRoute(((Ranges) txn.keys()).get(0).end());
+        AtomicReference<PartialDeps> depsRef = new AtomicReference<>();
+        Function<SafeCommandStore, PartialDeps> getDeps = safeStore -> {
+            PartialDeps partial = depsRef.get();
+            if (partial == null)
             {
+                partial = PreAccept.calculatePartialDeps(safeStore, txnId, txn.keys(), txnId, txnId, safeStore.ranges().allAt(txnId));
+                depsRef.set(partial);
+            }
+            // simulate load by reloading the commands
+            for (TxnId id : partial.txnIds())
+                safeStore.get(id);
+            return partial;
+        };
+        return rs -> {
+            List<NamedCommandTransformation> ts = new ArrayList<>();
+            if (historic)
+            {
+//                SaveStatus saveStatus = rs.pick(FINAL_STATUSES);
+                SaveStatus saveStatus = SaveStatus.Applied;
                 ts.add(new NamedCommandTransformation("Register Historical", cs -> {
                     Deps.Builder builder = Deps.builder();
                     // only allowed IFF the store doesn't manage that epoch
                     txn.keys().forEach(s -> builder.add(s, txnId.withEpoch(txnId.epoch() - 1)));
                     cs.registerHistoricalTransactions(builder.build());
-                    return done(null);
+                    return ok(null);
+                }));
+                ts.add(new NamedCommandTransformation("Historic Propagate", cs -> {
+                    boolean isTruncated = saveStatus.status == Status.Truncated;
+                    PartialTxn partialTxn = isTruncated ? null : txn.slice(Ranges.single(FULL_RANGE), true);
+                    PartialDeps partialDeps = isTruncated ? null : PartialDeps.NONE;
+                    Writes writes = isTruncated ? null : new Writes(txnId, txnId, Keys.EMPTY, new ListWrite(Function.identity()));
+                    Result result = isTruncated ? null : txn.query().compute(txnId, txnId, Keys.EMPTY, null, null, null);
+                    Propagate propagate = Propagate.SerializerSupport.create(txnId, fullRoute, saveStatus, saveStatus, Ballot.ZERO,
+                                                                             Status.Durability.MajorityOrInvalidated,
+                                                                             fullRoute.homeKey(), fullRoute.homeKey(),
+                                                                             saveStatus.known,
+                                                                             null,
+                                                                             isTruncated,
+                                                                             partialTxn, partialDeps,
+                                                                             txnId.epoch(), txnId, writes, result);
+                    propagate.apply(cs);
+                    return done(cs.get(txnId).current());
                 }));
                 return ts;
             }
-            FullRoute<?> fullRoute = txn.keys().domain() == Routable.Domain.Key ?
-                                     txn.keys().toRoute(((Keys) txn.keys()).get(0).toUnseekable()) :
-                                     txn.keys().toRoute(((Ranges) txn.keys()).get(0).end());
-            AtomicReference<PartialDeps> depsRef = new AtomicReference<>();
-            Function<SafeCommandStore, PartialDeps> getDeps = safeStore -> {
-                PartialDeps partial = depsRef.get();
-                if (partial == null)
-                {
-                    partial = PreAccept.calculatePartialDeps(safeStore, txnId, txn.keys(), txnId, txnId, safeStore.ranges().allAt(txnId));
-                    depsRef.set(partial);
-                }
-                // simulate load by reloading the commands
-                for (TxnId id : partial.txnIds())
-                    safeStore.get(id);
-                return partial;
-            };
+            boolean isExclusiveSyncPoint = txnId.kind() == Txn.Kind.ExclusiveSyncPoint;
+            boolean isBootstrap = isExclusiveSyncPoint && rs.nextBoolean();
             if (isExclusiveSyncPoint && isBootstrap)
             {
                 ts.add(new NamedCommandTransformation("markBootstraping", cs -> {
@@ -460,6 +545,9 @@ class SafeCommandsForKeyTest
             if (isExclusiveSyncPoint && !isBootstrap)
             {
                 ts.add(new NamedCommandTransformation("markSharedDurable", cs -> {
+                    Command starting = cs.get(txnId).current();
+                    if (!starting.hasBeen(Status.Applied))
+                        return ignore(starting);
                     cs.commandStore().markShardDurable(cs, txnId, (Ranges) txn.keys());
                     return done(cs.get(txnId).current());
                 }));
@@ -473,6 +561,8 @@ class SafeCommandsForKeyTest
         final TxnId txnId;
         final Txn txn;
         final PeekingIterator<NamedCommandTransformation> transformations;
+        @Nullable
+        Command current = null;
 
         private CommandUpdator(TxnId txnId, Txn txn, PeekingIterator<NamedCommandTransformation> transformations)
         {
@@ -489,14 +579,19 @@ class SafeCommandsForKeyTest
         boolean processNext(SafeCommandStore safeStore)
         {
             Assertions.assertThat(transformations.hasNext()).isTrue();
-            NamedCommandTransformation next = transformations.next();
+            NamedCommandTransformation next = transformations.peek();
             CommandTransformation.Result result = next.transform(safeStore);
+            current = result.command;
             switch (result.status)
             {
                 case Ok:
+                    transformations.next();
                     return true;
                 case Done:
+                    transformations.next();
                     return false;
+                case Ignore:
+                    return true;
                 default:
                     throw new UnsupportedOperationException(result.status.name());
             }
