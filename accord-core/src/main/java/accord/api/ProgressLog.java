@@ -211,4 +211,76 @@ public interface ProgressLog
      * We have finished processing this transaction; ensure its state is cleared
      */
     void clear(TxnId txnId);
+
+    static ProgressLog noop()
+    {
+        return new ProgressLog()
+        {
+            @Override
+            public void unwitnessed(TxnId txnId, ProgressShard shard)
+            {
+
+            }
+
+            @Override
+            public void preaccepted(Command command, ProgressShard shard)
+            {
+
+            }
+
+            @Override
+            public void accepted(Command command, ProgressShard shard)
+            {
+
+            }
+
+            @Override
+            public void precommitted(Command command)
+            {
+
+            }
+
+            @Override
+            public void stable(Command command, ProgressShard shard)
+            {
+
+            }
+
+            @Override
+            public void readyToExecute(Command command)
+            {
+
+            }
+
+            @Override
+            public void executed(Command command, ProgressShard shard)
+            {
+
+            }
+
+            @Override
+            public void durable(Command command)
+            {
+
+            }
+
+            @Override
+            public void waiting(SafeCommand blockedBy, LocalExecution blockedUntil, @Nullable Route<?> blockedOnRoute, @Nullable Participants<?> blockedOnParticipants)
+            {
+
+            }
+
+            @Override
+            public void waiting(TxnId blockedBy, LocalExecution blockedUntil, @Nullable Route<?> blockedOnRoute, @Nullable Participants<?> blockedOnParticipants)
+            {
+
+            }
+
+            @Override
+            public void clear(TxnId txnId)
+            {
+
+            }
+        };
+    }
 }
