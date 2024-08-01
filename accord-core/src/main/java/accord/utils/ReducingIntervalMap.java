@@ -448,8 +448,8 @@ public class ReducingIntervalMap<K extends Comparable<? super K>, V>
         {
             int tailIdx = starts.size() - 1;
 
-            assert starts.size() == values.size();
-            assert tailIdx < 0 || start.compareTo(starts.get(tailIdx)) >= 0;
+            Invariants.checkState(starts.size() == values.size());
+            Invariants.checkState( tailIdx < 0 || start.compareTo(starts.get(tailIdx)) >= 0);
 
             boolean sameAsTailKey, sameAsTailValue;
             V tailValue;

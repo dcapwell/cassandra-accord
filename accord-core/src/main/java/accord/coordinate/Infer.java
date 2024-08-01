@@ -347,16 +347,26 @@ public class Infer
         }
 
         // TODO (desired): limit to local participants to avoid O(n2) work across cluster
-        FoundKnownMap.Builder builder = new FoundKnownMap.Builder(maxKeys.get(0).asRange().endInclusive(), 2 * maxKeys.size());
+        class Builder extends FoundKnownMap.Builder
+        {
+            int minIndex;
+            public Builder(boolean inclusiveEnds, int capacity)
+            {
+                super(inclusiveEnds, capacity);
+            }
+        }
+        Builder builder = new Builder(maxKeys.get(0).asRange().endInclusive(), 2 * maxKeys.size());
         safeStore.commandStore().durableBefore().foldl(maxKeys, (e, b, q, id, i, j, k) -> {
             if (e.majorityBefore.compareTo(id) > 0)
             {
+                i = Math.max(i, b.minIndex);
                 while (i < j)
                 {
                     Range range = q.get(i++).asRange();
                     b.append(range.start(), FoundKnown.Nothing.withAtLeast(IfUndecided), (i1, i2) -> { throw illegalState(); });
                     b.append(range.end(), null, (i1, i2) -> { throw illegalState(); });
                 }
+                b.minIndex = i;
             }
             return b;
         }, builder, maxKeys, txnId, i -> false);
