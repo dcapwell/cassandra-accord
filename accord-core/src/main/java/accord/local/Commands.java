@@ -853,6 +853,7 @@ public class Commands
                 else safeCommand.update(safeStore, truncatedApply(attributes, TruncatedApply, executeAt, null, null, executesAtLeast));
             }
         }
+        safeStore.progressLog().clear(command.txnId());
     }
 
     public static void setErased(SafeCommandStore safeStore, SafeCommand safeCommand)
@@ -896,6 +897,7 @@ public class Commands
                 Invariants.checkState(command.saveStatus().compareTo(TruncatedApply) < 0);
                 if (!command.hasBeen(PreCommitted)) result = erasedOrInvalidated(command);
                 else result = truncatedApply(command, Route.tryCastToFullRoute(maybeFullRoute));
+                safeStore.progressLog().clear(command.txnId());
                 break;
 
             case ERASE:

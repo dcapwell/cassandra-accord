@@ -107,8 +107,8 @@ public interface Route<K extends Unseekable> extends Participants<K>
         switch (unseekables.domain())
         {
             default: return null;
-            case Key: return (FullKeyRoute) unseekables;
-            case Range: return (FullRangeRoute) unseekables;
+            case Key: return unseekables instanceof FullKeyRoute ? (FullKeyRoute) unseekables : null;
+            case Range: return unseekables instanceof FullRangeRoute ? (FullRangeRoute) unseekables : null;
         }
     }
 
