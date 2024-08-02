@@ -87,7 +87,6 @@ import accord.utils.Property.Commands;
 import accord.utils.Property.SimpleCommand;
 import accord.utils.RandomSource;
 import accord.utils.async.AsyncChains;
-import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 import org.assertj.core.api.Assertions;
 import org.mockito.Mockito;
 
@@ -666,7 +665,7 @@ class SafeCommandsForKeyTest
                         catch (InterruptedException e)
                         {
                             Thread.currentThread().interrupt();
-                            throw new UncheckedInterruptedException(e);
+                            throw new RuntimeException(e);
                         }
                         catch (ExecutionException e)
                         {
