@@ -32,6 +32,7 @@ import javax.annotation.Nullable;
 
 import static accord.coordinate.Infer.InvalidateAndCallback.locallyInvalidateAndCallback;
 import static accord.primitives.Route.castToRoute;
+import static accord.primitives.Route.isFullRoute;
 import static accord.primitives.Route.isRoute;
 
 /**
@@ -80,6 +81,10 @@ public class FetchData extends CheckShards<Route<?>>
             {
                 reportRouteNotFound(node, txnId, executeAt, forLocalEpoch, someUnseekables, foundRoute.known, callback);
             }
+            else if (isFullRoute(foundRoute.route))
+            {
+                fetch(fetch, node, txnId, Route.castToFullRoute(foundRoute.route), forLocalEpoch, executeAt, callback);
+            }
             else if (isRoute(someUnseekables) && someUnseekables.containsAll(foundRoute.route))
             {
                 // this is essentially a reentrancy check; we can only reach this point if we have already tried once to fetchSomeRoute
@@ -119,7 +124,7 @@ public class FetchData extends CheckShards<Route<?>>
             case Erased:
             case WasApply:
             case Apply:
-                // TODO (required): we may now be stale
+                // TODO (expected): we may be stale
                 callback.accept(found, null);
         }
     }

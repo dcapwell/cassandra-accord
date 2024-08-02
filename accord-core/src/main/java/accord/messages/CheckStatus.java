@@ -776,9 +776,9 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusRep
             this.result = result;
         }
 
-        public CheckStatusOkFull finish(Route<?> route, WithQuorum withQuorum)
+        public CheckStatusOkFull finish(Unseekables<?> unseekables, WithQuorum withQuorum)
         {
-            return (CheckStatusOkFull) super.finish(route, withQuorum);
+            return (CheckStatusOkFull) super.finish(unseekables, withQuorum);
         }
 
         public CheckStatusOkFull merge(@Nonnull Route<?> route)

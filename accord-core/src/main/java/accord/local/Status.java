@@ -78,7 +78,7 @@ public enum Status
      */
     PreCommitted      (Accept,  Maybe, DefinitionUnknown, ExecuteAtKnown,   DepsUnknown,  Unknown),
 
-    Committed         (Commit, Full,   DefinitionKnown,   ExecuteAtKnown,   DepsCommitted, Unknown),
+    Committed         (Commit,  Full,  DefinitionKnown,   ExecuteAtKnown,   DepsCommitted,Unknown),
     Stable            (Execute, Full,  DefinitionKnown,   ExecuteAtKnown,   DepsKnown,    Unknown),
     PreApplied        (Persist, Full,  DefinitionKnown,   ExecuteAtKnown,   DepsKnown,    Outcome.Apply),
     Applied           (Persist, Full,  DefinitionKnown,   ExecuteAtKnown,   DepsKnown,    Outcome.Apply),
