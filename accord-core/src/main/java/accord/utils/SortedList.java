@@ -18,10 +18,22 @@
 
 package accord.utils;
 
+import java.util.AbstractList;
 import java.util.List;
 
 public interface SortedList<T extends Comparable<? super T>> extends List<T>
 {
     int findNext(int i, Comparable<? super T> find);
     int find(Comparable<? super T> find);
+
+    default <V> List<V> select(V[] selectFrom, List<T> select)
+    {
+        return new AbstractList<>()
+        {
+            @Override
+            public V get(int index) { return selectFrom[find(select.get(index))]; }
+            @Override
+            public int size() { return select.size(); }
+        };
+    }
 }

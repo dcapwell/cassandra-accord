@@ -26,7 +26,6 @@ import accord.api.RoutingKey;
 import accord.local.Status.Durability;
 import accord.primitives.AbstractRanges;
 import accord.primitives.Participants;
-import accord.primitives.Ranges;
 import accord.primitives.TxnId;
 import accord.primitives.Unseekables;
 import accord.utils.Invariants;

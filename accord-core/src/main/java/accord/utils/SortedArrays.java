@@ -52,6 +52,19 @@ public class SortedArrays
             this.array = checkArgument(array, SortedArrays::isSortedUnique);
         }
 
+        public static <T extends Comparable<? super T>> SortedArrayList<T> copySorted(Collection<T> copy, IntFunction<T[]> allocator)
+        {
+            T[] array = copy.toArray(allocator);
+            return new SortedArrayList<>(array);
+        }
+
+        public static <T extends Comparable<? super T>> SortedArrayList<T> copyUnsorted(Collection<T> copy, IntFunction<T[]> allocator)
+        {
+            T[] array = copy.toArray(allocator);
+            Arrays.sort(array);
+            return new SortedArrayList<>(array);
+        }
+
         @Override
         public T get(int index)
         {

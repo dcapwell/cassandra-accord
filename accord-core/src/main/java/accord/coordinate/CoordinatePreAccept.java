@@ -19,8 +19,8 @@
 package accord.coordinate;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 
 import accord.coordinate.tracking.FastPathTracker;
 import accord.local.CommandStore;
@@ -67,7 +67,7 @@ abstract class CoordinatePreAccept<T> extends AbstractCoordinatePreAccept<T, Pre
         this.txn = txn;
     }
 
-    void contact(Set<Id> nodes, Topologies topologies, Callback<PreAcceptReply> callback)
+    void contact(Collection<Id> nodes, Topologies topologies, Callback<PreAcceptReply> callback)
     {
         // TODO (desired, efficiency): consider sending only to electorate of most recent topology (as only these PreAccept votes matter)
         // note that we must send to all replicas of old topology, as electorate may not be reachable

@@ -292,9 +292,14 @@ public class BeginRecovery extends TxnRequest<BeginRecovery.RecoverReply>
                    '}';
         }
 
-        public static RecoverOk maxAcceptedOrLater(List<RecoverOk> recoverOks)
+        public static RecoverOk maxAccepted(List<RecoverOk> recoverOks)
         {
-            return Status.max(recoverOks, r -> r.status, r -> r.accepted, r -> r.status.phase.compareTo(Phase.Accept) >= 0);
+            return Status.max(recoverOks, r -> r.status, r -> r.accepted, r -> r != null && r.status.phase.compareTo(Phase.Accept) >= 0);
+        }
+
+        public static RecoverOk maxAcceptedNotTruncated(List<RecoverOk> recoverOks)
+        {
+            return Status.max(recoverOks, r -> r.status, r -> r.accepted, r -> r != null && r.status.phase.compareTo(Phase.Accept) >= 0 && r.status.phase.compareTo(Phase.Cleanup) < 0);
         }
     }
 

@@ -20,7 +20,6 @@ package accord.utils;
 
 import java.util.Arrays;
 
-import accord.primitives.Range;
 import accord.primitives.RoutableKey;
 import accord.utils.CheckpointIntervalArrayBuilder.Accessor;
 import net.nicoulaj.compilecommand.annotations.Inline;

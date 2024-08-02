@@ -62,9 +62,7 @@ public interface Topologies extends TopologySorter
 
     boolean contains(Id to);
 
-    Set<Node.Id> nodes();
-
-    Set<Node.Id> copyOfNodes();
+    Collection<Node.Id> nodes();
 
     int estimateUniqueNodes();
 
@@ -201,15 +199,9 @@ public interface Topologies extends TopologySorter
         }
 
         @Override
-        public Set<Node.Id> nodes()
+        public List<Node.Id> nodes()
         {
             return topology.nodes();
-        }
-
-        @Override
-        public Set<Id> copyOfNodes()
-        {
-            return new HashSet<>(nodes());
         }
 
         @Override
@@ -362,18 +354,12 @@ public interface Topologies extends TopologySorter
         }
 
         @Override
-        public Set<Node.Id> nodes()
+        public Collection<Node.Id> nodes()
         {
             Set<Node.Id> result = Sets.newLinkedHashSetWithExpectedSize(estimateUniqueNodes());
             for (int i=0,mi=size(); i<mi; i++)
                 result.addAll(get(i).nodes());
             return result;
-        }
-
-        @Override
-        public Set<Id> copyOfNodes()
-        {
-            return nodes();
         }
 
         @Override

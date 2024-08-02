@@ -60,7 +60,6 @@ import static accord.api.ProgressLog.ProgressShard.No;
 import static accord.local.Cleanup.ERASE;
 import static accord.local.Cleanup.shouldCleanup;
 import static accord.local.Command.Truncated.erased;
-import static accord.local.Command.Truncated.erasedOrInvalidOrVestigial;
 import static accord.local.Command.Truncated.truncatedApply;
 import static accord.local.Command.Truncated.truncatedApplyWithOutcome;
 import static accord.local.KeyHistory.TIMESTAMPS;
