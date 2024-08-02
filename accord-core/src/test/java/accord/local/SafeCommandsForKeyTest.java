@@ -22,9 +22,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -42,10 +44,13 @@ import javax.annotation.Nullable;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.PeekingIterator;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import accord.api.Key;
 import accord.api.ProgressLog;
 import accord.api.Result;
+import accord.coordinate.Infer;
 import accord.impl.InMemoryCommandStore;
 import accord.impl.InMemorySafeCommand;
 import accord.impl.InMemorySafeCommandsForKey;
@@ -56,6 +61,7 @@ import accord.impl.list.ListData;
 import accord.impl.list.ListStore;
 import accord.impl.list.ListWrite;
 import accord.local.CommandTransformation.NamedCommandTransformation;
+import accord.messages.CheckStatus;
 import accord.messages.PreAccept;
 import accord.messages.Propagate;
 import accord.primitives.Ballot;
@@ -93,10 +99,13 @@ import static accord.local.CommandTransformation.Result.done;
 import static accord.local.CommandTransformation.Result.ignore;
 import static accord.local.CommandTransformation.Result.ok;
 import static accord.utils.Property.stateful;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class SafeCommandsForKeyTest
 {
-    private static final List<SaveStatus> FINAL_STATUSES = Stream.of(SaveStatus.values()).filter(s -> s.ordinal() >= SaveStatus.Applied.ordinal()).collect(Collectors.toList());
+    private static final Logger logger = LoggerFactory.getLogger(SafeCommandsForKeyTest.class);
+
+    private static final List<SaveStatus> FINAL_STATUSES = Stream.of(SaveStatus.values()).filter(s -> s.ordinal() >= SaveStatus.Applied.ordinal() && s.ordinal() < SaveStatus.ErasedOrInvalidated.ordinal()).collect(Collectors.toList());
     public static final Range FULL_RANGE = IntKey.range(Integer.MIN_VALUE, Integer.MAX_VALUE);
 
     private static Property.Command<State, Void, ?> addTxn(CommandUpdator updator)
@@ -108,7 +117,10 @@ class SafeCommandsForKeyTest
     {
         return new SimpleCommand<>("Next Step for " + updator.txnId + ": " + updator.name(), state -> {
             if (!updator.processNext(state.safeStore))
+            {
                 state.pendingTxns.remove(updator.txnId);
+                state.finishedTxns.add(updator.txnId);
+            }
         });
     }
 
@@ -128,7 +140,7 @@ class SafeCommandsForKeyTest
     @Test
     void test()
     {
-        stateful().withSeed(-7006818297468705568L).check(new Commands<State, Void>()
+        stateful().withSeed(-7645104148275102220L).check(new Commands<State, Void>()
         {
             @Override
             public Gen<State> genInitialState()
@@ -173,15 +185,60 @@ class SafeCommandsForKeyTest
             }
 
             @Override
-            public void destroyState(State state) throws Throwable
+            public void destroyState(State state)
             {
                 // make sure all transactions complete...
-                while (!state.pendingTxns.isEmpty())
+                for (int attempt = 0; attempt < 100 && !state.pendingTxns.isEmpty(); attempt++)
                 {
                     Order o = pendingOrder(state);
-                    if (!o.anyOrder.isEmpty())          state.pendingTxns.get(o.anyOrder.get(0)).processNext(state.safeStore);
-                    else if (!o.sequential.isEmpty())   state.pendingTxns.get(o.sequential.get(0)).processNext(state.safeStore);
+                    if (!o.anyOrder.isEmpty())
+                    {
+                        CommandUpdator updator = state.pendingTxns.get(o.anyOrder.get(0));
+                        if (!updator.processNext(state.safeStore))
+                        {
+                            state.pendingTxns.remove(updator.txnId);
+                            state.finishedTxns.add(updator.txnId);
+                        }
+                    }
+                    else if (!o.sequential.isEmpty())
+                    {
+                        CommandUpdator updator = state.pendingTxns.get(o.sequential.get(0));
+                        logger.info("Trying to run txn {}", updator.txnId);
+                        if (!updator.processNext(state.safeStore))
+                        {
+                            state.pendingTxns.remove(updator.txnId);
+                            state.finishedTxns.add(updator.txnId);
+                        }
+                    }
+
+                    // what is the txn state
+                    Map<TxnId, SaveStatus> inflight = new TreeMap<>();
+                    for (TxnId id : new ArrayList<>(state.finishedTxns))
+                    {
+                        Command cmd = state.safeStore.get(id).current();
+                        if (cmd.hasBeen(Status.Applied))
+                        {
+                            state.finishedTxns.remove(id);
+                            continue;
+                        }
+                        inflight.put(id, cmd.saveStatus());
+                    }
+                    if (!inflight.isEmpty())
+                    {
+                        StringBuilder sb = new StringBuilder();
+                        sb.append("Inflight Transactions:\n");
+                        for (Map.Entry<TxnId, SaveStatus> e : inflight.entrySet())
+                            sb.append("\t").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
+                        logger.warn(sb.toString());
+                    }
+                    CommandsForKey cfk = state.safeStore.get(state.key).current();
+                    if (cfk.size() != 0)
+                    {
+                        CommandsForKey.TxnInfo info = cfk.get(0);
+                        logger.info("CommandsForKey waiting on {}", info);
+                    }
                 }
+                assertThat(state.pendingTxns.isEmpty()).isTrue();
             }
         });
     }
@@ -226,6 +283,7 @@ class SafeCommandsForKeyTest
     {
         private static final Node.Id NODE = new Node.Id(42);
         private final TreeMap<TxnId, CommandUpdator> pendingTxns = new TreeMap<>();
+        private final Set<TxnId> finishedTxns = new HashSet<>();
         private final SafeCommandStore safeStore;
         private final Key key;
         private final long epoch = 2;
@@ -433,31 +491,41 @@ class SafeCommandsForKeyTest
             List<NamedCommandTransformation> ts = new ArrayList<>();
             if (historic)
             {
-//                SaveStatus saveStatus = rs.pick(FINAL_STATUSES);
-                SaveStatus saveStatus = SaveStatus.Applied;
+                SaveStatus saveStatus = rs.pick(FINAL_STATUSES);
                 ts.add(new NamedCommandTransformation("Register Historical", cs -> {
                     Deps.Builder builder = Deps.builder();
-                    // only allowed IFF the store doesn't manage that epoch
-                    txn.keys().forEach(s -> builder.add(s, txnId.withEpoch(txnId.epoch() - 1)));
+                    txn.keys().forEach(s -> builder.add(s, txnId));
                     cs.registerHistoricalTransactions(builder.build());
                     return ok(null);
                 }));
                 ts.add(new NamedCommandTransformation("Historic Propagate", cs -> {
-                    boolean isTruncated = saveStatus.status == Status.Truncated;
-                    PartialTxn partialTxn = isTruncated ? null : txn.slice(Ranges.single(FULL_RANGE), true);
-                    PartialDeps partialDeps = isTruncated ? null : PartialDeps.NONE;
-                    Writes writes = isTruncated ? null : new Writes(txnId, txnId, Keys.EMPTY, new ListWrite(Function.identity()));
-                    Result result = isTruncated ? null : txn.query().compute(txnId, txnId, Keys.EMPTY, null, null, null);
+                    PartialTxn partialTxn = !saveStatus.known.isDefinitionKnown() ? null : txn.slice(Ranges.single(FULL_RANGE), true);
+                    PartialDeps partialDeps = !saveStatus.known.deps.hasProposedOrDecidedDeps() ? null : PartialDeps.NONE;
+                    Writes writes = saveStatus.known.outcome.compareTo(Status.Outcome.WasApply) < 0 ? null : new Writes(txnId, txnId, Keys.EMPTY, new ListWrite(Function.identity()));
+                    Result result = saveStatus.known.outcome.compareTo(Status.Outcome.WasApply) < 0 ? null : txn.query().compute(txnId, txnId, Keys.EMPTY, null, null, null);
+                    CheckStatus.FoundKnownMap knownMap = CheckStatus.FoundKnownMap.create(txn.keys().toParticipants(), saveStatus, Infer.InvalidIfNot.IfUnknown, Ballot.ZERO);
                     Propagate propagate = Propagate.SerializerSupport.create(txnId, fullRoute, saveStatus, saveStatus, Ballot.ZERO,
                                                                              Status.Durability.MajorityOrInvalidated,
                                                                              fullRoute.homeKey(), fullRoute.homeKey(),
                                                                              saveStatus.known,
-                                                                             null,
-                                                                             isTruncated,
+                                                                             knownMap,
+                                                                             false,
                                                                              partialTxn, partialDeps,
                                                                              txnId.epoch(), txnId, writes, result);
-                    propagate.apply(cs);
-                    return done(cs.get(txnId).current());
+                    SaveStatus previous;
+                    Command current;
+                    do
+                    {
+                        previous = cs.get(txnId, txnId, fullRoute).current().saveStatus();
+                        propagate.apply(cs);
+                        current = cs.get(txnId, txnId, fullRoute).current();
+                    }
+                    while (!current.hasBeen(Status.Applied) && previous != current.saveStatus());
+                    // This is here for debugging only...
+                    if (!current.hasBeen(Status.Applied))
+                        propagate.apply(cs);
+                    Assertions.assertThat(current.hasBeen(Status.Applied)).describedAs("%s is not %s", current, saveStatus).isTrue();
+                    return done(current);
                 }));
                 return ts;
             }
@@ -578,7 +646,7 @@ class SafeCommandsForKeyTest
 
         boolean processNext(SafeCommandStore safeStore)
         {
-            Assertions.assertThat(transformations.hasNext()).isTrue();
+            assertThat(transformations.hasNext()).isTrue();
             NamedCommandTransformation next = transformations.peek();
             CommandTransformation.Result result = next.transform(safeStore);
             current = result.command;
