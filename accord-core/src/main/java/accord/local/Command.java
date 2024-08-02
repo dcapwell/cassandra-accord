@@ -1295,7 +1295,8 @@ public abstract class Command implements CommonAttributes
 
         public boolean isWaitingOnKey()
         {
-            return waitingOn.lastSetBit() >= txnIdCount();
+            int i = waitingOn.lastSetBit();
+            return i != -1 && i >= txnIdCount();
         }
 
         public boolean isWaitingOnKey(int keyIndex)
@@ -1306,7 +1307,8 @@ public abstract class Command implements CommonAttributes
 
         public boolean isWaitingOnCommand()
         {
-            return waitingOn.firstSetBit() < txnIdCount();
+            int i = waitingOn.firstSetBit();
+            return i != -1 && i < txnIdCount();
         }
 
         public boolean isWaitingOn(TxnId txnId)
