@@ -53,6 +53,7 @@ import accord.utils.async.AsyncResults;
 import javax.annotation.Nullable;
 
 import static accord.local.SaveStatus.Applied;
+import static accord.local.SaveStatus.TruncatedApply;
 import static accord.messages.ReadData.CommitOrReadNack.Insufficient;
 import static accord.primitives.Routables.Slice.Minimal;
 
@@ -236,7 +237,7 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
 
     public static class FetchRequest extends ReadData
     {
-        private static final ExecuteOn EXECUTE_ON = new ExecuteOn(Applied, Applied);
+        private static final ExecuteOn EXECUTE_ON = new ExecuteOn(Applied, TruncatedApply);
         public final PartialTxn read;
 
         public final PartialDeps partialDeps;
@@ -261,7 +262,8 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
         }
 
         @Override
-        protected AsyncChain<Data> beginRead(SafeCommandStore safeStore, Timestamp executeAt, PartialTxn txn, Ranges unavailable) {
+        protected AsyncChain<Data> beginRead(SafeCommandStore safeStore, Timestamp executeAt, PartialTxn txn, Ranges unavailable)
+        {
             return read.read(safeStore, executeAt, unavailable);
         }
 

@@ -374,8 +374,15 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
             else
             {
                 CollectDeps.withDeps(node, txnId, route, missing.toParticipants(), missing, executeAt, (extraDeps, fail) -> {
-                    if (fail != null) node.agent().onHandledException(fail);
-                    else withDeps.accept(merged.deps.with(extraDeps));
+                    if (fail != null)
+                    {
+                        isDone = true;
+                        callback.accept(null, fail);
+                    }
+                    else
+                    {
+                        withDeps.accept(merged.deps.with(extraDeps));
+                    }
                 });
             }
         });

@@ -334,7 +334,6 @@ public class SimpleProgressLog implements ProgressLog.Factory
                     EpochSupplier forLocalEpoch = safeStore.ranges().latestEpochWithNewParticipants(txnId.epoch(), fetchKeys);
 
                     BiConsumer<Known, Throwable> callback = (success, fail) -> {
-                        Invariants.checkState(progress() == NoneExpected || progress() == Done || fail != null || !blockedUntil.isSatisfiedBy(success.propagates()) || success.route != Full);
                         // TODO (expected): this should be invoked on this commandStore; also do not need to load txn unless in DEBUG mode
                         commandStore.execute(contextFor(txnId), safeStore0 -> {
                             if (progress() != Investigating)

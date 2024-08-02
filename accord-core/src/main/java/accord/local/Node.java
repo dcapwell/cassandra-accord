@@ -144,6 +144,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
 
     public boolean isCoordinating(TxnId txnId, Ballot promised)
     {
+        // TODO (required): on a prod system expire coordination ownership by time for safety
         return promised.node.equals(id) && coordinating.containsKey(txnId);
     }
 
