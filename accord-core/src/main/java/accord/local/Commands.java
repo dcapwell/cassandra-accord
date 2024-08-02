@@ -45,7 +45,6 @@ import accord.primitives.Participants;
 import accord.primitives.Ranges;
 import accord.primitives.Route;
 import accord.primitives.Seekables;
-import accord.primitives.SyncPoint;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
@@ -58,11 +57,10 @@ import accord.utils.async.AsyncChains;
 import static accord.api.ProgressLog.ProgressShard.Home;
 import static accord.api.ProgressLog.ProgressShard.Local;
 import static accord.api.ProgressLog.ProgressShard.No;
-import static accord.api.ProgressLog.ProgressShard.UnmanagedHome;
 import static accord.local.Cleanup.ERASE;
 import static accord.local.Cleanup.shouldCleanup;
 import static accord.local.Command.Truncated.erased;
-import static accord.local.Command.Truncated.erasedOrInvalidated;
+import static accord.local.Command.Truncated.erasedOrInvalidOrVestigial;
 import static accord.local.Command.Truncated.truncatedApply;
 import static accord.local.Command.Truncated.truncatedApplyWithOutcome;
 import static accord.local.KeyHistory.TIMESTAMPS;
@@ -738,7 +736,7 @@ public class Commands
                 case TruncatedApplyWithOutcome:
                 case TruncatedApplyWithDeps:
                     Invariants.checkState(dependency.executeAt().compareTo(waitingExecuteAt) < 0 || waitingId.kind().awaitsOnlyDeps() || !dependency.txnId().kind().witnesses(waitingId));
-                case ErasedOrInvalidated:
+                case ErasedOrInvalidOrVestigial:
                 case Erased:
                     logger.trace("{}: {} is truncated. Stop listening and removing from waiting on commit set.", waitingId, dependencyId);
                     break;
@@ -823,12 +821,12 @@ public class Commands
     }
 
     // TODO (now): document and justify all calls
-    public static void setTruncatedApply(SafeCommandStore safeStore, SafeCommand safeCommand)
+    public static void setTruncatedApplyOrErasedVestigial(SafeCommandStore safeStore, SafeCommand safeCommand)
     {
-        setTruncatedApply(safeStore, safeCommand, null, null);
+        setTruncatedApplyOrErasedVestigial(safeStore, safeCommand, null, null);
     }
 
-    public static void setTruncatedApply(SafeCommandStore safeStore, SafeCommand safeCommand, @Nullable Timestamp executeAt, Route<?> maybeFullRoute)
+    public static void setTruncatedApplyOrErasedVestigial(SafeCommandStore safeStore, SafeCommand safeCommand, @Nullable Timestamp executeAt, Route<?> maybeFullRoute)
     {
         Command command = safeCommand.current();
         if (command.saveStatus().compareTo(TruncatedApply) >= 0) return;
@@ -837,7 +835,9 @@ public class Commands
         if (executeAt == null) executeAt = command.executeAtIfKnown();
         if (route == null || executeAt == null)
         {
-            safeCommand.update(safeStore, erasedOrInvalidated(command));
+            safeCommand.update(safeStore, Command.Truncated.erasedOrInvalidOrVestigial(command));
+            if (route != null && !safeStore.ranges().allAt(command.txnId()).contains(route.homeKey()))
+                safeStore.progressLog().clear(command.txnId());
         }
         else
         {
@@ -852,8 +852,8 @@ public class Commands
                 if (executesAtLeast == null) safeCommand.update(safeStore, erased(command));
                 else safeCommand.update(safeStore, truncatedApply(attributes, TruncatedApply, executeAt, null, null, executesAtLeast));
             }
+            safeStore.progressLog().clear(command.txnId());
         }
-        safeStore.progressLog().clear(command.txnId());
     }
 
     public static void setErased(SafeCommandStore safeStore, SafeCommand safeCommand)
@@ -895,7 +895,7 @@ public class Commands
             case TRUNCATE:
                 // TODO (expected): consider passing through any information we have about the reason for loading, so we can infer APPLIED if !PreCommitted
                 Invariants.checkState(command.saveStatus().compareTo(TruncatedApply) < 0);
-                if (!command.hasBeen(PreCommitted)) result = erasedOrInvalidated(command);
+                if (!command.hasBeen(PreCommitted)) result = Command.Truncated.erasedOrInvalidOrVestigial(command);
                 else result = truncatedApply(command, Route.tryCastToFullRoute(maybeFullRoute));
                 safeStore.progressLog().clear(command.txnId());
                 break;

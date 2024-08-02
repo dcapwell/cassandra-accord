@@ -152,7 +152,7 @@ public class Propagate implements EpochSupplier, LocalRequest<Status.Known>, Pre
             return;
         }
 
-        Invariants.checkState(sourceEpoch == txnId.epoch() || (full.executeAt != null && sourceEpoch == full.executeAt.epoch()) || full.maxKnowledgeSaveStatus == SaveStatus.Erased || full.maxKnowledgeSaveStatus == SaveStatus.ErasedOrInvalidated);
+        Invariants.checkState(sourceEpoch == txnId.epoch() || (full.executeAt != null && sourceEpoch == full.executeAt.epoch()) || full.maxKnowledgeSaveStatus == SaveStatus.Erased || full.maxKnowledgeSaveStatus == SaveStatus.ErasedOrInvalidOrVestigial);
 
         full = full.finish(route, withQuorum);
         route = Invariants.nonNull(full.route);
@@ -261,7 +261,7 @@ public class Propagate implements EpochSupplier, LocalRequest<Status.Known>, Pre
                 return null;
 
             Participants<?> needed = route.slice(safeStore.ranges().allBetween(txnId.epoch(), (executeAtIfKnown == null ? txnId : executeAtIfKnown).epoch()));
-            if (achieved.isDefinitionKnown() && partialTxn == null)
+            if (achieved.isDefinitionKnown() && partialTxn == null && this.partialTxn != null)
             {
                 PartialTxn existing = command.partialTxn();
                 Participants<?> neededExtra = needed;
@@ -269,7 +269,7 @@ public class Propagate implements EpochSupplier, LocalRequest<Status.Known>, Pre
                 partialTxn = this.partialTxn.intersecting(neededExtra, true).reconstitutePartial(neededExtra);
             }
 
-            if (achieved.hasDecidedDeps() && stableDeps == null)
+            if (achieved.hasDecidedDeps() && stableDeps == null && this.stableDeps != null)
             {
                 Invariants.checkState(executeAtIfKnown != null);
                 // we don't subtract existing partialDeps, as they cannot be committed deps; we only permit committing deps covering all participating ranges
@@ -281,7 +281,7 @@ public class Propagate implements EpochSupplier, LocalRequest<Status.Known>, Pre
         if (command.hasBeen(propagate))
         {
             if (maxSaveStatus.phase == Cleanup && durability.isDurableOrInvalidated() && Infer.safeToCleanup(safeStore, command, route, executeAtIfKnown))
-                Commands.setTruncatedApply(safeStore, safeCommand);
+                Commands.setTruncatedApplyOrErasedVestigial(safeStore, safeCommand);
 
             // TODO (expected): maybe stale?
             return updateDurability(safeStore, safeCommand);
@@ -410,7 +410,7 @@ public class Propagate implements EpochSupplier, LocalRequest<Status.Known>, Pre
         if (ranges.isEmpty())
         {
             // TODO (expected): we might prefer to adopt Redundant status, and permit ourselves to later accept the result of the execution and/or definition
-            Commands.setTruncatedApply(safeStore, safeCommand, executeAtIfKnown, route);
+            Commands.setTruncatedApplyOrErasedVestigial(safeStore, safeCommand, executeAtIfKnown, route);
             return null;
         }
 
@@ -419,7 +419,7 @@ public class Propagate implements EpochSupplier, LocalRequest<Status.Known>, Pre
         {
             // we only coordinate this transaction, so being unable to retrieve its state does not imply any staleness
             // TODO (now): double check this doesn't stop us coordinating the transaction (it shouldn't, as doesn't imply durability)
-            Commands.setTruncatedApply(safeStore, safeCommand, executeAtIfKnown, route);
+            Commands.setTruncatedApplyOrErasedVestigial(safeStore, safeCommand, executeAtIfKnown, route);
             return null;
         }
 
@@ -445,7 +445,7 @@ public class Propagate implements EpochSupplier, LocalRequest<Status.Known>, Pre
             return required;
 
         // TODO (expected): we might prefer to adopt Redundant status, and permit ourselves to later accept the result of the execution and/or definition
-        Commands.setTruncatedApply(safeStore, safeCommand, executeAtIfKnown, route);
+        Commands.setTruncatedApplyOrErasedVestigial(safeStore, safeCommand, executeAtIfKnown, route);
         return null;
     }
 
