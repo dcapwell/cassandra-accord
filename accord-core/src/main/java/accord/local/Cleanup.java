@@ -107,7 +107,7 @@ public enum Cleanup
         if (durableBefore.min(txnId) == UniversalOrInvalidated)
         {
             if (status.hasBeen(PreCommitted) && !status.hasBeen(Applied)) // TODO (expected): may be stale
-                illegalState("Loading universally-durable command that has been PreCommitted but not Applied");
+                illegalState("Loading universally-durable command %s that has been PreCommitted but not Applied: %s", txnId, status);
             return Cleanup.ERASE;
         }
 
