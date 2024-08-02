@@ -28,13 +28,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
@@ -89,7 +86,6 @@ import accord.utils.Property;
 import accord.utils.Property.Commands;
 import accord.utils.Property.SimpleCommand;
 import accord.utils.RandomSource;
-import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 import org.assertj.core.api.Assertions;
@@ -108,9 +104,9 @@ class SafeCommandsForKeyTest
     private static final List<SaveStatus> FINAL_STATUSES = Stream.of(SaveStatus.values()).filter(s -> s.ordinal() >= SaveStatus.Applied.ordinal() && s.ordinal() < SaveStatus.ErasedOrInvalidated.ordinal()).collect(Collectors.toList());
     public static final Range FULL_RANGE = IntKey.range(Integer.MIN_VALUE, Integer.MAX_VALUE);
 
-    private static Property.Command<State, Void, ?> addTxn(CommandUpdator updator)
+    private static Property.Command<State, Void, ?> addTxn(CommandUpdator updator, boolean historic)
     {
-        return new SimpleCommand<>("Add Txn " + updator.txnId + "; " + updator.txn, state -> state.pendingTxns.put(updator.txnId, updator));
+        return new SimpleCommand<>("Add "+(historic ? "historic " : "")+"Txn " + updator.txnId + "; " + updator.txn, state -> state.pendingTxns.put(updator.txnId, updator));
     }
 
     private static Property.Command<State, Void, ?> commandStep(CommandUpdator updator)
@@ -136,7 +132,7 @@ class SafeCommandsForKeyTest
         if (historic)
             id = id.withEpoch(id.epoch() - 1);
         CommandUpdator updator = new CommandUpdator(id, txn, Iterators.peekingIterator(transformationsGen(id, txn, historic).next(rs).iterator()));
-        return Property.multistep(addTxn(updator), commandStep(updator));
+        return Property.multistep(addTxn(updator, historic), commandStep(updator));
     }
 
     @Test
@@ -159,6 +155,7 @@ class SafeCommandsForKeyTest
             @Override
             public Gen<Property.Command<State, Void, ?>> commands(State state)
             {
+                state.checkErrors();
                 //Rules:
                 // CFK.manages -> Key + Read/Write/SyncPoint (called already)
                 // CFK.managesExecution -> Key + Read/Write (called already)
@@ -200,9 +197,22 @@ class SafeCommandsForKeyTest
             @Override
             public void destroyState(State state)
             {
+                state.checkErrors();
                 // make sure all transactions complete...
                 for (int attempt = 0; attempt < 100 && !state.pendingTxns.isEmpty(); attempt++)
                 {
+                    // what does CFK think?
+                    CommandUpdator blockingCFK = state.blockingCFK();
+                    if (blockingCFK != null)
+                    {
+                        if (!blockingCFK.processNext(state.safeStore))
+                        {
+                            state.pendingTxns.remove(blockingCFK.txnId);
+                            state.finishedTxns.add(blockingCFK.txnId);
+                        }
+                        continue;
+                    }
+
                     Order o = pendingOrder(state);
                     if (!o.anyOrder.isEmpty())
                     {
@@ -252,6 +262,7 @@ class SafeCommandsForKeyTest
                     }
                 }
                 assertThat(state.pendingTxns.isEmpty()).isTrue();
+                state.checkErrors();
             }
         });
     }
@@ -307,6 +318,7 @@ class SafeCommandsForKeyTest
         private final LongSupplier clock;
         private final Gen<Txn> txnGen;
         private int numHistoricTxns;
+        private final List<Throwable> errors = new ArrayList<>();
 
         State(RandomSource rs)
         {
@@ -361,68 +373,20 @@ class SafeCommandsForKeyTest
             Node node = Mockito.mock(Node.class);
             Mockito.when(node.id()).thenReturn(NODE);
             listStore.onTopologyUpdate(node, topology);
-            InMemoryCommandStore store = new InMemoryCommandStore(0, timeService, new TestAgent.RethrowAgent(), listStore, factory, epochHolder)
-            {
+            TestAgent agent = new TestAgent() {
                 @Override
-                public boolean inStore()
+                public void onUncaughtException(Throwable t)
                 {
-                    return true;
+                    errors.add(t);
                 }
 
                 @Override
-                public AsyncChain<Void> execute(PreLoadContext context, Consumer<? super SafeCommandStore> consumer)
+                public void onHandledException(Throwable t)
                 {
-                    return submit(context, ss -> {
-                        consumer.accept(ss);
-                        return null;
-                    });
-                }
-
-                @Override
-                public <T> AsyncChain<T> submit(PreLoadContext context, Function<? super SafeCommandStore, T> apply)
-                {
-                    return new AsyncChains.Head<>()
-                    {
-
-                        @Override
-                        protected void start(BiConsumer<? super T, Throwable> callback)
-                        {
-                            T value;
-                            try
-                            {
-                                value = apply.apply(safeStore);
-                            }
-                            catch (Throwable t)
-                            {
-                                callback.accept(null, t);
-                                return;
-                            }
-                            callback.accept(value, null);
-                        }
-                    };
-                }
-
-                @Override
-                public void shutdown()
-                {
-                    throw new UnsupportedOperationException();
-                }
-
-                @Override
-                public <T> AsyncChain<T> submit(Callable<T> task)
-                {
-                    return submit(PreLoadContext.empty(), ignore -> {
-                        try
-                        {
-                            return task.call();
-                        }
-                        catch (Exception e)
-                        {
-                            throw new RuntimeException(e);
-                        }
-                    });
+                    errors.add(t);
                 }
             };
+            InMemoryCommandStore store = new InMemoryCommandStore.Synchronized(0, timeService, agent, listStore, factory, epochHolder);
             epochHolder.add(epoch, new CommandStores.RangesForEpoch(epoch, ranges, store), ranges);
             safeStore = new InMemoryCommandStore.InMemorySafeStore(store, store.updateRangesForEpoch(), PreLoadContext.contextFor(key), new HashMap<>(), new HashMap<>(), new HashMap<>())
             {
@@ -480,6 +444,32 @@ class SafeCommandsForKeyTest
         TxnId nextTxnId(Txn txn)
         {
             return new TxnId(epoch, clock.getAsLong(), txn.kind(), txn.keys().domain(), NODE);
+        }
+
+        void checkErrors()
+        {
+            if (!errors.isEmpty())
+            {
+                AssertionError error = new AssertionError("Unhandled errors detected");
+                errors.forEach(error::addSuppressed);
+            }
+        }
+
+        public CommandUpdator blockingCFK()
+        {
+            CommandsForKey cfk = safeStore.get(key).current();
+            for (int i = 0, size = cfk.size(); i < size; i++)
+            {
+                CommandsForKey.TxnInfo info = cfk.get(i);
+                if (info.status.compareTo(CommandsForKey.InternalStatus.APPLIED) < 0)
+                {
+                    // do we have an updator
+                    TxnId id = new TxnId(info);
+                    logger.warn("Txn blocking CFK: {} / {}", info, safeStore.get(id).current());
+                    return pendingTxns.get(id);
+                }
+            }
+            return null;
         }
     }
 
@@ -579,6 +569,26 @@ class SafeCommandsForKeyTest
                     ts.add(new NamedCommandTransformation("Apply", cs -> {
                         PartialTxn partialTxn = txn.slice(cs.ranges().currentRanges(), true);
                         PartialDeps partialDeps = getDeps.apply(cs);
+                        Command current = cs.get(txnId).current();
+                        if (current.hasBeen(Status.Stable) && current.asCommitted().waitingOn.isWaiting())
+                        {
+                            if (current.asCommitted().waitingOn.isWaitingOnKey())
+                            {
+                                CommandsForKey cfk = cs.get(current.asCommitted().waitingOn.keys.get(0)).current();
+                                CommandsForKey.TxnInfo waitingOn = null;
+                                Command waitingOnCommand = null;
+                                for (int i = 0, size = cfk.size(); i < size; i++)
+                                {
+                                    waitingOn = cfk.get(i);
+                                    waitingOnCommand = cs.get(new TxnId(waitingOn)).current();
+                                    if (!waitingOnCommand.hasBeen(Status.Applied))
+                                        break;
+                                }
+                                logger.warn("Txn {} is blocked by CommandsForKey: {} ({}) / {}", current, waitingOn, waitingOnCommand, cfk);
+                            }
+                            return ignore(current);
+                        }
+                        Assertions.assertThat(current.saveStatus()).describedAs("Txn %s is not ready to execute...", current).isIn(SaveStatus.Uninitialised, SaveStatus.ReadyToExecute);
                         ListData data;
                         try
                         {
@@ -599,7 +609,7 @@ class SafeCommandsForKeyTest
                                         Keys keys = (Keys) txn.update().keys();
                                         keys = keys.subtract((Keys) txn.read().keys());
                                         for (Key key : keys)
-                                            data.put(key, ((ListStore) cs.dataStore()).get(Ranges.EMPTY, txnId, key));
+                                            data.put(key, ((ListStore) cs.dataStore()).get(Ranges.EMPTY, TxnId.NONE, key));
                                     }
                                 }
                             }
