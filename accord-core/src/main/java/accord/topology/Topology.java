@@ -66,7 +66,7 @@ public class Topology
     final Shard[] shards;
     final Ranges ranges;
 
-    final SortedList<Id> nodeIds;
+    final SortedArrayList<Id> nodeIds;
     final Int2ObjectHashMap<NodeInfo> nodeLookup;
 
     /**
@@ -146,7 +146,7 @@ public class Topology
     }
 
     @VisibleForTesting
-    Topology(@Nullable Topology global, long epoch, Shard[] shards, Ranges ranges, SortedList<Id> nodeIds, Int2ObjectHashMap<NodeInfo> nodeById, Ranges subsetOfRanges, int[] supersetIndexes)
+    Topology(@Nullable Topology global, long epoch, Shard[] shards, Ranges ranges, SortedArrayList<Id> nodeIds, Int2ObjectHashMap<NodeInfo> nodeById, Ranges subsetOfRanges, int[] supersetIndexes)
     {
         this.global = global;
         this.epoch = epoch;
@@ -538,7 +538,7 @@ public class Topology
             forEach.accept(shards[i]);
     }
 
-    public SortedList<Id> nodes()
+    public SortedArrayList<Id> nodes()
     {
         return nodeIds;
     }

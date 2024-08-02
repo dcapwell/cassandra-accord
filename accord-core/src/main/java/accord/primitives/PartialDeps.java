@@ -51,7 +51,7 @@ public class PartialDeps extends Deps
     // TODO (required) remove this and related concepts, as can cause problems with topology changes for a single store
     //    where the store has some ranges that we participate in, and some we do not; we will not correctly construct covering in some cases
 
-    private final Participants<?> covering; // set only if this is a range transaction, containing the minimal ranges of the original transaction that we cover
+    public final Participants<?> covering; // set only if this is a range transaction, containing the minimal ranges of the original transaction that we cover
     public PartialDeps(Participants<?> covering, KeyDeps keyDeps, RangeDeps rangeDeps, KeyDeps directKeyDeps)
     {
         super(keyDeps, rangeDeps, directKeyDeps);

@@ -97,6 +97,11 @@ public class SortedArrays
             return test.array.length == SortedArrays.foldlIntersection(Comparable::compareTo, array, 0, array.length, test.array, 0, test.array.length, (t, p, v, li, ri) -> v + 1, 0, 0, test.array.length);
         }
 
+        public T[] backingArrayUnsafe()
+        {
+            return array;
+        }
+
         public static class Builder<T extends Comparable<? super T>>
         {
             final T[] array;
