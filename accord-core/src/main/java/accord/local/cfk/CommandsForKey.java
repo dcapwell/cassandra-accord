@@ -318,6 +318,12 @@ public class CommandsForKey extends CommandsForKeyUpdate implements CommandsSumm
                    && Arrays.equals(missing(), info.missing());
         }
 
+        @Override
+        public int hashCode()
+        {
+            return Objects.hash(status, executeAt == this ? 0 : executeAt, Arrays.hashCode(missing()));
+        }
+
         TxnId plainTxnId()
         {
             return new TxnId(this);
@@ -342,12 +348,6 @@ public class CommandsForKey extends CommandsForKeyUpdate implements CommandsSumm
         public Ballot ballot()
         {
             return Ballot.ZERO;
-        }
-
-        @Override
-        public int hashCode()
-        {
-            throw new UnsupportedOperationException();
         }
 
         @Override
