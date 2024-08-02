@@ -188,7 +188,7 @@ public class RangeDeps implements Iterable<Map.Entry<Range, TxnId>>
     @Inline
     public <P1, P2, P3, P4> int forEach(RoutableKey key, IndexedQuadConsumer<P1, P2, P3, P4> forEachScanOrCheckpoint, IndexedRangeQuadConsumer<P1, P2, P3, P4> forEachRange, P1 p1, P2 p2, P3 p3, P4 p4, int minIndex)
     {
-        return ensureSearchable().forEach(key, forEachScanOrCheckpoint, forEachRange, p1, p2, p3, p4, minIndex);
+        return ensureSearchable().forEachKey(key, forEachScanOrCheckpoint, forEachRange, p1, p2, p3, p4, minIndex);
     }
 
     private <P1> int forEach(RoutableKey key, BiConsumer<P1, TxnId> forEach, P1 p1, int minIndex, @Nullable BitSet visited)
@@ -211,13 +211,13 @@ public class RangeDeps implements Iterable<Map.Entry<Range, TxnId>>
     @Inline
     public <P1, P2, P3, P4> int forEach(Range range, IndexedQuadConsumer<P1, P2, P3, P4> forEachScanOrCheckpoint, IndexedRangeQuadConsumer<P1, P2, P3, P4> forEachRange, P1 p1, P2 p2, P3 p3, P4 p4, int minIndex)
     {
-        return ensureSearchable().forEach(range, forEachScanOrCheckpoint, forEachRange, p1, p2, p3, p4, minIndex);
+        return ensureSearchable().forEachRange(range, forEachScanOrCheckpoint, forEachRange, p1, p2, p3, p4, minIndex);
     }
 
     @Inline
     public <P1, P2, P3, P4> int forEach(RoutingKey start, RoutingKey end, IndexedQuadConsumer<P1, P2, P3, P4> forEachScanOrCheckpoint, IndexedRangeQuadConsumer<P1, P2, P3, P4> forEachRange, P1 p1, P2 p2, P3 p3, P4 p4, int minIndex)
     {
-        return ensureSearchable().forEach(start, end, forEachScanOrCheckpoint, forEachRange, p1, p2, p3, p4, minIndex);
+        return ensureSearchable().forEachRange(start, end, forEachScanOrCheckpoint, forEachRange, p1, p2, p3, p4, minIndex);
     }
 
     private <P1, P2, P3, P4> void forEach(AbstractRanges ranges, IndexedQuadConsumer<P1, P2, P3, P4> forEachScanOrCheckpoint, IndexedRangeQuadConsumer<P1, P2, P3, P4> forEachRange, P1 p1, P2 p2, P3 p3, P4 p4)

@@ -20,14 +20,13 @@ package accord.utils;
 
 import java.util.Arrays;
 
-import accord.primitives.RoutableKey;
 import accord.utils.CheckpointIntervalArrayBuilder.Accessor;
 import net.nicoulaj.compilecommand.annotations.Inline;
 
 import static accord.utils.SortedArrays.Search.CEIL;
 import static accord.utils.SortedArrays.Search.FLOOR;
 
-public class CheckpointIntervalArray<Ranges, Range extends accord.primitives.Range, Key extends RoutableKey>
+public class CheckpointIntervalArray<Ranges, Range, Key>
 {
     // scan distance can be kept very small as we guarantee to use at most linear extra space even with a scan distance of zero
     static final int MAX_SCAN_DISTANCE = 255;
@@ -94,12 +93,12 @@ public class CheckpointIntervalArray<Ranges, Range extends accord.primitives.Ran
     }
 
     @Inline
-    public <P1, P2, P3, P4> int forEach(Range range, IndexedQuadConsumer<P1, P2, P3, P4> forEachScanOrCheckpoint, IndexedRangeQuadConsumer<P1, P2, P3, P4> forEachRange, P1 p1, P2 p2, P3 p3, P4 p4, int minIndex)
+    public <P1, P2, P3, P4> int forEachRange(Range range, IndexedQuadConsumer<P1, P2, P3, P4> forEachScanOrCheckpoint, IndexedRangeQuadConsumer<P1, P2, P3, P4> forEachRange, P1 p1, P2 p2, P3 p3, P4 p4, int minIndex)
     {
-        return forEach(accessor.start(range), accessor.end(range), forEachScanOrCheckpoint, forEachRange, p1, p2, p3, p4, minIndex);
+        return forEachRange(accessor.start(range), accessor.end(range), forEachScanOrCheckpoint, forEachRange, p1, p2, p3, p4, minIndex);
     }
 
-    public <P1, P2, P3, P4> int forEach(Key startKey, Key endKey, IndexedQuadConsumer<P1, P2, P3, P4> forEachScanOrCheckpoint, IndexedRangeQuadConsumer<P1, P2, P3, P4> forEachRange, P1 p1, P2 p2, P3 p3, P4 p4, int minIndex)
+    public <P1, P2, P3, P4> int forEachRange(Key startKey, Key endKey, IndexedQuadConsumer<P1, P2, P3, P4> forEachScanOrCheckpoint, IndexedRangeQuadConsumer<P1, P2, P3, P4> forEachRange, P1 p1, P2 p2, P3 p3, P4 p4, int minIndex)
     {
         if (accessor.size(ranges) == 0 || minIndex == accessor.size(ranges))
             return minIndex;
@@ -129,7 +128,7 @@ public class CheckpointIntervalArray<Ranges, Range extends accord.primitives.Ran
         return forEach(start, end, floor, startKey, 0, forEachScanOrCheckpoint, forEachRange, p1, p2, p3, p4, minIndex);
     }
 
-    public <P1, P2, P3, P4> int forEach(Key key, IndexedQuadConsumer<P1, P2, P3, P4> forEachScanOrCheckpoint, IndexedRangeQuadConsumer<P1, P2, P3, P4> forEachRange, P1 p1, P2 p2, P3 p3, P4 p4, int minIndex)
+    public <P1, P2, P3, P4> int forEachKey(Key key, IndexedQuadConsumer<P1, P2, P3, P4> forEachScanOrCheckpoint, IndexedRangeQuadConsumer<P1, P2, P3, P4> forEachRange, P1 p1, P2 p2, P3 p3, P4 p4, int minIndex)
     {
         if (accessor.size(ranges) == 0 || minIndex == accessor.size(ranges))
             return minIndex;
