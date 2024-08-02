@@ -32,7 +32,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 
@@ -455,19 +454,10 @@ public class Property
                                     throw new IllegalArgumentException("Unable to find next command");
                                 cmd = cmdGen.next(rs);
                             }
-                            if (cmd instanceof MultistepCommand)
-                            {
-                                for (Command<State, SystemUnderTest, ?> sub : ((MultistepCommand<State, SystemUnderTest>) cmd))
-                                {
-                                    history.add(sub.detailed(state));
-                                    process(sub, state, sut, history.size());
-                                }
-                            }
-                            else
-                            {
-                                history.add(cmd.detailed(state));
-                                process(cmd, state, sut, history.size());
-                            }
+                            history.add(cmd.detailed(state));
+                            Object stateResult = cmd.apply(state);
+                            cmd.checkPostconditions(state, stateResult,
+                                                    sut, cmd.run(sut));
                         }
                     }
                     finally
@@ -487,11 +477,6 @@ public class Property
                 }
             }
         }
-
-        private <State, SystemUnderTest> void process(Command cmd, State state, SystemUnderTest sut, int id) throws Throwable
-        {
-            cmd.process(state, sut);
-        }
     }
 
     public enum PreCheckResult { Ok, Ignore }
@@ -503,83 +488,6 @@ public class Property
         default void checkPostconditions(State state, Result expected,
                                          SystemUnderTest sut, Result actual) throws Throwable {}
         default String detailed(State state) {return this.toString();}
-
-        default void process(State state, SystemUnderTest sut) throws Throwable
-        {
-            checkPostconditions(state, apply(state),
-                                sut, run(sut));
-        }
-    }
-
-    public static <State, SystemUnderTest> MultistepCommand<State, SystemUnderTest> multistep(Command<State, SystemUnderTest, ?>... cmds)
-    {
-        return multistep(Arrays.asList(cmds));
-    }
-
-    public static <State, SystemUnderTest> MultistepCommand<State, SystemUnderTest> multistep(List<Command<State, SystemUnderTest, ?>> cmds)
-    {
-        List<Command<State, SystemUnderTest, ?>> result = new ArrayList<>(cmds.size());
-        for (Command<State, SystemUnderTest, ?> c : cmds)
-        {
-            if (c instanceof MultistepCommand) result.addAll(flatten((MultistepCommand<State, SystemUnderTest>) c));
-            else                               result.add(c);
-        }
-        return result::iterator;
-    }
-
-    private static <State, SystemUnderTest> Collection<? extends Command<State, SystemUnderTest, ?>> flatten(MultistepCommand<State, SystemUnderTest> mc)
-    {
-        List<Command<State, SystemUnderTest, ?>> result = new ArrayList<>();
-        for (Command<State, SystemUnderTest, ?> c : mc)
-        {
-            if (c instanceof MultistepCommand) result.addAll(flatten((MultistepCommand<State, SystemUnderTest>) c));
-            else                               result.add(c);
-        }
-        return result;
-    }
-
-    public interface MultistepCommand<State, SystemUnderTest> extends Command<State, SystemUnderTest, Object>, Iterable<Command<State, SystemUnderTest, ?>>
-    {
-        @Override
-        default PreCheckResult checkPreconditions(State state)
-        {
-            for (Command<State, SystemUnderTest, ?> cmd : this)
-            {
-                PreCheckResult result = cmd.checkPreconditions(state);
-                if (result != PreCheckResult.Ok) return result;
-            }
-            return PreCheckResult.Ok;
-        }
-
-        @Override
-        default Object apply(State state) throws Throwable
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        default Object run(SystemUnderTest sut) throws Throwable
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        default void checkPostconditions(State state, Object expected, SystemUnderTest sut, Object actual) throws Throwable
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        default String detailed(State state)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        default void process(State state, SystemUnderTest sut) throws Throwable
-        {
-            throw new UnsupportedOperationException();
-        }
     }
 
     public interface UnitCommand<State, SystemUnderTest> extends Command<State, SystemUnderTest, Void>
@@ -599,36 +507,6 @@ public class Property
         {
             runUnit(sut);
             return null;
-        }
-    }
-
-    public interface StateOnlyCommand<State> extends UnitCommand<State, Void>
-    {
-        @Override
-        default void runUnit(Void sut) throws Throwable {}
-    }
-
-    public static class SimpleCommand<State> implements StateOnlyCommand<State>
-    {
-        private final String name;
-        private final Consumer<State> fn;
-
-        public SimpleCommand(String name, Consumer<State> fn)
-        {
-            this.name = name;
-            this.fn = fn;
-        }
-
-        @Override
-        public String detailed(State state)
-        {
-            return name;
-        }
-
-        @Override
-        public void applyUnit(State state) throws Throwable
-        {
-            fn.accept(state);
         }
     }
 

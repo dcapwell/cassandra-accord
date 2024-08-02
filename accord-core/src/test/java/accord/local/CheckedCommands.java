@@ -39,8 +39,6 @@ import static accord.utils.Invariants.illegalState;
 
 public class CheckedCommands
 {
-    public enum Messages { PreAccept, Accept, Commit, Apply}
-
     public static void preaccept(SafeCommandStore safeStore, TxnId txnId, PartialTxn partialTxn, FullRoute<?> route, @Nullable RoutingKey progressKey)
     {
         preaccept(safeStore, txnId, partialTxn, route, progressKey, (l, r) -> {});
