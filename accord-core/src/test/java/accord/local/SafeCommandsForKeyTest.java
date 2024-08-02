@@ -57,6 +57,7 @@ import accord.impl.TestAgent;
 import accord.impl.list.ListData;
 import accord.impl.list.ListStore;
 import accord.impl.list.ListWrite;
+import accord.local.cfk.CommandsForKey;
 import accord.local.CommandTransformation.NamedCommandTransformation;
 import accord.messages.CheckStatus;
 import accord.messages.PreAccept;
