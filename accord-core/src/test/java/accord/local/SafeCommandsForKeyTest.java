@@ -111,13 +111,7 @@ class SafeCommandsForKeyTest
 
     private static Property.Command<State, Void, ?> commandStep(CommandUpdator updator)
     {
-        return new SimpleCommand<>("Next Step for " + updator.txnId + ": " + updator.name(), state -> {
-            if (!updator.processNext(state.safeStore))
-            {
-                state.pendingTxns.remove(updator.txnId);
-                state.finishedTxns.add(updator.txnId);
-            }
-        });
+        return new SimpleCommand<>("Next Step for " + updator.txnId + ": " + updator.name(), updator::processNext);
     }
 
     private static Gen<Property.Command<State, Void, ?>> createTxn(State state)
@@ -131,7 +125,7 @@ class SafeCommandsForKeyTest
         TxnId id = state.nextTxnId(txn);
         if (historic)
             id = id.withEpoch(id.epoch() - 1);
-        CommandUpdator updator = new CommandUpdator(id, txn, Iterators.peekingIterator(transformationsGen(id, txn, historic).next(rs).iterator()));
+        CommandUpdator updator = new CommandUpdator(id, txn, Iterators.peekingIterator(transformationsGen(state, id, txn, historic).next(rs).iterator()));
         return Property.multistep(addTxn(updator, historic), commandStep(updator));
     }
 
@@ -199,43 +193,39 @@ class SafeCommandsForKeyTest
             {
                 state.checkErrors();
                 // make sure all transactions complete...
+                int previousFinishSize = -1;
                 for (int attempt = 0; attempt < 100 && !state.pendingTxns.isEmpty(); attempt++)
                 {
                     // what does CFK think?
+                    int startFinishedSize = state.finishedTxns.size();
+                    if (previousFinishSize != -1 && previousFinishSize != startFinishedSize)
+                    {
+                        // as long as progress is being made, reset attempt ounte
+                        attempt = 0;
+                    }
+                    previousFinishSize = startFinishedSize;
                     CommandUpdator blockingCFK = state.blockingCFK();
                     if (blockingCFK != null)
                     {
-                        if (!blockingCFK.processNext(state.safeStore))
-                        {
-                            state.pendingTxns.remove(blockingCFK.txnId);
-                            state.finishedTxns.add(blockingCFK.txnId);
-                        }
+                        blockingCFK.processNext(state);
                         continue;
                     }
 
                     Order o = pendingOrder(state);
-                    if (!o.anyOrder.isEmpty())
-                    {
-                        CommandUpdator updator = state.pendingTxns.get(o.anyOrder.get(0));
-                        if (!updator.processNext(state.safeStore))
-                        {
-                            state.pendingTxns.remove(updator.txnId);
-                            state.finishedTxns.add(updator.txnId);
-                        }
-                    }
-                    else if (!o.sequential.isEmpty())
+                    if (!o.sequential.isEmpty())
                     {
                         CommandUpdator updator = state.pendingTxns.get(o.sequential.get(0));
                         logger.info("Trying to run txn {}", updator.txnId);
-                        if (!updator.processNext(state.safeStore))
-                        {
-                            state.pendingTxns.remove(updator.txnId);
-                            state.finishedTxns.add(updator.txnId);
-                        }
+                        updator.processNext(state);
+                    }
+                    if (!o.anyOrder.isEmpty())
+                    {
+                        for (TxnId id : new ArrayList<>(o.anyOrder))
+                            state.pendingTxns.get(id).processNext(state);
                     }
 
                     // what is the txn state
-                    Map<TxnId, SaveStatus> inflight = new TreeMap<>();
+                    Map<TxnId, SaveStatus> finishedButNotApplied = new TreeMap<>();
                     for (TxnId id : new ArrayList<>(state.finishedTxns))
                     {
                         Command cmd = state.safeStore.get(id).current();
@@ -244,21 +234,37 @@ class SafeCommandsForKeyTest
                             state.finishedTxns.remove(id);
                             continue;
                         }
-                        inflight.put(id, cmd.saveStatus());
+                        finishedButNotApplied.put(id, cmd.saveStatus());
                     }
-                    if (!inflight.isEmpty())
+                    if (!finishedButNotApplied.isEmpty())
                     {
                         StringBuilder sb = new StringBuilder();
-                        sb.append("Inflight Transactions:\n");
-                        for (Map.Entry<TxnId, SaveStatus> e : inflight.entrySet())
+                        sb.append("Finished but not Applied Transactions:\n");
+                        for (Map.Entry<TxnId, SaveStatus> e : finishedButNotApplied.entrySet())
                             sb.append("\t").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
                         logger.warn(sb.toString());
+                    }
+                    for (TxnId id : state.pendingTxns.keySet())
+                    {
+                        Command cmd = state.safeStore.get(id).current();
+                        // why are we blocked?
+                        if (cmd.hasBeen(Status.Committed))
+                        {
+                            String waitingSummary = summary(state, cmd.asCommitted().waitingOn);
+                            if (waitingSummary.isEmpty()) logger.info("Txn {} is not waiting on anything; {}; sequential order {}", id, cmd, pendingOrder(state).sequential);
+                            else                          logger.info("Txn {} is waiting on: {}; {}", id, waitingSummary, cmd);
+                        }
+                        else
+                        {
+                            logger.info("Txn {} has not been committed; {}", id, cmd);
+                        }
                     }
                     CommandsForKey cfk = state.safeStore.get(state.key).current();
                     if (cfk.size() != 0)
                     {
-                        CommandsForKey.TxnInfo info = cfk.get(0);
-                        logger.info("CommandsForKey waiting on {}", info);
+                        CommandsForKey.TxnInfo info = nextTxn(cfk);
+                        if (info == null) logger.info("CommandsForKey is not blocked");
+                        else              logger.info("CommandsForKey waiting on {}", info);
                     }
                 }
                 assertThat(state.pendingTxns.isEmpty()).isTrue();
@@ -267,19 +273,44 @@ class SafeCommandsForKeyTest
         });
     }
 
+    private static String summary(State state, Command.WaitingOn waitingOn)
+    {
+        StringBuilder sb = new StringBuilder();
+        if (waitingOn.isWaitingOnKey())
+        {
+            CommandsForKey.TxnInfo nextByKey = nextTxn(state.safeStore.get(state.key).current());
+            if (nextByKey != null) sb.append("Blocked by key ").append(state.key).append(", next txn ").append(nextByKey).append('\n');
+            else                   sb.append("Blocked by key ").append(state.key).append(" but no known txn blocking\n");
+        }
+        if (waitingOn.isWaitingOnCommand())
+        {
+            List<TxnId> blockingTxns = new ArrayList<>();
+            waitingOn.waitingOn.forEach(null, (ignore, index) -> {
+                if (index >= waitingOn.txnIdCount()) return;
+                if (waitingOn.waitingOn.get(index))
+                    blockingTxns.add(waitingOn.txnId(index));
+            });
+            if (blockingTxns.isEmpty()) sb.append("Blocked by Command but non defined");
+            else                        sb.append("Blocked by Commands ").append(blockingTxns);
+        }
+        return sb.toString();
+    }
+
     private static class Order
     {
-        final List<TxnId> anyOrder, sequential;
+        final List<TxnId> anyOrder, blocked, sequential;
 
-        private Order(List<TxnId> anyOrder, List<TxnId> sequential)
+        private Order(List<TxnId> anyOrder, List<TxnId> blocked, List<TxnId> sequential)
         {
             this.anyOrder = anyOrder;
+            this.blocked = blocked;
             this.sequential = sequential;
         }
     }
     private static Order pendingOrder(State state)
     {
         List<TxnId> anyOrder = new ArrayList<>();
+        List<TxnId> blocked = new ArrayList<>();
         List<TxnId> sequential = new ArrayList<>();
         // find all txn that can get to ReadyToExecute, they can run in any order
         // find the oldest ReadyToExecute and apply
@@ -295,12 +326,14 @@ class SafeCommandsForKeyTest
                 anyOrder.add(txn.txnId);
                 continue;
             }
-            sequential.add(txn.txnId);
+            if (txn.current.asCommitted().isWaitingOnDependency()) blocked.add(txn.txnId);
+            else                                                   sequential.add(txn.txnId);
         }
         Invariants.checkState(!(anyOrder.isEmpty() && sequential.isEmpty()));
         anyOrder.sort(Comparator.naturalOrder());
+        blocked.sort(Comparator.naturalOrder());
         sequential.sort(Comparator.naturalOrder());
-        return new Order(anyOrder, sequential);
+        return new Order(anyOrder, blocked, sequential);
     }
 
     private static class State
@@ -363,7 +396,8 @@ class SafeCommandsForKeyTest
                 @Override
                 public Timestamp uniqueNow(Timestamp atLeast)
                 {
-                    throw new UnsupportedOperationException();
+                    if (atLeast.hlc() >= time.get()) return atLeast;
+                    return atLeast.withHlcAtLeast(now());
                 }
             };
             ProgressLog.Factory factory = ignore -> ProgressLog.noop();
@@ -452,28 +486,35 @@ class SafeCommandsForKeyTest
             {
                 AssertionError error = new AssertionError("Unhandled errors detected");
                 errors.forEach(error::addSuppressed);
+                throw error;
             }
         }
 
         public CommandUpdator blockingCFK()
         {
             CommandsForKey cfk = safeStore.get(key).current();
-            for (int i = 0, size = cfk.size(); i < size; i++)
-            {
-                CommandsForKey.TxnInfo info = cfk.get(i);
-                if (info.status.compareTo(CommandsForKey.InternalStatus.APPLIED) < 0)
-                {
-                    // do we have an updator
-                    TxnId id = new TxnId(info);
-                    logger.warn("Txn blocking CFK: {} / {}", info, safeStore.get(id).current());
-                    return pendingTxns.get(id);
-                }
-            }
-            return null;
+            CommandsForKey.TxnInfo info = nextTxn(cfk);
+            if (info == null) return null;
+            // do we have an updator
+            TxnId id = new TxnId(info);
+            logger.warn("Txn blocking CFK: {} / {}", info, safeStore.get(id).current());
+            return pendingTxns.get(id);
         }
     }
 
-    private static Gen<List<NamedCommandTransformation>> transformationsGen(TxnId txnId, Txn txn, boolean historic)
+    @Nullable
+    private static CommandsForKey.TxnInfo nextTxn(CommandsForKey cfk)
+    {
+        for (int i = 0, size = cfk.size(); i < size; i++)
+        {
+            CommandsForKey.TxnInfo info = cfk.get(i);
+            if (info.status.compareTo(CommandsForKey.InternalStatus.APPLIED) < 0)
+                return info;
+        }
+        return null;
+    }
+
+    private static Gen<List<NamedCommandTransformation>> transformationsGen(State state, TxnId txnId, Txn txn, boolean historic)
     {
         Gen<CheckedCommands.Messages> firstMessageGen = Gens.enums().all(CheckedCommands.Messages.class);
         FullRoute<?> fullRoute = txn.keys().domain() == Routable.Domain.Key ?
@@ -536,7 +577,8 @@ class SafeCommandsForKeyTest
             }
             boolean isExclusiveSyncPoint = txnId.kind() == Txn.Kind.ExclusiveSyncPoint;
             boolean isBootstrap = isExclusiveSyncPoint && rs.nextBoolean();
-            if (isExclusiveSyncPoint && isBootstrap)
+            boolean isShardDurability = isExclusiveSyncPoint && !isBootstrap;
+            if (isBootstrap)
             {
                 ts.add(new NamedCommandTransformation("markBootstraping", cs -> {
                     cs.commandStore().markBootstrapping(cs, txnId, (Ranges) txn.keys());
@@ -588,6 +630,13 @@ class SafeCommandsForKeyTest
                             }
                             return ignore(current);
                         }
+                        // ExecutionReady, but are we next in the execution order?
+                        List<TxnId> order = pendingOrder(state).sequential;
+                        if (order.isEmpty() || !txnId.equals(order.get(0)))
+                        {
+                            logger.info("Unable to run txn {} as it is not next in the execution order: {}", txnId, order);
+                            return ignore(current);
+                        }
                         Assertions.assertThat(current.saveStatus()).describedAs("Txn %s is not ready to execute...", current).isIn(SaveStatus.Uninitialised, SaveStatus.ReadyToExecute);
                         ListData data;
                         try
@@ -626,7 +675,7 @@ class SafeCommandsForKeyTest
                         Result result = txn.result(txnId, txnId, data);
                         Writes writes = txn.execute(txnId, txnId, data);
                         CheckedCommands.apply(cs, txnId, fullRoute, fullRoute.homeKey(), txnId, partialDeps, partialTxn, writes, result);
-                        if (!(isExclusiveSyncPoint && !isBootstrap))
+                        if (!isShardDurability)
                             return done(cs.get(txnId).current());
                         else
                             return ok(cs.get(txnId).current());
@@ -635,7 +684,7 @@ class SafeCommandsForKeyTest
                 default:
                     throw new UnsupportedOperationException();
             }
-            if (isExclusiveSyncPoint && !isBootstrap)
+            if (isShardDurability)
             {
                 ts.add(new NamedCommandTransformation("markSharedDurable", cs -> {
                     Command starting = cs.get(txnId).current();
@@ -669,24 +718,33 @@ class SafeCommandsForKeyTest
             return transformations.peek().name;
         }
 
-        boolean processNext(SafeCommandStore safeStore)
+        void processNext(State state)
         {
             assertThat(transformations.hasNext()).isTrue();
             NamedCommandTransformation next = transformations.peek();
-            CommandTransformation.Result result = next.transform(safeStore);
+            CommandTransformation.Result result = next.transform(state.safeStore);
             current = result.command;
+            boolean keepGoing;
             switch (result.status)
             {
                 case Ok:
                     transformations.next();
-                    return true;
+                    keepGoing =  true;
+                    break;
                 case Done:
                     transformations.next();
-                    return false;
+                    keepGoing = false;
+                    break;
                 case Ignore:
-                    return true;
+                    keepGoing = true;
+                    break;
                 default:
                     throw new UnsupportedOperationException(result.status.name());
+            }
+            if (!keepGoing)
+            {
+                state.pendingTxns.remove(txnId);
+                state.finishedTxns.add(txnId);
             }
         }
     }
