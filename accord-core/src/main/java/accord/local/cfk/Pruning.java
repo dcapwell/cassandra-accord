@@ -170,11 +170,12 @@ public class Pruning
 
             int i = cfk.maxAppliedWriteByExecuteAt;
             long maxPruneHlc = cfk.committedByExecuteAt[i].executeAt.hlc() - minHlcDelta;
-            while (--i >= 0)
+            while (i >= 0)
             {
                 TxnInfo txn = cfk.committedByExecuteAt[i];
                 if (txn.kind().isWrite() && txn.executeAt.hlc() <= maxPruneHlc && txn.status == APPLIED)
                     break;
+                i--;
             }
 
             if (i < 0)

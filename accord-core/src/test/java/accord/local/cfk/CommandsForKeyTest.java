@@ -87,6 +87,7 @@ import accord.utils.async.AsyncResults;
 
 import static accord.local.Command.NotDefined.notDefined;
 import static accord.local.Status.Durability.NotDurable;
+import static org.assertj.core.api.Assertions.assertThat;
 
 // TODO (expected): test setting redundant before
 // TODO (expected): test ballot updates
@@ -470,7 +471,7 @@ public class CommandsForKeyTest
             return command;
         }
 
-        Command preaccepted(TxnId txnId)
+        static Command preaccepted(TxnId txnId)
         {
             return Command.PreAccepted.preAccepted(common(txnId), txnId, Ballot.ZERO);
         }
@@ -516,12 +517,12 @@ public class CommandsForKeyTest
             return new Command.Truncated(common(txnId), SaveStatus.Invalidated, Timestamp.NONE, null, null);
         }
 
-        CommonAttributes.Mutable common(TxnId txnId)
+        static CommonAttributes.Mutable common(TxnId txnId)
         {
             return common(txnId, true);
         }
 
-        CommonAttributes.Mutable common(TxnId txnId, boolean withDefinition)
+        static CommonAttributes.Mutable common(TxnId txnId, boolean withDefinition)
         {
             CommonAttributes.Mutable result = new CommonAttributes.Mutable(txnId)
                    .durability(NotDurable)
@@ -626,6 +627,67 @@ public class CommandsForKeyTest
         {
             throw new AssertionError("Seed " + seed + " failed", t);
         }
+    }
+
+    @Test
+    public void testMaybePruneNoUpdate()
+    {
+        CommandsForKey cfk = allAppliedWithSize(10);
+
+        // if there internval is larger than the max applied, this no-ops
+        assertThat(cfk.maybePrune(10, 0)).isSameAs(cfk);
+        assertThat(cfk.maybePrune(100, 0)).isSameAs(cfk);
+        assertThat(cfk.maybePrune(1, 100)).isSameAs(cfk);
+
+        cfk = create(0, 10, Canon::preaccepted);
+        assertThat(cfk.maybePrune(0, 0)).isSameAs(cfk);
+    }
+
+    @Test
+    public void testMaybePruneAll()
+    {
+        CommandsForKey cfk = allAppliedWithSize(10);
+
+        // the max applied will alawys stay
+        assertThat(cfk.maybePrune(0, 0)).isEqualTo(allAppliedWithSize(9, 1));
+    }
+
+    @Test
+    public void testMaybePruneMixed()
+    {
+        CommandsForKey cfk = create(0, 10, txnId -> txnId.hlc() <= 5 ? applied(txnId) : Canon.preaccepted(txnId));
+
+        assertThat(cfk.maybePrune(0, 0)).isEqualTo(create(5, 5, txnId -> txnId.hlc() <= 5 ? applied(txnId) : Canon.preaccepted(txnId)));
+    }
+
+    private static CommandsForKey allAppliedWithSize(int length)
+    {
+        return create(0, length, CommandsForKeyTest::applied);
+    }
+
+    private static CommandsForKey allAppliedWithSize(int offset, int length)
+    {
+        return create(offset, length, CommandsForKeyTest::applied);
+    }
+
+    private static CommandsForKey create(int offset, int length, Function<TxnId, Command> gen)
+    {
+        CommandsForKey cfk = new CommandsForKey(KEY);
+        for (int i = offset, size = offset + length; i < size; i++)
+        {
+            TxnId txnId = new TxnId(1, i, Txn.Kind.Write, Domain.Key, new Node.Id(1));
+            cfk = cfk.update(gen.apply(txnId)).cfk();
+        }
+        return cfk;
+    }
+
+    private static Command applied(TxnId txnId)
+    {
+        Deps deps = Deps.NONE;
+        CommonAttributes common = Canon.common(txnId).partialDeps(deps.slice(RANGES));
+        Command.WaitingOn waitingOn = Command.WaitingOn.EMPTY;
+        return new Command.Executed(common, SaveStatus.Applied, txnId, Ballot.ZERO, Ballot.ZERO, waitingOn,
+                                           new Writes(txnId, txnId, KEYS, null), new Result(){});
     }
 
 
