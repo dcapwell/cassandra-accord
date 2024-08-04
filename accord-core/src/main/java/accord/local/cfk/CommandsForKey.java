@@ -787,6 +787,14 @@ public class CommandsForKey extends CommandsForKeyUpdate implements CommandsSumm
         return redundantBefore.shardRedundantBefore();
     }
 
+    public TxnId nextWaitingToApply(Kinds kinds)
+    {
+        int i = maxAppliedWriteByExecuteAt + 1;
+        while (i < committedByExecuteAt.length && (committedByExecuteAt[i].status != APPLIED || !kinds.test(committedByExecuteAt[i].kind())))
+            ++i;
+        return i >= committedByExecuteAt.length ? null : committedByExecuteAt[i];
+    }
+
     /**
      * All commands before/after (exclusive of) the given timestamp, excluding those that are redundant,
      * or have locally applied prior to some other command that is stable, will be returned by the collection.

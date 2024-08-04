@@ -20,6 +20,8 @@ package accord.messages;
 
 import java.util.Set;
 
+import javax.annotation.Nullable;
+
 import com.google.common.collect.ImmutableSet;
 
 import accord.local.Commands;
@@ -42,15 +44,13 @@ public class InformHomeDurable implements Request
     public final Route<?> route;
     public final Timestamp executeAt;
     public final Durability durability;
-    public final Set<Id> persistedOn;
 
-    public InformHomeDurable(TxnId txnId, Route<?> route, Timestamp executeAt, Durability durability, Set<Id> persistedOn)
+    public InformHomeDurable(TxnId txnId, Route<?> route, Timestamp executeAt, Durability durability)
     {
         this.txnId = txnId;
         this.route = route;
         this.executeAt = executeAt;
         this.durability = durability;
-        this.persistedOn = ImmutableSet.copyOf(persistedOn); // Persisted on might be mutated later
     }
 
     @Override

@@ -122,6 +122,18 @@ public abstract class InMemoryCommandStore extends CommandStore
         return commands;
     }
 
+    @VisibleForTesting
+    public NavigableMap<Timestamp, GlobalCommand> unsafeCommandsByExecuteAt()
+    {
+        return commandsByExecuteAt;
+    }
+
+    @VisibleForTesting
+    public NavigableMap<RoutableKey, GlobalCommandsForKey> unsafeCommandsForKey()
+    {
+        return commandsForKey;
+    }
+
     @Override
     public Agent agent()
     {

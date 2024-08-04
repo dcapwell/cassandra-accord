@@ -115,7 +115,6 @@ public interface CoordinationAdapter<R>
         {
             if (any.oldestEpoch() <= txnId.epoch() && any.currentEpoch() >= executeAt.epoch()) any = any.forEpochs(txnId.epoch(), executeAt.epoch());
             else any = node.topology().preciseEpochs(route, txnId.epoch(), executeAt.epoch());
-            Topologies executes = any.forEpochs(executeAt.epoch(), executeAt.epoch());
 
             adapter.persist(node, any, route, txnId, txn, executeAt, deps, writes, result, callback);
         }

@@ -1304,6 +1304,13 @@ public abstract class Command implements CommonAttributes
             return waitingOn.lastSetBit() >= txnIdCount();
         }
 
+        public Key lastWaitingOnKey()
+        {
+            int keyIndex = waitingOn.lastSetBit() - txnIdCount();
+            if (keyIndex < 0) return null;
+            return keys.get(keyIndex);
+        }
+
         public boolean isWaitingOnKey(int keyIndex)
         {
             Invariants.checkIndex(keyIndex, keys.size());
