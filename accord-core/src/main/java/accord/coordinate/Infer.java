@@ -99,7 +99,7 @@ public class Infer
         IfUndecided(IfQuorum, IfQuorum),
 
         /**
-         * If the command has not had its execution timestamp agreed on any shard
+         * This command is known to be decided, so it is a logic bug if it is inferred elsewhere to be invalid.
          */
         IsNotInvalid(NotInvalid, NotInvalid);
 

@@ -38,10 +38,13 @@ import accord.primitives.Ranges;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
+import accord.utils.Invariants;
 
 import static accord.coordinate.ReadCoordinator.Action.Aborted;
 import static accord.coordinate.ReadCoordinator.Action.Approve;
 import static accord.coordinate.ReadCoordinator.Action.ApprovePartial;
+import static accord.primitives.Txn.Kind.EphemeralRead;
+import static accord.primitives.Txn.Kind.ExclusiveSyncPoint;
 import static accord.utils.Invariants.illegalState;
 
 public class ExecuteEphemeralRead extends ReadCoordinator<ReadReply>
@@ -61,6 +64,7 @@ public class ExecuteEphemeralRead extends ReadCoordinator<ReadReply>
         // we need to send Stable to the origin epoch as well as the execution epoch
         // TODO (desired): permit slicing Topologies by key (though unnecessary if we eliminate the concept of non-participating home keys)
         super(node, topologies, txnId);
+        Invariants.checkArgument(txnId.kind() == EphemeralRead);
         this.txn = txn;
         this.route = route;
         this.allTopologies = topologies;

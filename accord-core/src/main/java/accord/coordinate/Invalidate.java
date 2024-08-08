@@ -154,61 +154,62 @@ public class Invalidate implements Callback<InvalidateReply>
         // first look to see if it has already been decided/invalidated
         // check each shard independently - if we find any that can be invalidated, do so
         InvalidateReply max = InvalidateReply.max(replies);
-        InvalidateReply maxNotTruncated = max;
-        if (max.status == Status.Truncated)
-            maxNotTruncated = InvalidateReply.maxNotTruncated(replies);
+        InvalidateReply maxNotTruncated = max.status != Status.Truncated ? max : InvalidateReply.maxNotTruncated(replies);
 
-        switch (maxNotTruncated.status)
+        if (maxNotTruncated != null)
         {
-            default: throw new AssertionError("Unhandled status: " + maxNotTruncated.status);
-            case Truncated: throw illegalState();
+            switch (maxNotTruncated.status)
+            {
+                default: throw new AssertionError("Unhandled status: " + maxNotTruncated.status);
+                case Truncated: throw illegalState();
 
-            case AcceptedInvalidate:
-                // latest accept also invalidating, so we're on the same page and should finish our invalidation
-            case NotDefined:
-                break;
-
-            case PreAccepted:
-                if (tracker.isSafeToInvalidate() || transitivelyInvokedByPriorInvalidation)
+                case AcceptedInvalidate:
+                    // latest accept also invalidating, so we're on the same page and should finish our invalidation
+                case NotDefined:
                     break;
 
-            case Applied:
-            case PreApplied:
-            case Stable:
-            case Committed:
-            case PreCommitted:
-                Invariants.checkState(maxNotTruncated.status == PreAccepted || !invalidateWith.contains(someRoute.homeKey()) || fullRoute != null);
+                case PreAccepted:
+                    if (tracker.isSafeToInvalidate() || transitivelyInvokedByPriorInvalidation)
+                        break;
 
-            case Accepted:
-                // TODO (desired, efficiency): if we see Committed or above, go straight to Execute if we have assembled enough information
-                Invariants.checkState(fullRoute != null, "Received a reply from a node that must have known some route, but that did not include it"); // we now require the FullRoute on all replicas to preaccept, commit or apply
-                // The data we see might have made it only to a minority in the event of PreAccept ONLY.
-                // We want to protect against infinite loops, so we inform the recovery of the state we have
-                // witnessed during our initial invalidation.
+                case Applied:
+                case PreApplied:
+                case Stable:
+                case Committed:
+                case PreCommitted:
+                    Invariants.checkState(maxNotTruncated.status == PreAccepted || !invalidateWith.contains(someRoute.homeKey()) || fullRoute != null);
 
-                // However, if the state is not guaranteed to be recoverable (i.e. PreAccept/NotWitnessed),
-                // we do not relay this information unless we can guarantee that any shard recovery may contact
-                // has been prevented from reaching a _later_ fast-path decision by our promises.
-                // Which means checking we contacted every shard, since we only reach that point if we have promises
-                // from every shard we contacted.
+                case Accepted:
+                    // TODO (desired, efficiency): if we see Committed or above, go straight to Execute if we have assembled enough information
+                    Invariants.checkState(fullRoute != null, "Received a reply from a node that must have known some route, but that did not include it"); // we now require the FullRoute on all replicas to preaccept, commit or apply
+                    // The data we see might have made it only to a minority in the event of PreAccept ONLY.
+                    // We want to protect against infinite loops, so we inform the recovery of the state we have
+                    // witnessed during our initial invalidation.
 
-                // Note that there's lots of scope for variations in behaviour here, but lots of care is needed.
+                    // However, if the state is not guaranteed to be recoverable (i.e. PreAccept/NotWitnessed),
+                    // we do not relay this information unless we can guarantee that any shard recovery may contact
+                    // has been prevented from reaching a _later_ fast-path decision by our promises.
+                    // Which means checking we contacted every shard, since we only reach that point if we have promises
+                    // from every shard we contacted.
 
-                Status witnessedByInvalidation = maxNotTruncated.status;
-                if (!witnessedByInvalidation.hasBeen(Accepted))
-                {
-                    Invariants.checkState(tracker.all(InvalidationShardTracker::isPromised));
-                    if (!invalidateWith.containsAll(fullRoute))
-                        witnessedByInvalidation = null;
-                }
-                RecoverWithRoute.recover(node, ballot, txnId, fullRoute, witnessedByInvalidation, callback);
-                return;
+                    // Note that there's lots of scope for variations in behaviour here, but lots of care is needed.
 
-            case Invalidated:
-                // TODO (desired, API consistency): standardise semantics of whether local application of state prior is async or sync to callback
-                isDone = true;
-                commitInvalidate();
-                return;
+                    Status witnessedByInvalidation = maxNotTruncated.status;
+                    if (!witnessedByInvalidation.hasBeen(Accepted))
+                    {
+                        Invariants.checkState(tracker.all(InvalidationShardTracker::isPromised));
+                        if (!invalidateWith.containsAll(fullRoute))
+                            witnessedByInvalidation = null;
+                    }
+                    RecoverWithRoute.recover(node, ballot, txnId, fullRoute, witnessedByInvalidation, callback);
+                    return;
+
+                case Invalidated:
+                    // TODO (desired, API consistency): standardise semantics of whether local application of state prior is async or sync to callback
+                    isDone = true;
+                    commitInvalidate();
+                    return;
+            }
         }
 
         if (max != maxNotTruncated)

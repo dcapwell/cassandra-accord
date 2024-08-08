@@ -42,6 +42,7 @@ import accord.topology.Topologies;
 import accord.utils.Invariants;
 import accord.utils.async.AsyncResults.SettableResult;
 
+import static accord.primitives.Txn.Kind.ExclusiveSyncPoint;
 import static accord.topology.TopologyManager.EpochSufficiencyMode.AT_MOST;
 
 public abstract class ExecuteSyncPoint<S extends Seekables<?, ?>> extends SettableResult<SyncPoint<S>> implements Callback<ReadReply>
@@ -83,11 +84,13 @@ public abstract class ExecuteSyncPoint<S extends Seekables<?, ?>> extends Settab
         public ExecuteExclusiveSyncPoint(Node node, SyncPoint<Ranges> syncPoint, Function<Topologies, AbstractSimpleTracker<?>> trackerSupplier)
         {
             super(node, syncPoint, trackerSupplier);
+            Invariants.checkArgument(syncPoint.syncId.kind() == ExclusiveSyncPoint);
         }
 
         public ExecuteExclusiveSyncPoint(Node node, SyncPoint<Ranges> syncPoint, Function<Topologies, AbstractSimpleTracker<?>> trackerSupplier, AbstractSimpleTracker<?> tracker)
         {
             super(node, syncPoint, trackerSupplier, tracker);
+            Invariants.checkArgument(syncPoint.syncId.kind() == ExclusiveSyncPoint);
         }
 
         @Override

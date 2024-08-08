@@ -559,6 +559,7 @@ public class TopologyManager
     private Topologies withSufficientEpochs(Unseekables<?> select, long minEpoch, long maxEpoch, Function<EpochState, Ranges> isSufficientFor, EpochSufficiencyMode mode)
     {
         Invariants.checkArgument(minEpoch <= maxEpoch);
+        Invariants.nonNull(mode);
         Epochs snapshot = epochs;
 
         if (mode == AT_LEAST)

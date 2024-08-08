@@ -886,6 +886,7 @@ public enum Status
             if (c < 0) { Durability tmp = a; a = b; b = tmp; }
             // if we know we are applied, we can remove the OrInvalidated qualifier
             if (a == UniversalOrInvalidated && (b == Majority || b == ShardUniversal || b == Local)) a = Universal;
+            // TODO (required, minor cleanup): should ShardUniversal+NotDurable=Local? It might be that we are stale.
             if ((a == ShardUniversal) && (b == Local || b == NotDurable)) a = Local;
             if (b == NotDurable && a.compareTo(MajorityOrInvalidated) < 0) a = NotDurable;
             return a;

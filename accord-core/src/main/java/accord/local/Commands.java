@@ -155,7 +155,7 @@ public class Commands
         Invariants.checkState(validate(SaveStatus.PreAccepted, command, acceptRanges, route, partialTxn, null, null));
 
         // FIXME: this should go into a consumer method
-        CommonAttributes attrs = set(SaveStatus.PreAccepted, command, command, acceptRanges, route, partialTxn, null);
+        CommonAttributes attrs = set(SaveStatus.PreAccepted, command, command, acceptRanges, ballot, route, partialTxn, null);
         if (command.executeAt() == null)
         {
             // unlike in the Accord paper, we partition shards within a node, so that to ensure a total order we must either:
@@ -237,7 +237,7 @@ public class Commands
         // TODO (desired, clarity/efficiency): we don't need to set the route here, and perhaps we don't even need to
         //  distributed partialDeps at all, since all we gain is not waiting for these transactions to commit during
         //  recovery. We probably don't want to directly persist a Route in any other circumstances, either, to ease persistence.
-        CommonAttributes attrs = set(SaveStatus.Accepted, command, command, acceptRanges, route, null, partialDeps);
+        CommonAttributes attrs = set(SaveStatus.Accepted, command, command, acceptRanges, ballot, route, null, partialDeps);
 
         keysOrRanges = keysOrRanges.slice(acceptRanges);
         command = safeCommand.accept(safeStore, keysOrRanges, attrs, executeAt, ballot);
@@ -325,7 +325,7 @@ public class Commands
         if (!validate(newStatus, command, acceptRanges, route, partialTxn, partialDeps, null))
             return CommitOutcome.Insufficient;
 
-        CommonAttributes attrs = set(newStatus, command, command, acceptRanges, route, partialTxn, partialDeps);
+        CommonAttributes attrs = set(newStatus, command, command, acceptRanges, ballot, route, partialTxn, partialDeps);
 
         logger.trace("{}: committed with executeAt: {}, deps: {}", txnId, executeAt, partialDeps);
         if (newStatus == SaveStatus.Stable)
@@ -394,7 +394,7 @@ public class Commands
         PartialDeps none = Deps.NONE.intersecting(route);
         PartialTxn partialTxn = emptyTxn.slice(coordinateRanges, true);
         Invariants.checkState(validate(SaveStatus.Stable, command, coordinateRanges, route, partialTxn, none, null));
-        CommonAttributes newAttributes = set(SaveStatus.Stable, command, command, coordinateRanges, route, partialTxn, none);
+        CommonAttributes newAttributes = set(SaveStatus.Stable, command, command, coordinateRanges, Ballot.ZERO, route, partialTxn, none);
         safeCommand.stable(safeStore, newAttributes, Ballot.ZERO, localSyncId, WaitingOn.EMPTY);
         safeStore.notifyListeners(safeCommand);
     }
@@ -411,7 +411,7 @@ public class Commands
         //                       information to execute in the eventual execution epoch (that they didn't know they needed when they were made stable)
         Ranges coordinateRanges = coordinateRanges(safeStore, txnId);
         Invariants.checkState(validate(SaveStatus.Stable, command, coordinateRanges, route, partialTxn, partialDeps, null));
-        CommonAttributes attrs = set(SaveStatus.Stable, command, command, coordinateRanges, route, partialTxn, partialDeps);
+        CommonAttributes attrs = set(SaveStatus.Stable, command, command, coordinateRanges, Ballot.ZERO, route, partialTxn, partialDeps);
         safeCommand.stable(safeStore, attrs, Ballot.ZERO, txnId, initialiseWaitingOn(safeStore, txnId, attrs, txnId, route));
         maybeExecute(safeStore, safeCommand, false, true);
     }
@@ -480,7 +480,7 @@ public class Commands
         if (!validate(SaveStatus.PreApplied, command, acceptRanges, route, partialTxn, partialDeps, safeStore))
             return ApplyOutcome.Insufficient; // TODO (expected, consider): this should probably be an assertion failure if !TrySet
 
-        CommonAttributes attrs = set(SaveStatus.PreApplied, command, command, acceptRanges, route, partialTxn, partialDeps);
+        CommonAttributes attrs = set(SaveStatus.PreApplied, command, command, acceptRanges, null, route, partialTxn, partialDeps);
 
         WaitingOn waitingOn = !command.hasBeen(Stable) ? initialiseWaitingOn(safeStore, txnId, attrs, executeAt, attrs.route()) : command.asCommitted().waitingOn();
         safeCommand.preapplied(safeStore, attrs, executeAt, waitingOn, writes, result);
@@ -1200,7 +1200,7 @@ public class Commands
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static CommonAttributes set(SaveStatus newStatus, Command cur, CommonAttributes upd,
-                                        Ranges acceptRanges,
+                                        Ranges acceptRanges, @Nullable Ballot newAcceptedOrCommittedBallot,
                                         Route<?> route, @Nullable PartialTxn partialTxn, @Nullable PartialDeps partialDeps)
     {
         Status.Known haveKnown = cur.saveStatus().known;
@@ -1209,7 +1209,7 @@ public class Commands
         if (Route.isFullRoute(upd.route())) route = upd.route();
         else upd = upd.mutable().route(route = Route.merge(upd.route(), (Route)route));
 
-        Route<?> scope = null;
+        Route<?> scope;
         if (partialTxn != null && expectKnown.definition.isKnown())
         {
             scope = route.slice(acceptRanges);
@@ -1220,7 +1220,7 @@ public class Commands
                 upd = upd.mutable().partialTxn(partialTxn);
         }
 
-        if (partialDeps != null && haveKnown.deps != expectKnown.deps && expectKnown.deps.hasProposedOrDecidedDeps())
+        if (partialDeps != null && expectKnown.deps.hasProposedOrDecidedDeps() && (haveKnown.deps != expectKnown.deps || (newAcceptedOrCommittedBallot != null && !newAcceptedOrCommittedBallot.equals(cur.acceptedOrCommitted()))))
         {
             scope = route.slice(acceptRanges);
             upd = upd.mutable().partialDeps(partialDeps.intersecting(scope));
