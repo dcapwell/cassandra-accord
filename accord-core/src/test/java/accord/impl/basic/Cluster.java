@@ -108,7 +108,6 @@ import static accord.impl.basic.Cluster.OverrideLinksKind.NONE;
 import static accord.impl.basic.Cluster.OverrideLinksKind.RANDOM_BIDIRECTIONAL;
 import static accord.impl.basic.NodeSink.Action.DELIVER;
 import static accord.impl.basic.NodeSink.Action.DROP;
-import static accord.utils.AccordGens.keyDeps;
 import static accord.utils.AccordGens.keysInsideRanges;
 import static accord.utils.AccordGens.rangeInsideRange;
 import static accord.utils.Gens.mixedDistribution;

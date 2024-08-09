@@ -25,8 +25,6 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
 
-import accord.primitives.RoutableKey;
-
 import static accord.utils.ArrayBuffers.cachedInts;
 import static accord.utils.CheckpointIntervalArray.MAX_SCAN_DISTANCE;
 import static accord.utils.SortedArrays.Search.CEIL;

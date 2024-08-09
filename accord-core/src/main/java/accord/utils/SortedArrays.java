@@ -22,9 +22,6 @@ import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.RandomAccess;
-import java.util.Set;
-import java.util.Spliterator;
 import java.util.function.IntBinaryOperator;
 import java.util.function.IntFunction;
 

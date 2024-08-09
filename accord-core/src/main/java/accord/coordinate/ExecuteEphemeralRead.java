@@ -44,7 +44,6 @@ import static accord.coordinate.ReadCoordinator.Action.Aborted;
 import static accord.coordinate.ReadCoordinator.Action.Approve;
 import static accord.coordinate.ReadCoordinator.Action.ApprovePartial;
 import static accord.primitives.Txn.Kind.EphemeralRead;
-import static accord.primitives.Txn.Kind.ExclusiveSyncPoint;
 import static accord.utils.Invariants.illegalState;
 
 public class ExecuteEphemeralRead extends ReadCoordinator<ReadReply>

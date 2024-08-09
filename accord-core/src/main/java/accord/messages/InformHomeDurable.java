@@ -18,12 +18,6 @@
 
 package accord.messages;
 
-import java.util.Set;
-
-import javax.annotation.Nullable;
-
-import com.google.common.collect.ImmutableSet;
-
 import accord.local.Commands;
 import accord.local.Node;
 import accord.local.Node.Id;
