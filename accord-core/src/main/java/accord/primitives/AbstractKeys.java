@@ -295,7 +295,7 @@ public abstract class AbstractKeys<K extends RoutableKey> implements Iterable<K>
     public final FullKeyRoute toRoute(RoutingKey homeKey)
     {
         if (!contains(homeKey))
-            throw new IllegalArgumentException("Home key must be a participant of the Route: " + homeKey + " ∉ " + this);
+            throw new IllegalArgumentException("Home key must be a participant of the Route: " + homeKey + " not in " + this);
 
         return toRoutingKeysArray(homeKey, (routingKeys, homeKeyIndex, isParticipatingHomeKey) -> new FullKeyRoute(routingKeys[homeKeyIndex], routingKeys));
     }

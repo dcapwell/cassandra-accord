@@ -179,7 +179,7 @@ public class Ranges extends AbstractRanges implements Iterable<Range>, Seekables
     public FullRangeRoute toRoute(RoutingKey homeKey)
     {
         if (!contains(homeKey))
-            throw new IllegalArgumentException("Home key must be contained in the route: " + homeKey + " ∉ " + this);
+            throw new IllegalArgumentException("Home key must be contained in the route: " + homeKey + " not in " + this);
 
         return new FullRangeRoute(homeKey, ranges);
     }
