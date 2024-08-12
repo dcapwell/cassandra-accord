@@ -84,6 +84,12 @@ class CoordinateSyncPointTest
             n1.topology().onEpochSyncComplete(node, t1.epoch());
 
         awaitApplied(n1, removed);
+
+        n1.onEpochRedundant(Ranges.single(removed), t2.epoch());
+        awaitApplied(n1, removed);
+
+        n1.onEpochClosed(Ranges.single(removed), t2.epoch());
+        awaitApplied(n1, removed);
     }
 
     private static SyncPoint<Ranges> awaitApplied(Node node, Range removed)
