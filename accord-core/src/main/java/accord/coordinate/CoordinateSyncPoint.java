@@ -47,6 +47,7 @@ import static accord.coordinate.Propose.Invalidate.proposeAndCommitInvalidate;
 import static accord.primitives.Timestamp.mergeMax;
 import static accord.primitives.Txn.Kind.ExclusiveSyncPoint;
 import static accord.topology.TopologyManager.EpochSufficiencyMode.AT_LEAST;
+import static accord.topology.TopologyManager.EpochSufficiencyMode.AT_MOST;
 import static accord.utils.Functions.foldl;
 import static accord.utils.Invariants.checkArgument;
 
@@ -65,7 +66,7 @@ public class CoordinateSyncPoint<S extends Seekables<?, ?>> extends CoordinatePr
 
     private CoordinateSyncPoint(Node node, TxnId txnId, Txn txn, FullRoute<?> route, CoordinationAdapter<SyncPoint<S>> adapter)
     {
-        super(node, txnId, txn, route, node.topology().withOpenEpochs(route, txnId, txnId, AT_LEAST));
+        super(node, txnId, txn, route, node.topology().withOpenEpochs(route, txnId, txnId, AT_MOST));
         this.adapter = adapter;
     }
 
@@ -100,9 +101,6 @@ public class CoordinateSyncPoint<S extends Seekables<?, ?>> extends CoordinatePr
     {
         checkArgument(txnId.kind() == Kind.SyncPoint || txnId.kind() == ExclusiveSyncPoint);
         FullRoute<?> route = node.computeRoute(txnId, keysOrRanges);
-        TopologyMismatch mismatch = TopologyMismatch.checkForMismatch(node.topology().globalForEpoch(txnId.epoch()), txnId, route.homeKey(), keysOrRanges);
-        if (mismatch != null)
-            return AsyncResults.failure(mismatch);
         CoordinateSyncPoint<S> coordinate = new CoordinateSyncPoint<>(node, txnId, node.agent().emptyTxn(txnId.kind(), keysOrRanges), route, adapter);
         coordinate.start();
         return coordinate;
@@ -125,9 +123,6 @@ public class CoordinateSyncPoint<S extends Seekables<?, ?>> extends CoordinatePr
         }
         else
         {
-            // we don't need to fetch deps from Accept replies, so we don't need to contact unsynced epochs
-            topologies = node.topology().forEpoch(route, txnId.epoch());
-            // TODO (required, consider): consider the required semantics of a SyncPoint
             if (tracker.hasFastPathAccepted() && txnId.kind() == Kind.SyncPoint)
                 execute(adapter, node, topologies, route, FAST, txnId, txn, txnId, deps, this);
             else
