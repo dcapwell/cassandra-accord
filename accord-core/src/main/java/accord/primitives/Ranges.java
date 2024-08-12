@@ -98,11 +98,6 @@ public class Ranges extends AbstractRanges implements Iterable<Range>, Seekables
         return slice(ranges, slice, this, null, (i1, i2, rs) -> i1.ranges == rs ? i1 : Ranges.ofSortedAndDeoverlapped(rs));
     }
 
-    private Ranges intersecting(AbstractKeys<?> keys)
-    {
-        return intersecting(keys, this, null, (i1, i2, rs) -> i1.ranges == rs ? i1 : Ranges.ofSortedAndDeoverlapped(rs));
-    }
-
     private Ranges slice(AbstractRanges ranges, Slice slice)
     {
         return slice(ranges, slice, this, this, (i1, i2, rs) -> i2.ranges == rs ? i2 : Ranges.ofSortedAndDeoverlapped(rs));
@@ -121,7 +116,7 @@ public class Ranges extends AbstractRanges implements Iterable<Range>, Seekables
         {
             default: throw new AssertionError("Unhandled domain: " + intersecting.domain());
             case Range: return slice((AbstractRanges) intersecting, slice);
-            case Key: return intersecting((AbstractKeys<?>) intersecting, this, null, (i1, i2, rs) -> i1.ranges == rs ? i1 : new Ranges(rs));
+            case Key: return intersecting((AbstractUnseekableKeys) intersecting, this, null, (i1, i2, rs) -> i1.ranges == rs ? i1 : new Ranges(rs));
         }
     }
 

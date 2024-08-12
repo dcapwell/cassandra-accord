@@ -26,7 +26,9 @@ import java.util.SortedSet;
 import java.util.function.Function;
 
 import accord.api.Key;
+import accord.primitives.Routable.Domain;
 import accord.utils.ArrayBuffers.ObjectBuffers;
+import accord.utils.Invariants;
 import accord.utils.SortedArrays;
 
 import static accord.utils.ArrayBuffers.cachedKeys;
@@ -83,6 +85,14 @@ public class Keys extends AbstractKeys<Key> implements Seekables<Key, Keys>
         return wrap(slice(ranges, Key[]::new));
     }
 
+    @Override
+    public final boolean intersectsAll(Unseekables<?> keysOrRanges)
+    {
+        Invariants.checkArgument(keysOrRanges.domain() == Domain.Key);
+        AbstractUnseekableKeys that = (AbstractUnseekableKeys) keysOrRanges;
+        return SortedArrays.isSubset((rk, k) -> -k.compareAsRoutingKey(rk), that.keys, 0, that.keys.length, this.keys, 0, this.keys.length);
+    }
+
     public final Keys intersecting(Unseekables<?> intersecting)
     {
         switch (intersecting.domain())
@@ -105,7 +115,7 @@ public class Keys extends AbstractKeys<Key> implements Seekables<Key, Keys>
 
     public final Keys intersecting(AbstractUnseekableKeys that)
     {
-        return wrap(SortedArrays.asymmetricLinearIntersection(this.keys, this.keys.length, that.keys, that.keys.length, Key::compareTo, cachedKeys()), this);
+        return wrap(SortedArrays.intersectWithMultipleMatches(this.keys, this.keys.length, that.keys, that.keys.length, Key::compareAsRoutingKey, cachedKeys()), this);
     }
 
     public Keys with(Key key)

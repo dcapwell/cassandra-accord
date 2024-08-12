@@ -40,6 +40,12 @@ implements Iterable<RoutingKey>, Unseekables<RoutingKey>, Participants<RoutingKe
     }
 
     @Override
+    public final boolean intersectsAll(Unseekables<?> keysOrRanges)
+    {
+        return containsAll(keysOrRanges);
+    }
+
+    @Override
     public AbstractUnseekableKeys intersecting(Unseekables<?> intersecting, Slice slice)
     {
         return intersecting(intersecting);

@@ -91,7 +91,7 @@ public class SortedArrays
 
         public boolean containsAll(SortedArrayList<T> test)
         {
-            return test.array.length == SortedArrays.foldlIntersection(Comparable::compareTo, array, 0, array.length, test.array, 0, test.array.length, (t, p, v, li, ri) -> v + 1, 0, 0, test.array.length);
+            return isSubset(Comparable::compareTo, test.array, 0, test.array.length, array, 0, array.length);
         }
 
         public T[] backingArrayUnsafe()
@@ -1356,22 +1356,18 @@ public class SortedArrays
     }
 
     @Inline
-    public static <T> boolean isSubset(AsymmetricComparator<? super T, ? super T> comparator, T[] test, int testFrom, int testTo, T[] superset, int supersetFrom, int supersetTo)
+    public static <T1, T2> boolean isSubset(AsymmetricComparator<? super T1, ? super T2> comparator, T1[] test, int testFrom, int testTo, T2[] superset, int supersetFrom, int supersetTo)
     {
-        while (true)
+        while (testFrom < testTo)
         {
-            long abi = findNextIntersection(test, testFrom, testTo, superset, supersetFrom, supersetTo, comparator);
-            if (abi < 0)
-                return true;
-
-            int nextai = (int)(abi);
-            if (testFrom != nextai)
+            supersetFrom = SortedArrays.exponentialSearch(superset, supersetFrom, supersetTo, test[testFrom], comparator, FAST);
+            if (supersetFrom < 0)
                 return false;
 
-            supersetFrom = (int)(abi >>> 32);
             ++testFrom;
             ++supersetFrom;
         }
+        return true;
     }
 
     public static <T extends Comparable<T>> void assertSorted(T[] array)

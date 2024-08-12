@@ -39,12 +39,12 @@ public interface PartialTxn extends Txn
         if (query() == null && route.contains(route.homeKey()))
             return false;
 
-        return keys().containsAll(route);
+        return keys().intersectsAll(route);
     }
 
-    default boolean covers(Routables<?> participants)
+    default boolean covers(Unseekables<?> participants)
     {
-        return keys().containsAll(participants);
+        return keys().intersectsAll(participants);
     }
 
     static PartialTxn merge(@Nullable PartialTxn a, @Nullable PartialTxn b)

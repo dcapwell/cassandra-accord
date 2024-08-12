@@ -1259,7 +1259,6 @@ public class Commands
             {
                 if (!containsAll(addPartialTxn, PartialTxn::covers, acceptScope, permitStaleMissing))
                     return false;
-
             }
         }
 

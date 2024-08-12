@@ -75,7 +75,7 @@ public class PartialKeyRoute extends KeyRoute implements PartialRoute<RoutingKey
         if (contains(withKey))
             return this;
 
-        return new RoutingKeys(toRoutingKeysArray(withKey));
+        return new RoutingKeys(toRoutingKeysArray(withKey, true));
     }
 
     @Override

@@ -58,9 +58,9 @@ public class PartialDeps extends Deps
         this.covering = covering;
     }
 
-    public boolean covers(Routables<?> participants)
+    public boolean covers(Unseekables<?> participants)
     {
-        return covering.containsAll(participants);
+        return covering.intersectsAll(participants);
     }
 
     public Deps with(Deps that)

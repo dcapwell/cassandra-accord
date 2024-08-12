@@ -639,7 +639,7 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusRep
         }
 
         // TODO (required): harden markShardStale against unnecessary actions by utilising inferInvalidated==MAYBE and performing a global query
-        public Known knownFor(Routables<?> participants)
+        public Known knownFor(Unseekables<?> participants)
         {
             Known known = map.knownFor(participants);
             Invariants.checkState(!known.hasFullRoute() || Route.isFullRoute(route));
@@ -862,7 +862,7 @@ public class CheckStatus extends AbstractEpochRequest<CheckStatus.CheckStatusRep
          * nor any knowledge that does not transfer (i.e. Definition or Deps).
          */
         @Override
-        public Known knownFor(Routables<?> participants)
+        public Known knownFor(Unseekables<?> participants)
         {
             Known known = super.knownFor(participants);
             Invariants.checkState(!known.hasDefinition() || (partialTxn != null && partialTxn.covers(participants)));

@@ -70,6 +70,7 @@ public interface Routables<K extends Routable> extends Iterable<K>
 
     boolean contains(RoutableKey key);
     boolean containsAll(Routables<?> keysOrRanges);
+    boolean intersectsAll(Unseekables<?> keysOrRanges);
 
     Routables<?> slice(Ranges ranges);
     Routables<K> slice(Ranges ranges, Slice slice);

@@ -100,6 +100,12 @@ public abstract class AbstractRanges implements Iterable<Range>, Routables<Range
         return ((int) supersetLinearMerge(this.ranges, that.ranges)) == that.size();
     }
 
+    @Override
+    public boolean intersectsAll(Unseekables<?> keysOrRanges)
+    {
+        return intersectsAll((Routables<?>) keysOrRanges);
+    }
+
     public boolean intersectsAll(Routables<?> that)
     {
         switch (that.domain())
@@ -292,7 +298,7 @@ public abstract class AbstractRanges implements Iterable<Range>, Routables<Range
      * Returns the inputs that intersect with any of the members of the keysOrRanges.
      * DOES NOT MODIFY THE INPUT.
      */
-    static <I extends AbstractRanges, P> I intersecting(AbstractKeys<?> intersecting, I input, P param, SliceConstructor<I, P, I> constructor)
+    static <I extends AbstractRanges, P> I intersecting(AbstractUnseekableKeys intersecting, I input, P param, SliceConstructor<I, P, I> constructor)
     {
         Range[] result = SortedArrays.intersectWithMultipleMatches(input.ranges, input.ranges.length, intersecting.keys, intersecting.keys.length, Range::compareTo, cachedRanges());
         return result == input.ranges ? input : constructor.construct(input, param, result);
