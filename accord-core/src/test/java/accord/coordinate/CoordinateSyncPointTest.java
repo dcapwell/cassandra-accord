@@ -42,6 +42,7 @@ import accord.topology.TopologyUtils;
 import accord.utils.async.AsyncChains;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
 
 import java.util.Arrays;
 import java.util.List;
@@ -111,37 +112,24 @@ class CoordinateSyncPointTest
     {
         MessageSink msg = Mockito.mock(MessageSink.class, Mockito.CALLS_REAL_METHODS);
         Mockito.doAnswer(args -> {
-            Node.Id to = args.getArgument(0);
             Request request = args.getArgument(1);
-            AgentExecutor executor = args.getArgument(2);
 
             if (request instanceof PreAccept)
             {
                 PreAccept preAccept = (PreAccept) request;
-                PreAccept.PreAcceptReply reply = new PreAccept.PreAcceptOk(preAccept.txnId, preAccept.txnId, PartialDeps.NONE);
-                Callback<PreAccept.PreAcceptReply> cb = args.getArgument(3);
-                executor.execute(() -> cb.onSuccess(to, reply));
+                onSuccess(args, new PreAccept.PreAcceptOk(preAccept.txnId, preAccept.txnId, PartialDeps.NONE));
             }
             else if (request instanceof Accept)
             {
-                Accept accept = (Accept) request;
-                Accept.AcceptReply reply = new Accept.AcceptReply(PartialDeps.NONE);
-                Callback<Accept.AcceptReply> cb = args.getArgument(3);
-                executor.execute(() -> cb.onSuccess(to, reply));
+                onSuccess(args, new Accept.AcceptReply(PartialDeps.NONE));
             }
             else if (request instanceof Commit)
             {
-                Commit commit = (Commit) request;
-                ReadData.ReadOk reply = new ReadData.ReadOk(null, null);
-                Callback<ReadData.ReadOk> cb = args.getArgument(3);
-                executor.execute(() -> cb.onSuccess(to, reply));
+                onSuccess(args, new ReadData.ReadOk(null, null));
             }
             else if (request instanceof Apply)
             {
-                Apply apply = (Apply) request;
-                Apply.ApplyReply reply = Apply.ApplyReply.Applied;
-                Callback<Apply.ApplyReply> cb = args.getArgument(3);
-                executor.execute(() -> cb.onSuccess(to, reply));
+                onSuccess(args, Apply.ApplyReply.Applied);
             }
             else
             {
@@ -150,5 +138,13 @@ class CoordinateSyncPointTest
             return null;
         }).when(msg).send(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
         return msg;
+    }
+
+    private static <T> void onSuccess(InvocationOnMock args, T reply)
+    {
+        Node.Id to = args.getArgument(0);
+        AgentExecutor executor = args.getArgument(2);
+        Callback<T> cb = args.getArgument(3);
+        executor.execute(() -> cb.onSuccess(to, reply));
     }
 }
