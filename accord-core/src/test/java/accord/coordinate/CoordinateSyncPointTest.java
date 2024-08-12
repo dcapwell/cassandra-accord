@@ -110,7 +110,7 @@ class CoordinateSyncPointTest
 
     private static MessageSink happyPathMessaging()
     {
-        MessageSink msg = Mockito.mock(MessageSink.class, Mockito.CALLS_REAL_METHODS);
+        MessageSink msg = Mockito.mock(MessageSink.class);
         Mockito.doAnswer(args -> {
             Request request = args.getArgument(1);
 
