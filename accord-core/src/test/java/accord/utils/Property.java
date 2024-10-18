@@ -133,7 +133,7 @@ public class Property
         }
     }
 
-    private static Object normalizeValue(Object value)
+    static String normalizeValue(Object value)
     {
         if (value == null)
             return null;
@@ -142,7 +142,7 @@ public class Property
         {
             Class<?> subType = value.getClass().getComponentType();
             if (!subType.isPrimitive())
-                return Arrays.asList((Object[]) value);
+                return Arrays.asList((Object[]) value).toString();
             if (Byte.TYPE == subType)
                 return Arrays.toString((byte[]) value);
             if (Character.TYPE == subType)
@@ -198,8 +198,12 @@ public class Property
         if (values != null)
         {
             sb.append("Values:\n");
-            for (int i = 0; i < values.length; i++)
-                sb.append('\t').append(i).append(" = ").append(normalizeValue(values[i])).append(": ").append(values[i] == null ? "unknown type" : values[i].getClass().getCanonicalName()).append('\n');
+            for (int i = 0; i < values.length; i += 2)
+            {
+                Gen<Object> gen = (Gen<Object>) values[i];
+                Object v = values[i + 1];
+                sb.append('\t').append(i/2).append(" = ").append(gen.describe(v)).append(": ").append(v == null ? "unknown type" : v.getClass().getCanonicalName()).append('\n');
+            }
         }
         return sb.toString();
     }
@@ -255,7 +259,7 @@ public class Property
                 }
                 catch (Throwable t)
                 {
-                    throw new PropertyError(propertyError(this, t, value), t);
+                    throw new PropertyError(propertyError(this, t, gen, value), t);
                 }
                 if (pure)
                 {
@@ -306,7 +310,7 @@ public class Property
                 }
                 catch (Throwable t)
                 {
-                    throw new PropertyError(propertyError(this, t, a, b), t);
+                    throw new PropertyError(propertyError(this, t, aGen, a, bGen, b), t);
                 }
                 if (pure)
                 {
@@ -361,7 +365,7 @@ public class Property
                 }
                 catch (Throwable t)
                 {
-                    throw new PropertyError(propertyError(this, t, a, b, c), t);
+                    throw new PropertyError(propertyError(this, t, as, a, bs, b, cs, c), t);
                 }
                 if (pure)
                 {

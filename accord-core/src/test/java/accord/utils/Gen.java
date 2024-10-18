@@ -105,6 +105,30 @@ public interface Gen<A> {
         };
     }
 
+    default String describe(A value)
+    {
+        return Property.normalizeValue(value);
+    }
+
+    default Gen<A> describe(Function<A, String> fn)
+    {
+        Gen<A> self = this;
+        return new Gen<>()
+        {
+            @Override
+            public A next(RandomSource random)
+            {
+                return self.next(random);
+            }
+
+            @Override
+            public String describe(A value)
+            {
+                return fn.apply(value);
+            }
+        };
+    }
+
     default Supplier<A> asSupplier(RandomSource rs)
     {
         return () -> next(rs);
